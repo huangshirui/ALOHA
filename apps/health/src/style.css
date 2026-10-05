@@ -1,0 +1,20 @@
+.health-ready-card h1 {
+  margin: var(--aloha-space-2) 0 var(--aloha-space-4);
+  font-size: clamp(2rem, 7vw, 3.5rem);
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+}
+
+.health-ready-card p,
+.health-readiness p {
+  margin-bottom: 0;
+  line-height: 1.65;
+}
+
+.health-readiness {
+  margin-top: var(--aloha-space-5);
+}
+
+.health-surface strong {
+  color: var(--aloha-color-text);
+}

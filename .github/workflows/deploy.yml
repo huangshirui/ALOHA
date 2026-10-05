@@ -96,8 +96,8 @@ jobs:
 
           echo "Renamed aloha-gateway Worker deployment to aloha-edge."
 
-      - name: Build Web for production
-        run: npm run build:web
+      - name: Build Assistant for production
+        run: npm run build:assistant
 
       - name: Deploy Agent Control
         uses: cloudflare/wrangler-action@v3
@@ -222,7 +222,7 @@ jobs:
               ;;
           esac
 
-      - name: Deploy ALOHA Edge with Web static assets
+      - name: Deploy ALOHA Edge with Assistant static assets
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
