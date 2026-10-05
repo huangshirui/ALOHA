@@ -15,6 +15,8 @@
   "scripts": {
     "dev:assistant": "npm run dev -w @aloha/assistant",
     "dev:health": "npm run dev -w @aloha/health",
+    "dev:finance": "npm run dev -w @aloha/finance",
+    "dev:things": "npm run dev -w @aloha/things",
     "dev:gateway": "npm run dev -w @aloha/gateway",
     "dev:agent-control": "npm run dev -w @aloha/agent-control",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -22,6 +24,9 @@
     "build": "npm run build --workspaces --if-present",
     "build:assistant": "npm run build -w @aloha/assistant",
     "build:health": "npm run build -w @aloha/health",
+    "build:finance": "npm run build -w @aloha/finance",
+    "build:things": "npm run build -w @aloha/things",
+    "build:pwas": "npm run build:assistant && npm run build:health && npm run build:finance && npm run build:things",
     "verify:m1-runtime": "node scripts/verify-m1-runtime.mjs",
     "verify:m2-runtime": "node scripts/verify-m2-runtime.mjs",
     "verify:m3-runtime": "node scripts/verify-m3-runtime.mjs",

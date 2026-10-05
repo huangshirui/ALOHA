@@ -1,57 +1,18 @@
-# ALOHA Assistant Design
+# ALOHA Assistant Design Notes
 
-This document is the source of truth for the current Assistant visual language. It is intentionally small: the MVP needs a coherent token layer, not a component framework.
+Cross-surface visual foundations are owned by [`docs/design-system.md`](../../docs/design-system.md), `@aloha/design-tokens` and `@aloha/ui`.
 
-## Principles
+This file owns only Assistant-specific visual and interaction rules.
 
-- Keep the interface quiet, lightweight and fast for high-frequency Mobile/Desktop use.
-- Prefer semantic design tokens over page/component-local literals.
-- Components consume semantic tokens; raw color, spacing, radius, typography and size values belong in the token layer unless a value is truly one-off and documented.
-- Preserve accessibility, safe-area handling and responsive behavior.
-- Do not introduce a third-party design-system dependency merely to centralize tokens.
+## Assistant-specific principles
 
-## Token model
+- Keep the primary experience quiet, fast and state-first.
+- Preserve the three-area interaction shell: Header, Current Work Surface and Composer.
+- Assistant may remain visually sparse even when other ALOHA domain surfaces use dashboards, lists or denser structured layouts.
+- Mobile / Tablet can prioritize touch and voice entry; Desktop can prioritize keyboard input and wider work surfaces.
+- Use shared semantic tokens instead of creating an Assistant-only palette/spacing system.
+- Assistant-specific interaction components such as Composer, pending resources, voice transcript overlays and generative work surfaces remain local unless stable reuse across another PWA is later proven.
 
-Tokens are CSS custom properties defined in `src/style.css` under `:root`.
+## Current migration constraint
 
-### Color
-
-- `--color-bg-canvas`: main application background.
-- `--color-text-primary`: primary foreground text.
-- `--color-text-muted`: secondary/supporting text.
-- `--color-border-subtle`: quiet control/divider border.
-- `--color-surface-transparent`: transparent control surface.
-
-### Typography
-
-- `--font-family-sans`: application sans-serif stack.
-
-### Spacing
-
-Use the shared scale rather than introducing arbitrary values:
-
-- `--space-2`: 0.5rem
-- `--space-3`: 0.75rem
-- `--space-4`: 1rem
-- `--space-6`: 1.5rem
-
-### Size and radius
-
-- `--size-control-sm`: 2.5rem
-- `--size-control-md`: 3rem
-- `--radius-pill`: 999px
-- `--layout-content-max`: 56rem
-
-## Implementation rule
-
-When a new page or component needs a visual value:
-
-1. reuse an existing semantic token when the meaning matches;
-2. add a new token here and in `:root` if the value is reusable or represents a stable visual role;
-3. use a local literal only for genuinely local geometry that should not become part of the visual language.
-
-A token name describes purpose, not a specific component. Avoid names such as `--chat-input-gray` or `--settings-card-padding` when the same concept can be expressed semantically.
-
-## Current scope
-
-The current token layer covers the Assistant MVP shell and composer. It is expected to grow gradually as real screens are implemented. Facet remains the future shared Generative UI boundary; this file does not create a parallel component framework.
+Assistant production still uses the transitional root PWA deployment. Do not change its scope to `/assistant/` until the LifeSpace-dependent migration is explicitly activated.
