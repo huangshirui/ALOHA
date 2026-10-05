@@ -20,8 +20,16 @@ export default defineConfig({
         start_url: '/health/',
         scope: '/health/',
         display: 'standalone',
-        background_color: '#ffffff',
-        theme_color: '#ffffff',
+        background_color: '#f7f8fb',
+        theme_color: '#168a5b',
+        icons: [
+          {
+            src: 'app-icon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any maskable',
+          },
+        ],
       },
     }),
   ],

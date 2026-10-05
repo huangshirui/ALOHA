@@ -115,7 +115,7 @@ const newContext = () => {
 </script>
 
 <template>
-  <main class="shell">
+  <main class="shell" data-aloha-surface="assistant">
     <header class="header">
       <button class="icon-button" type="button" aria-label="更多">☰</button>
       <strong>ALOHA</strong>

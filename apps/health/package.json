@@ -11,6 +11,8 @@
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
+    "@aloha/design-tokens": "*",
+    "@aloha/ui": "*",
     "vue": "^3.5.42"
   },
   "devDependencies": {

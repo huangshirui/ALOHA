@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@aloha/contracts": "*",
+    "@aloha/design-tokens": "*",
+    "@aloha/ui": "*",
     "vue": "^3.5.42"
   },
   "devDependencies": {

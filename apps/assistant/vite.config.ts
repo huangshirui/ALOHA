@@ -11,14 +11,20 @@ export default defineConfig({
         name: 'ALOHA Assistant',
         short_name: 'Assistant',
         description: 'Personal AI assistant',
-        display: 'standalone',
-        // Transitional production scope. Move to /assistant/ when the
-        // independent Assistant PWA deployment is activated.
         id: '/',
         start_url: '/',
         scope: '/',
-        background_color: '#ffffff',
-        theme_color: '#ffffff',
+        display: 'standalone',
+        background_color: '#f7f8fb',
+        theme_color: '#2859d8',
+        icons: [
+          {
+            src: 'app-icon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any maskable',
+          },
+        ],
       },
     }),
   ],

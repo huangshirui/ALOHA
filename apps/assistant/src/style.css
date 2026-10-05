@@ -1,88 +1,48 @@
-* {
-  box-sizing: border-box;
-}
-
-:root {
-  --font-family-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-
-  --color-bg-canvas: #fff;
-  --color-text-primary: #111;
-  --color-text-muted: #666;
-  --color-border-subtle: #ddd;
-  --color-surface-transparent: transparent;
-
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-6: 1.5rem;
-
-  --size-control-sm: 2.5rem;
-  --size-control-md: 3rem;
-  --radius-pill: 999px;
-  --layout-content-max: 56rem;
-}
-
-html,
-body,
-#app {
-  width: 100%;
-  min-height: 100%;
-  margin: 0;
-}
-
-body {
-  font-family: var(--font-family-sans);
-  background: var(--color-bg-canvas);
-  color: var(--color-text-primary);
-}
-
-button,
-input {
-  font: inherit;
-}
-
-button {
-  color: inherit;
-}
-
 .shell {
   min-height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  max-width: var(--layout-content-max);
+  width: min(100%, var(--aloha-content-reading));
   margin: 0 auto;
+  background: var(--aloha-color-surface);
 }
 
 .header,
 .composer {
   display: grid;
   align-items: center;
-  gap: var(--space-3);
-  padding: max(var(--space-3), env(safe-area-inset-top)) var(--space-4) var(--space-3);
+  gap: var(--aloha-space-3);
+  padding: max(var(--aloha-space-3), env(safe-area-inset-top)) var(--aloha-space-4) var(--aloha-space-3);
 }
 
 .header {
-  grid-template-columns: var(--size-control-sm) 1fr var(--size-control-sm);
+  grid-template-columns: var(--aloha-control-sm) 1fr var(--aloha-control-sm);
   text-align: center;
 }
 
 .icon-button {
   border: 0;
-  background: var(--color-surface-transparent);
-  min-height: var(--size-control-sm);
+  border-radius: var(--aloha-radius-pill);
+  background: transparent;
+  min-height: var(--aloha-control-sm);
   cursor: pointer;
+  color: var(--aloha-color-text);
+}
+
+.icon-button:hover {
+  background: var(--aloha-accent-soft);
 }
 
 .stage {
   display: flex;
   align-items: center;
-  padding: var(--space-6);
+  padding: var(--aloha-space-6);
 }
 
 .work-surface {
   width: 100%;
   display: grid;
-  gap: var(--space-6);
+  gap: var(--aloha-space-6);
 }
 
 .status,
@@ -98,7 +58,7 @@ button {
 .surface-label,
 .placeholder-text,
 .source-text {
-  color: var(--color-text-muted);
+  color: var(--aloha-color-text-muted);
 }
 
 .status,
@@ -107,12 +67,12 @@ button {
 }
 
 .surface-label {
-  margin-bottom: var(--space-2);
+  margin-bottom: var(--aloha-space-2);
 }
 
 .surface-section {
-  border-top: 1px solid var(--color-border-subtle);
-  padding-top: var(--space-4);
+  border-top: 1px solid var(--aloha-color-border);
+  padding-top: var(--aloha-space-4);
 }
 
 .source-text,
@@ -124,34 +84,36 @@ button {
 }
 
 .output-text {
-  color: var(--color-text-primary);
+  color: var(--aloha-color-text);
 }
 
 .error-text {
-  margin-top: var(--space-2);
+  margin-top: var(--aloha-space-2);
+  color: var(--aloha-color-danger);
 }
 
 .composer {
   grid-template-columns: 1fr auto;
-  padding: var(--space-3) var(--space-4) max(var(--space-3), env(safe-area-inset-bottom));
+  padding: var(--aloha-space-3) var(--aloha-space-4) max(var(--aloha-space-3), env(safe-area-inset-bottom));
 }
 
 .composer input {
   width: 100%;
-  min-height: var(--size-control-md);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--color-bg-canvas);
-  color: var(--color-text-primary);
-  padding: 0 var(--space-4);
+  min-height: var(--aloha-control-md);
+  border: 1px solid var(--aloha-color-border);
+  border-radius: var(--aloha-radius-pill);
+  background: var(--aloha-color-surface);
+  color: var(--aloha-color-text);
+  padding: 0 var(--aloha-space-4);
 }
 
 .composer button {
-  min-height: var(--size-control-md);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-pill);
-  background: var(--color-surface-transparent);
-  padding: 0 var(--space-4);
+  min-height: var(--aloha-control-md);
+  border: 1px solid var(--aloha-color-border);
+  border-radius: var(--aloha-radius-pill);
+  background: transparent;
+  color: var(--aloha-color-text);
+  padding: 0 var(--aloha-space-4);
   cursor: pointer;
 }
 
@@ -160,9 +122,21 @@ button {
   opacity: 0.45;
 }
 
-@media (max-width: 40rem) {
+@media (min-width: 48rem) {
+  .header,
+  .composer {
+    padding-left: var(--aloha-space-6);
+    padding-right: var(--aloha-space-6);
+  }
+
+  .stage {
+    padding: var(--aloha-space-8);
+  }
+}
+
+@media (max-width: 47.999rem) {
   .stage {
     align-items: flex-start;
-    padding-top: var(--space-4);
+    padding-top: var(--aloha-space-4);
   }
 }
