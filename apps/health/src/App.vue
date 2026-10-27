@@ -314,7 +314,7 @@ function detailName(kind: HealthKind,record:any) {
             @select-app="handleAppSelection" @update-density="uiDensity=$event"
             @ask="openAgent">
             <template #actions>
-              <button class="quiet-button overview-shortcut" type="button" @click="openBody('overview')">
+              <button class="quiet-button overview-shortcut" type="button" aria-label="身体概览" title="身体概览" @click="openBody('overview')">
                 <HeartPulse :size="17"/> 身体概览 <ArrowUpRight :size="16"/>
               </button>
             </template>
@@ -364,7 +364,7 @@ function detailName(kind: HealthKind,record:any) {
             @select-app="handleAppSelection" @update-density="uiDensity=$event"
             @ask="openAgent" @back="back">
               <template #actions>
-                <button type="button" class="quiet-button" @click="openEditor(selected.kind,current.id)">
+                <button type="button" class="quiet-button detail-edit-button" aria-label="修改记录" title="修改记录" @click="openEditor(selected.kind,current.id)">
                   <Pencil :size="16"/> 修改
                 </button>
                 <button type="button" class="icon-button destructive" title="删除演示记录"
@@ -526,33 +526,33 @@ function detailName(kind: HealthKind,record:any) {
         <form v-if="sheet==='edit'" class="editor-form" @submit.prevent="formSave">
           <p class="form-intro">填写你知道的内容即可，之后还可以修改。</p>
           <template v-if="editKind==='concern'">
-            <label>关注事项名称 <span>*</span><input v-model="draft.name" maxlength="160" required placeholder="例如：睡眠调整"/></label>
+            <label><span class="field-label">关注事项名称 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.name" maxlength="160" required placeholder="例如：睡眠调整"/></label>
             <label>情况说明<textarea v-model="draft.summary" rows="3" placeholder="为什么想持续关注这件事？"/></label>
             <label>当前状态<select v-model="draft.status"><option value="active">持续关注</option><option value="inactive">已结束</option></select></label>
             <div class="form-two"><label>开始日期<input v-model="draft.onsetDate" type="date"/></label><label>结束日期<input v-model="draft.resolvedDate" type="date"/></label></div>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='metric'">
-            <label>指标名称 <span>*</span><input v-model="draft.name" maxlength="160" required placeholder="例如：静息心率"/></label>
+            <label><span class="field-label">指标名称 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.name" maxlength="160" required placeholder="例如：静息心率"/></label>
             <label>记录方式 <select v-model="draft.valueType"><option v-for="[value,name] in valueTypes" :key="value" :value="value">{{ name }}</option></select></label>
             <label v-if="draft.valueType==='number'">单位<input v-model="draft.defaultUnit" placeholder="例如：次/分"/></label>
             <p class="helper-copy">同一种指标只需建一次，之后可以持续记录。</p>
           </template>
           <template v-else-if="editKind==='observation'">
-            <label>记录哪一项 <span>*</span><select v-model="draft.metricId"><option v-for="m in demo.metrics" :key="m.id" :value="m.id">{{ m.name }}</option></select></label>
-            <template v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='boolean'"><label>本次结果 <span>*</span><select v-model="draft.value"><option value="">请选择</option><option value="true">是</option><option value="false">否</option></select></label></template>
-            <template v-else><label>记录结果 <span>*</span><input v-model="draft.value" :type="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'number':'text'" :step="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'any':undefined" required placeholder="填写此次记录"/></label></template>
+            <label><span class="field-label">记录哪一项 <span class="required-mark" aria-hidden="true">*</span></span><select v-model="draft.metricId"><option v-for="m in demo.metrics" :key="m.id" :value="m.id">{{ m.name }}</option></select></label>
+            <template v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='boolean'"><label><span class="field-label">本次结果 <span class="required-mark" aria-hidden="true">*</span></span><select v-model="draft.value"><option value="">请选择</option><option value="true">是</option><option value="false">否</option></select></label></template>
+            <template v-else><label><span class="field-label">记录结果 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.value" :type="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'number':'text'" :step="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'any':undefined" required placeholder="填写此次记录"/></label></template>
             <label v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'">单位<input v-model="draft.unit" :placeholder="demo.metrics.find(m=>m.id===draft.metricId)?.defaultUnit||'选填'"/></label>
-            <label>测量日期 <span>*</span><input v-model="draft.observedDate" type="date" required/></label>
+            <label><span class="field-label">测量日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.observedDate" type="date" required/></label>
             <div class="form-two"><label>记录状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label><label>原报告标记<select v-model="draft.interpretation"><option v-for="[value,name] in interpretationTypes" :key="value" :value="value">{{ name }}</option></select></label></div>
             <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>来源说明<input v-model="draft.sourceNote" placeholder="例如：家用设备"/></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='event'">
-            <label>发生了什么 <span>*</span><input v-model="draft.summary" maxlength="200" required placeholder="例如：一次门诊咨询"/></label>
+            <label><span class="field-label">发生了什么 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.summary" maxlength="200" required placeholder="例如：一次门诊咨询"/></label>
             <label>事件类型<select v-model="draft.eventType"><option v-for="[value,name] in eventTypes" :key="value" :value="value">{{ name }}</option></select></label>
-            <label>发生日期 <span>*</span><input v-model="draft.date" type="date" required/></label>
+            <label><span class="field-label">发生日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.date" type="date" required/></label>
             <div class="form-two"><label>开始时间（选填）<input v-model="draft.timeStart" type="time"/></label><label>结束时间（选填）<input v-model="draft.timeEnd" type="time"/></label></div>
             <p class="helper-copy">只记日期也可以；填写时间时，需要同时填写开始和结束时间。</p>
             <label>地点<input v-model="draft.location" placeholder="例如：社区医院"/></label>
@@ -560,30 +560,30 @@ function detailName(kind: HealthKind,record:any) {
             <label>状态<select v-model="draft.status"><option value="active">已记录</option><option value="cancelled">已取消</option></select></label>
           </template>
           <template v-else-if="editKind==='document'">
-            <label>资料名称 <span>*</span><input v-model="draft.title" required placeholder="例如：年度检查报告"/></label>
+            <label><span class="field-label">资料名称 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.title" required placeholder="例如：年度检查报告"/></label>
             <label>资料类型<select v-model="draft.documentType"><option v-for="[value,name] in documentTypes" :key="value" :value="value">{{ name }}</option></select></label>
-            <label>选择文件 <span>*</span><input type="file" accept=".pdf,.png,.jpg,.jpeg" @change="pickFile"/><small>只保留文件名，不读取内容。</small></label>
+            <label><span class="field-label">选择文件 <span class="required-mark" aria-hidden="true">*</span></span><input type="file" accept=".pdf,.png,.jpg,.jpeg" @change="pickFile"/><small>只保留文件名，不读取内容。</small></label>
             <p v-if="draft.fileName" class="file-picked"><FileText :size="16"/>{{ draft.fileName }}</p>
             <div class="form-two"><label>资料日期<input v-model="draft.issuedDate" type="date"/></label><label>出具机构<input v-model="draft.issuerName" placeholder="选填"/></label></div>
             <label>相关健康事件<select v-model="draft.eventId"><option value="">不关联</option><option v-for="e in demo.events" :key="e.id" :value="e.id">{{ e.summary }}</option></select></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='assessment'">
-            <label>评估标题 <span>*</span><input v-model="draft.title" required placeholder="例如：本次检查结果回顾"/></label>
-            <label>评估内容 <span>*</span><textarea v-model="draft.content" rows="4" required placeholder="记录医生意见或经确认的总结，不要混作原始数据"/></label>
-            <div class="form-two"><label>评估日期 <span>*</span><input v-model="draft.assessedDate" required type="date"/></label><label>状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label></div>
+            <label><span class="field-label">评估标题 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.title" required placeholder="例如：本次检查结果回顾"/></label>
+            <label><span class="field-label">评估内容 <span class="required-mark" aria-hidden="true">*</span></span><textarea v-model="draft.content" rows="4" required placeholder="记录医生意见或经确认的总结，不要混作原始数据"/></label>
+            <div class="form-two"><label><span class="field-label">评估日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.assessedDate" required type="date"/></label><label>状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label></div>
             <fieldset class="check-group"><legend>依据哪些记录？</legend><label v-for="d in demo.documents" :key="d.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="d.id"/>{{ d.title }}</label><label v-for="o in demo.observations.slice(0,5)" :key="o.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="o.id"/>{{ observationTitle(o) }}</label></fieldset>
             <label>来源说明<input v-model="draft.sourceNote" placeholder="例如：医生意见、个人整理"/></label>
             <label>补充备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='regimen'">
-            <label>方案名称 <span>*</span><input v-model="draft.name" required placeholder="例如：每周活动计划"/></label>
+            <label><span class="field-label">方案名称 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.name" required placeholder="例如：每周活动计划"/></label>
             <label>方案类型<select v-model="draft.regimenType"><option v-for="[value,name] in regimenTypes" :key="value" :value="value">{{ name }}</option></select></label>
-            <label>怎么执行 <span>*</span><textarea v-model="draft.instructions" rows="3" required placeholder="记录具体可执行的安排"/></label>
+            <label><span class="field-label">怎么执行 <span class="required-mark" aria-hidden="true">*</span></span><textarea v-model="draft.instructions" rows="3" required placeholder="记录具体可执行的安排"/></label>
             <label>状态<select v-model="draft.status"><option v-for="[value,name] in regimenStatuses" :key="value" :value="value">{{ name }}</option></select></label>
             <div class="form-two"><label>开始日期<input v-model="draft.startDate" type="date"/></label><label>结束日期<input v-model="draft.endDate" type="date"/></label></div>
             <label>需要重复提醒吗？<select v-model="draft.recurrence"><option value="none">不重复</option><option value="daily">每天</option><option value="weekly">每周</option></select></label>
-            <label v-if="draft.recurrence!=='none'">首次执行日期 <span>*</span><input v-model="draft.firstDueDate" required type="date"/></label>
+            <label v-if="draft.recurrence!=='none'"><span class="field-label">首次执行日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.firstDueDate" required type="date"/></label>
             <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>方案来源<input v-model="draft.sourceNote" placeholder="例如：个人计划"/></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
