@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref } from 'vue'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, ClipboardCheck, ClipboardList, Clock3, FileHeart,
@@ -7,6 +7,7 @@ import {
   ListChecks, Menu, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, Sparkles,
   Stethoscope, Trash2, TrendingDown, Upload, Utensils, X,
 } from 'lucide-vue-next'
+import { useDemoAgentSession } from './agent-demo'
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
   observationStatuses, observationValue, regimenStatuses, regimenTypes, seedDemo,
@@ -16,7 +17,7 @@ import {
 
 type Tab = 'home' | 'body' | 'food' | 'movement'
 type BodyTab = 'overview' | 'concerns' | 'metrics' | 'timeline' | 'documents' | 'regimens'
-type Sheet = '' | 'edit' | 'import' | 'agent' | 'switcher' | 'account'
+type Sheet = '' | 'edit' | 'import' | 'switcher' | 'account'
 type RecordView = { kind: HealthKind; id: string }
 const navItems = [
   { id: 'home' as Tab, title: '首页', icon: Home },
@@ -53,8 +54,12 @@ const draft = ref<Record<string,any>>({})
 const formError = ref('')
 const search = ref('')
 const notice = ref('')
+const agentSession = useDemoAgentSession()
+const agentOpen = agentSession.open
+const agentMessages = agentSession.messages
 const agentQuestion = ref('')
-const agentReply = ref('')
+const agentThread = ref<HTMLElement | null>(null)
+const agentInput = ref<HTMLTextAreaElement | null>(null)
 const uploadStage = ref<1|2|3>(1)
 const uploadedName = ref('')
 const uploadTitle = ref('')
@@ -230,11 +235,27 @@ function importNext() {
   }
   sheet.value='';notice.value='资料流程演示完成。文件内容没有被读取或上传。';if(uploadConcernId.value)show('concern',uploadConcernId.value);else openBody('documents')
 }
-function sendAgent() {
-  if(!agentQuestion.value.trim())return
-  agentReply.value='这是交互演示。正式版会结合你授权的“'+contextName.value+'”相关资料，列出数据出处，并将建议和已记录的事实分开。这里没有调用 AI，也不会生成真实健康结论。'
+async function sendAgent() {
+  if (!agentSession.send(agentQuestion.value, contextName.value)) return
+  agentQuestion.value = ''
+  await nextTick()
+  if (agentThread.value) agentThread.value.scrollTop = agentThread.value.scrollHeight
+  agentInput.value?.focus()
 }
-function openAgent() {agentReply.value='';agentQuestion.value='';sheet.value='agent'}
+async function openAgent() {
+  agentSession.show()
+  await nextTick()
+  agentInput.value?.focus()
+}
+function closeAgent() { agentSession.hide() }
+async function suggestAgent(question: string) {
+  agentQuestion.value = question
+  await sendAgent()
+}
+function handleEscape() {
+  if (sheet.value) closeSheet()
+  else if (agentOpen.value) closeAgent()
+}
 function labelForKind(kind: HealthKind) {return kindLabel[kind]}
 function detailName(kind: HealthKind,record:any) {
   if(kind==='observation')return observationTitle(record)
@@ -243,7 +264,7 @@ function detailName(kind: HealthKind,record:any) {
 </script>
 
 <template>
-  <div class="aloha-surface health-shell" data-aloha-surface="health" @keydown.esc="closeSheet">
+  <div :class="['aloha-surface', 'health-shell', { 'agent-open': agentOpen }]" data-aloha-surface="health" @keydown.esc="handleEscape">
     <aside class="desktop-sidebar" aria-label="主导航">
       <button type="button" class="sidebar-brand" @click="sheet='switcher'" aria-label="切换应用">
         <span class="brand-mark"><Heart :size="22" fill="currentColor"/></span>
@@ -264,7 +285,7 @@ function detailName(kind: HealthKind,record:any) {
         </button>
         <div class="header-tools">
           <span class="preview-label">体验版本</span>
-          <button class="icon-button" type="button" aria-label="问问 Health" title="问问 Health" @click="openAgent"><Sparkles :size="20"/></button>
+          <button :class="['icon-button', { 'agent-trigger-active': agentOpen }]" type="button" :aria-expanded="agentOpen" aria-controls="health-agent-panel" aria-label="问问 Health" title="问问 Health" @click="openAgent"><Sparkles :size="20"/></button>
           <button class="avatar-button" type="button" aria-label="个人与数据共享" title="个人与数据共享" @click="sheet='account'"><CircleHelp :size="21"/></button>
         </div>
       </header>
@@ -426,12 +447,43 @@ function detailName(kind: HealthKind,record:any) {
         <section v-else class="future-page"><span class="eyebrow">接下来还会逐步完善</span><h1>{{ activeTab==='food'?'饮食管理':'运动管理' }}</h1><p>{{ activeTab==='food'?'把日常饮食记录和身体变化联系起来。':'了解运动频率、训练表现和身体恢复。' }}</p><div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('overview')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
       </main>
     </div>
+
+    <!-- Persistent side workspace: no backdrop, no modal focus trap, no nav reset. -->
+    <aside v-if="agentOpen" id="health-agent-panel" class="agent-dock" aria-label="Health 助手对话">
+      <header class="agent-dock-header">
+        <div class="agent-dock-title"><span class="agent-dock-logo"><Sparkles :size="21"/></span><div><span class="agent-dock-eyebrow">ALOHA Health</span><h2>问问 Health</h2></div></div>
+        <button class="icon-button" type="button" aria-label="收起对话" title="收起对话" @click="closeAgent"><X :size="20"/></button>
+      </header>
+      <div class="agent-dock-context"><span>当前页面：{{ contextName }}</span><span>切换页面后对话保留</span></div>
+      <div ref="agentThread" class="agent-thread" role="log" aria-label="聊天记录" aria-live="polite" aria-relevant="additions">
+        <div v-if="agentMessages.length===0" class="agent-start">
+          <div class="agent-start-icon"><Sparkles :size="26"/></div>
+          <h3>一边查看，一边提问</h3>
+          <p>你可以继续浏览左侧健康记录。这里的对话不会因切换页面而中断。</p>
+          <button class="agent-suggestion" type="button" @click="suggestAgent('最近有哪些变化？')">最近有哪些变化？ <ArrowUpRight :size="16"/></button>
+          <button class="agent-suggestion" type="button" @click="suggestAgent('帮我整理一下资料')">帮我整理一下资料 <ArrowUpRight :size="16"/></button>
+        </div>
+        <div v-for="message in agentMessages" :key="message.id" :class="['agent-message', message.role==='user'?'agent-message-user':'agent-message-assistant']">
+          <div v-if="message.role==='assistant'" class="agent-message-icon"><Sparkles :size="16"/></div>
+          <div class="agent-message-content"><p>{{ message.text }}</p><small v-if="message.role==='user'">提问时查看：{{ message.context }}</small></div>
+        </div>
+      </div>
+      <footer class="agent-dock-footer">
+        <form class="agent-dock-composer" @submit.prevent="sendAgent">
+          <label class="sr-only" for="health-agent-question">向 Health 提问</label>
+          <textarea id="health-agent-question" ref="agentInput" v-model="agentQuestion" rows="2" placeholder="想了解什么？" @keydown.enter.exact.prevent="sendAgent"/>
+          <button class="primary-button agent-send" type="submit" :disabled="!agentQuestion.trim()">发送 <ArrowRight :size="17"/></button>
+        </form>
+        <p class="agent-dock-disclaimer"><ShieldCheck :size="14"/> 当前为演示对话，未接入真实 AI 或健康档案。</p>
+      </footer>
+    </aside>
+
     <nav class="bottom-nav" aria-label="主导航"><button v-for="item in navItems" :key="item.id" :class="{active:activeTab===item.id}" type="button" @click="navigate(item.id)"><component :is="item.icon" :size="22" :stroke-width="1.8"/><span>{{ item.title }}</span></button></nav>
 
     <div v-if="sheet" class="modal-backdrop" @click.self="closeSheet">
-      <section class="drawer" role="dialog" aria-modal="true" :aria-label="sheet==='edit'?'编辑健康记录':sheet==='import'?'整理报告':sheet==='agent'?'问问 Health':'应用菜单'">
+      <section class="drawer" role="dialog" aria-modal="true" :aria-label="sheet==='edit'?'编辑健康记录':sheet==='import'?'整理报告':'应用菜单'">
         <div class="drawer-handle"></div>
-        <header class="drawer-heading"><div><span class="eyebrow">{{ sheet==='edit'?'健康记录':sheet==='import'?'整理一份健康资料':'ALOHA Health' }}</span><h2>{{ sheet==='edit'?(editId?'修改':'添加')+kindLabel[editKind]:sheet==='import'?'整理健康报告':sheet==='agent'?'问问 Health':sheet==='switcher'?'切换应用':'个人与数据共享' }}</h2></div><button class="icon-button" aria-label="关闭" type="button" @click="closeSheet"><X :size="20"/></button></header>
+        <header class="drawer-heading"><div><span class="eyebrow">{{ sheet==='edit'?'健康记录':sheet==='import'?'整理一份健康资料':'ALOHA Health' }}</span><h2>{{ sheet==='edit'?(editId?'修改':'添加')+kindLabel[editKind]:sheet==='import'?'整理健康报告':sheet==='switcher'?'切换应用':'个人与数据共享' }}</h2></div><button class="icon-button" aria-label="关闭" type="button" @click="closeSheet"><X :size="20"/></button></header>
 
         <form v-if="sheet==='edit'" class="editor-form" @submit.prevent="formSave">
           <p class="form-intro">填写你知道的内容即可，之后还可以修改。</p>
@@ -526,15 +578,6 @@ function detailName(kind: HealthKind,record:any) {
           </template>
           <p v-if="formError" class="form-error"><Info :size="16"/>{{ formError }}</p>
           <div class="form-actions"><button class="quiet-button" type="button" @click="uploadStage===1?closeSheet():uploadStage--">{{ uploadStage===1?'取消':'上一步' }}</button><button class="primary-button" type="button" @click="importNext">{{ uploadStage===3?'确认添加':'下一步' }} <ArrowRight :size="17"/></button></div>
-        </div>
-
-        <div v-else-if="sheet==='agent'" class="agent-flow">
-          <div class="agent-welcome"><span class="agent-glow"><Sparkles :size="25"/></span><h3>你可以从这里提问</h3><p>正在查看：{{ contextName }}。正式版本会结合你已授权的记录给出有来源的解释。</p></div>
-          <button class="suggestion" type="button" @click="agentQuestion='最近的健康记录有哪些变化？';sendAgent()">最近有哪些变化？ <ArrowUpRight :size="15"/></button>
-          <button class="suggestion" type="button" @click="agentQuestion='这些资料分别记录了什么？';sendAgent()">帮我整理一下资料 <ArrowUpRight :size="15"/></button>
-          <div v-if="agentReply" class="agent-reply"><Sparkles :size="18"/><span>{{ agentReply }}</span></div>
-          <form class="agent-input" @submit.prevent="sendAgent"><textarea v-model="agentQuestion" rows="3" placeholder="想了解什么？"/><button class="primary-button" type="submit">模拟提问 <ArrowRight :size="16"/></button></form>
-          <p class="privacy-note"><ShieldCheck :size="15"/> 此处为固定演示回复，未接入真实 AI 或健康数据。</p>
         </div>
 
         <div v-else-if="sheet==='switcher'" class="switcher-flow">
