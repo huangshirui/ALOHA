@@ -159,5 +159,14 @@ function onRegionChange(id:string,event:Event) {
 .body-unmapped-item select { border:1px solid var(--health-border);border-radius:var(--health-radius-control);padding:.65rem;background-color:var(--health-surface);font-size:var(--health-type-label);color:var(--health-ink); }
 @media(max-width:75rem) { .body-explorer { grid-template-columns:minmax(0,1fr); } .body-figure-card { max-width:100%; } .body-map-canvas { min-height:23rem; } .body-silhouette { width:min(100%,16rem); } .body-explorer-aside { grid-template-columns:repeat(2,minmax(0,1fr)); } .body-region-card { grid-column:1 / -1; } }
 @media(max-width:47.999rem) { .body-explorer-aside { grid-template-columns:minmax(0,1fr); } .body-region-card { grid-column:auto; } .body-map-canvas { min-height:20rem;margin:var(--aloha-space-3) 0; } .body-silhouette { width:min(100%,14.5rem); } .body-card-heading { flex-direction:column;gap:.4rem; } .body-map-total { align-self:flex-start; } }
+/* Respond to available content width — including the docked Agent panel —
+   instead of relying on the whole viewport width. */
+:global(.body-overview) { container-type:inline-size; }
+@container (max-width: 52rem) {
+  .body-explorer { grid-template-columns:minmax(0,1fr); }
+  .body-explorer-aside { grid-template-columns:minmax(0,1fr); }
+  .body-region-card { grid-column:auto; }
+  .body-map-canvas { min-height:21rem; }
+}
 @media(prefers-reduced-motion:no-preference) { .body-marker-count { transition:transform var(--health-motion) ease; } }
 </style>
