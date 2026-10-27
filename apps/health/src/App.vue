@@ -448,11 +448,27 @@ function detailName(kind: HealthKind,record:any) {
                 <template v-else-if="selected.kind==='regimen'"><p class="body-copy">{{ current.instructions }}</p><dl class="detail-fields"><div><dt>方案类型</dt><dd>{{ labelFrom(regimenTypes,current.regimenType) }}</dd></div><div><dt>安排</dt><dd>{{ current.recurrence==='daily'?'每日':current.recurrence==='weekly'?'每周':'不重复' }}</dd></div><div><dt>首次执行</dt><dd>{{ displayDate(current.firstDueDate) }}</dd></div><div><dt>开始日期</dt><dd>{{ displayDate(current.startDate) }}</dd></div><div><dt>结束日期</dt><dd>{{ displayDate(current.endDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
                 <div class="relation-tags" v-if="current.concernIds?.length"><span class="mini-label">相关健康问题</span><button v-for="cid in current.concernIds" :key="cid" type="button" class="relation-pill" @click="show('concern',cid)"><Link2 :size="13"/>{{ nameOfConcern(cid) }}</button></div>
               </section>
-              <section class="ui-card"><div class="card-heading"><h2>{{ selected.kind==='assessment'?'判断依据':'关联资料' }}</h2></div>
-                <template v-if="selected.kind==='assessment'"><button v-for="id in current.basisIds" :key="id" type="button" class="row-link" @click="show(id.startsWith('d-')||demo.documents.some(d=>d.id===id)?'document':'observation',id)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ demo.documents.find(d=>d.id===id)?.title||observationTitle(demo.observations.find(o=>o.id===id)!) }}</b><small>已关联的依据</small></span><ChevronRight :size="17"/></button><p v-if="!current.basisIds.length" class="empty-inline">还没有关联依据，可以通过“修改”补充。</p></template>
+              <section class="ui-card"><div class="card-heading"><h2>{{ selected.kind==='assessment'?'判断依据':selected.kind==='document'?'由这份资料整理':'关联资料' }}</h2></div>
+                <template v-if="selected.kind==='document'">
+                  <button v-for="o in demo.observations.filter(o=>o.sourceDocumentId===current.id)" :key="o.id"
+                    class="row-link" type="button" @click="show('observation',o.id)">
+                    <span class="list-icon"><ClipboardCheck :size="18"/></span>
+                    <span class="row-main"><b>{{ observationTitle(o) }}</b><small>{{ labelFrom(observationStatuses,o.status) }} · {{ displayDate(o.observedDate) }}</small></span>
+                    <ChevronRight :size="17"/>
+                  </button>
+                  <button v-if="current.eventId" class="row-link" type="button" @click="show('event',current.eventId)">
+                    <span class="list-icon"><CalendarDays :size="18"/></span>
+                    <span class="row-main"><b>{{ demo.events.find(e=>e.id===current.eventId)?.summary || '相关事件' }}</b><small>相关健康事件</small></span>
+                    <ChevronRight :size="17"/>
+                  </button>
+                  <p v-if="!demo.observations.some(o=>o.sourceDocumentId===current.id)&&!current.eventId" class="empty-inline">
+                    暂无从这份资料整理出的记录。你可以保留原始资料，稍后再补充。
+                  </p>
+                </template>
+                <template v-else-if="selected.kind==='assessment'"><button v-for="id in current.basisIds" :key="id" type="button" class="row-link" @click="show(id.startsWith('d-')||demo.documents.some(d=>d.id===id)?'document':'observation',id)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ demo.documents.find(d=>d.id===id)?.title||observationTitle(demo.observations.find(o=>o.id===id)!) }}</b><small>已关联的依据</small></span><ChevronRight :size="17"/></button><p v-if="!current.basisIds.length" class="empty-inline">还没有关联依据，可以通过“修改”补充。</p></template>
                 <template v-else-if="selected.kind==='observation'&&current.sourceDocumentId"><button class="row-link" type="button" @click="show('document',current.sourceDocumentId)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ nameOfDocument(current.sourceDocumentId) }}</b><small>原始资料</small></span><ChevronRight :size="17"/></button></template>
                 <template v-else-if="selected.kind==='regimen'&&current.sourceDocumentId"><button class="row-link" type="button" @click="show('document',current.sourceDocumentId)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ nameOfDocument(current.sourceDocumentId) }}</b><small>方案来源</small></span><ChevronRight :size="17"/></button></template>
-                <p v-else-if="selected.kind!=='assessment'" class="empty-inline">这里会显示与当前记录有关的资料和记录。</p>
+                <p v-else-if="selected.kind!=='assessment'&&selected.kind!=='document'" class="empty-inline">这里会显示与当前记录有关的资料和记录。</p>
               </section>
             </div>
           </template>
