@@ -203,10 +203,15 @@ function onRegionChange(id:string,event:Event) {
   box-shadow:0 0 0 2px var(--health-surface);
   pointer-events:none;
 }
-.body-region-marker:hover .body-hotspot-dot,
 .body-region-marker:focus-visible .body-hotspot-dot {
   box-shadow:0 0 0 5px color-mix(in srgb,var(--health-brand) 25%,transparent),
              0 0 0 11px color-mix(in srgb,var(--health-brand) 9%,transparent);
+}
+@media (hover:hover) and (pointer:fine) {
+  .body-region-marker:hover .body-hotspot-dot {
+    box-shadow:0 0 0 5px color-mix(in srgb,var(--health-brand) 25%,transparent),
+               0 0 0 11px color-mix(in srgb,var(--health-brand) 9%,transparent);
+  }
 }
 .body-region-marker.selected .body-hotspot-dot {
   box-shadow:0 0 0 4px color-mix(in srgb,var(--health-brand) 24%,transparent),
