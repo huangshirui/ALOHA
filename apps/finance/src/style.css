@@ -1,0 +1,16 @@
+.foundation-card h1 {
+  margin: var(--aloha-space-2) 0 var(--aloha-space-4);
+  font-size: clamp(2rem, 7vw, 3.5rem);
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+}
+
+.foundation-card p,
+.foundation-grid p {
+  margin-bottom: 0;
+  line-height: 1.65;
+}
+
+.foundation-grid {
+  margin-top: var(--aloha-space-5);
+}

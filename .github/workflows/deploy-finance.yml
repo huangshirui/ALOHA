@@ -1,0 +1,43 @@
+name: Deploy Finance PWA Preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: aloha-finance-preview-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-finance:
+    name: Verify and deploy Finance preview
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Use repository npm version
+        run: npm install --global npm@10.9.2
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+      - name: Typecheck Finance
+        run: npm run typecheck -w @aloha/finance
+      - name: Build Finance
+        run: npm run build:finance
+      - name: Deploy Finance Worker preview
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/finance
+          command: deploy
+      - name: Production-route note
+        run: |
+          echo "Finance is deployed only to its Worker preview endpoint."
+          echo "The aloha.aisr.online/finance/* production route is intentionally not activated yet."

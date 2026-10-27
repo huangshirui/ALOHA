@@ -1,0 +1,142 @@
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  width: min(100%, var(--aloha-content-reading));
+  margin: 0 auto;
+  background: var(--aloha-color-surface);
+}
+
+.header,
+.composer {
+  display: grid;
+  align-items: center;
+  gap: var(--aloha-space-3);
+  padding: max(var(--aloha-space-3), env(safe-area-inset-top)) var(--aloha-space-4) var(--aloha-space-3);
+}
+
+.header {
+  grid-template-columns: var(--aloha-control-sm) 1fr var(--aloha-control-sm);
+  text-align: center;
+}
+
+.icon-button {
+  border: 0;
+  border-radius: var(--aloha-radius-pill);
+  background: transparent;
+  min-height: var(--aloha-control-sm);
+  cursor: pointer;
+  color: var(--aloha-color-text);
+}
+
+.icon-button:hover {
+  background: var(--aloha-accent-soft);
+}
+
+.stage {
+  display: flex;
+  align-items: center;
+  padding: var(--aloha-space-6);
+}
+
+.work-surface {
+  width: 100%;
+  display: grid;
+  gap: var(--aloha-space-6);
+}
+
+.status,
+.surface-label,
+.placeholder-text,
+.error-text,
+.source-text,
+.output-text {
+  margin: 0;
+}
+
+.status,
+.surface-label,
+.placeholder-text,
+.source-text {
+  color: var(--aloha-color-text-muted);
+}
+
+.status,
+.surface-label {
+  font-size: 0.875rem;
+}
+
+.surface-label {
+  margin-bottom: var(--aloha-space-2);
+}
+
+.surface-section {
+  border-top: 1px solid var(--aloha-color-border);
+  padding-top: var(--aloha-space-4);
+}
+
+.source-text,
+.output-text,
+.error-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.output-text {
+  color: var(--aloha-color-text);
+}
+
+.error-text {
+  margin-top: var(--aloha-space-2);
+  color: var(--aloha-color-danger);
+}
+
+.composer {
+  grid-template-columns: 1fr auto;
+  padding: var(--aloha-space-3) var(--aloha-space-4) max(var(--aloha-space-3), env(safe-area-inset-bottom));
+}
+
+.composer input {
+  width: 100%;
+  min-height: var(--aloha-control-md);
+  border: 1px solid var(--aloha-color-border);
+  border-radius: var(--aloha-radius-pill);
+  background: var(--aloha-color-surface);
+  color: var(--aloha-color-text);
+  padding: 0 var(--aloha-space-4);
+}
+
+.composer button {
+  min-height: var(--aloha-control-md);
+  border: 1px solid var(--aloha-color-border);
+  border-radius: var(--aloha-radius-pill);
+  background: transparent;
+  color: var(--aloha-color-text);
+  padding: 0 var(--aloha-space-4);
+  cursor: pointer;
+}
+
+.composer button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+@media (min-width: 48rem) {
+  .header,
+  .composer {
+    padding-left: var(--aloha-space-6);
+    padding-right: var(--aloha-space-6);
+  }
+
+  .stage {
+    padding: var(--aloha-space-8);
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .stage {
+    align-items: flex-start;
+    padding-top: var(--aloha-space-4);
+  }
+}

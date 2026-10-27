@@ -1,0 +1,78 @@
+:root {
+  color-scheme: light;
+
+  --aloha-font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --aloha-color-canvas: #f7f8fb;
+  --aloha-color-surface: #ffffff;
+  --aloha-color-surface-muted: #f1f3f7;
+  --aloha-color-text: #172033;
+  --aloha-color-text-muted: #697386;
+  --aloha-color-border: #e3e7ef;
+  --aloha-color-focus: #2f66e8;
+  --aloha-color-danger: #c43d4d;
+
+  --aloha-accent: #2859d8;
+  --aloha-accent-strong: #183b8f;
+  --aloha-accent-soft: #edf3ff;
+
+  --aloha-space-1: 0.25rem;
+  --aloha-space-2: 0.5rem;
+  --aloha-space-3: 0.75rem;
+  --aloha-space-4: 1rem;
+  --aloha-space-5: 1.25rem;
+  --aloha-space-6: 1.5rem;
+  --aloha-space-8: 2rem;
+  --aloha-space-10: 2.5rem;
+  --aloha-space-12: 3rem;
+
+  --aloha-radius-sm: 0.75rem;
+  --aloha-radius-md: 1rem;
+  --aloha-radius-lg: 1.5rem;
+  --aloha-radius-pill: 999px;
+
+  --aloha-shadow-card: 0 0.5rem 2rem rgb(24 36 61 / 0.07);
+  --aloha-shadow-floating: 0 0.75rem 2.5rem rgb(24 36 61 / 0.12);
+
+  --aloha-control-sm: 2.5rem;
+  --aloha-control-md: 3rem;
+  --aloha-control-lg: 3.5rem;
+
+  --aloha-content-reading: 56rem;
+  --aloha-content-wide: 90rem;
+
+  --aloha-motion-fast: 120ms;
+  --aloha-motion-normal: 220ms;
+  --aloha-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+[data-aloha-surface='assistant'] {
+  --aloha-accent: #2859d8;
+  --aloha-accent-strong: #183b8f;
+  --aloha-accent-soft: #edf3ff;
+}
+
+[data-aloha-surface='health'] {
+  --aloha-accent: #168a5b;
+  --aloha-accent-strong: #0c6040;
+  --aloha-accent-soft: #eaf8f1;
+}
+
+[data-aloha-surface='finance'] {
+  --aloha-accent: #b86b00;
+  --aloha-accent-strong: #754500;
+  --aloha-accent-soft: #fff4df;
+}
+
+[data-aloha-surface='things'] {
+  --aloha-accent: #6353d9;
+  --aloha-accent-strong: #40339f;
+  --aloha-accent-soft: #f0eeff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --aloha-motion-fast: 0ms;
+    --aloha-motion-normal: 0ms;
+  }
+}
