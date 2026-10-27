@@ -6,7 +6,7 @@ import {
   X
 } from 'lucide-vue-next'
 
-export interface AlohaAppLink {
+interface AlohaAppLink {
   id: string
   name: string
   description: string
