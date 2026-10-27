@@ -2,7 +2,7 @@
 import { computed, nextTick, ref } from 'vue'
 import { ChevronRight, HeartPulse, Info, MapPin, CircleDot } from 'lucide-vue-next'
 import {
-  bodyRegions, concernHotspots, concernsForRegion, normalizedPoint, unmappedConcerns,
+  bodyRegions, concernHotspots, concernsForRegion, normalizedPoint, isPointOnBody, unmappedConcerns,
   type BodyMapBinding, type BodyMapConcern, type BodyPoint, type BodyRegionId,
 } from '../body-map'
 
@@ -26,6 +26,7 @@ const mappedRegions = computed(()=>bodyRegions.filter(region=>concernsForRegion(
 const hotspots = computed(()=>concernHotspots(props.concerns,props.bindings))
 const locatingConcernId=ref<string|null>(null)
 const pendingPoint=ref<BodyPoint|null>(null)
+const positionError=ref('')
 const figureEl=ref<HTMLElement|null>(null)
 const regionCardEl=ref<HTMLElement|null>(null)
 const locatingConcernName=computed(()=>props.concerns.find(c=>c.id===locatingConcernId.value)?.name||'健康问题')
@@ -38,20 +39,29 @@ async function selectHotspot(id:BodyRegionId) {
 async function startPositioning(id:string) {
   locatingConcernId.value=id
   pendingPoint.value=null
+  positionError.value=''
   await nextTick()
   figureEl.value?.scrollIntoView({block:'center',behavior:'smooth'})
 }
 function pickMapPoint(event:MouseEvent) {
   const rect=figureEl.value?.getBoundingClientRect()
   if(!rect || !locatingConcernId.value) return
-  pendingPoint.value=normalizedPoint(
+  const point=normalizedPoint(
     (event.clientX-rect.left)/rect.width,
     (event.clientY-rect.top)/rect.height,
   )
+  if(!isPointOnBody(point)) {
+    positionError.value='请点在人体轮廓内部，不能标记到背景空白。'
+    pendingPoint.value=null
+    return
+  }
+  positionError.value=''
+  pendingPoint.value=point
 }
 function cancelPositioning() {
   locatingConcernId.value=null
   pendingPoint.value=null
+  positionError.value=''
 }
 function confirmPositioning() {
   if(!locatingConcernId.value||!pendingPoint.value) return
@@ -76,18 +86,19 @@ function onRegionChange(id:string,event:Event) {
         <span v-if="mappedRegions" class="body-map-total">{{ mappedRegions }} 处标记</span>
       </div>
       <div v-if="locatingConcernId" class="body-position-instruction" role="status">
-        <span>为「{{ locatingConcernName }}」标记位置。请点击人体上的一个位置。</span>
+        <span>为「{{ locatingConcernName }}」标记位置。点选人体上的位置，再确认。</span>
         <div class="body-position-actions">
           <button type="button" class="quiet-button" @click="cancelPositioning">取消</button>
           <button class="primary-button" type="button" :disabled="!pendingPoint" @click="confirmPositioning">确认位置</button>
         </div>
+        <p v-if="positionError" class="body-position-error" role="alert">{{ positionError }}</p>
       </div>
       <div class="body-map-canvas">
         <div ref="figureEl" class="body-silhouette" role="group" aria-label="身体健康问题位置图">
           <!-- Static artwork and interactive coordinate layer share one immutable
-               340×520 aspect ratio; SVG never stretches to fit a different box. -->
+               244×475 cropped source viewBox; original paths are unchanged. -->
           <img class="body-artwork" :src="bodyArtSrc" alt=""
-            width="340" height="520" draggable="false"/>
+            width="244" height="475" draggable="false"/>
           <!-- One discreet dot per concerned location. Larger invisible hit area
                supports touch; the halo appears on hover/focus and selection. -->
           <button v-for="hotspot in hotspots" :key="hotspot.regionId"
@@ -109,7 +120,7 @@ function onRegionChange(id:string,event:Event) {
             aria-label="待确认的健康问题位置"></span>
         </div>
       </div>
-      <p class="body-map-note"><Info :size="14"/> 小圆点表示已关联的关注位置，点击可查看详情，并不代表医学诊断。</p>
+      <p class="body-map-note"><Info :size="14"/> 小点表示关注位置。桌面悬停、手机点按后会高亮；不代表医学诊断。</p>
     </section>
 
     <aside class="body-explorer-aside" aria-label="身体图关联的健康问题">
@@ -187,12 +198,12 @@ function onRegionChange(id:string,event:Event) {
   border-radius:var(--health-radius-control);
   background:var(--health-surface);
 }
-.body-silhouette { position:relative;width:min(100%,21rem);aspect-ratio:340 / 520;flex:none; }
+.body-silhouette { position:relative;width:min(100%,15rem);aspect-ratio:244 / 475;flex:none; }
 .body-artwork { display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none; }
 /* A 42px invisible touch target protects the tiny 8px visual dot. */
 .body-region-marker {
   position:absolute;display:grid;place-items:center;z-index:2;
-  width:2.625rem;height:2.625rem;
+  width:2.75rem;height:2.75rem;
   transform:translate(-50%,-50%);padding:0;border:0;
   background:transparent;border-radius:50%;cursor:pointer;
   -webkit-tap-highlight-color:transparent;
@@ -204,18 +215,18 @@ function onRegionChange(id:string,event:Event) {
   pointer-events:none;
 }
 .body-region-marker:focus-visible .body-hotspot-dot {
-  box-shadow:0 0 0 5px color-mix(in srgb,var(--health-brand) 25%,transparent),
-             0 0 0 11px color-mix(in srgb,var(--health-brand) 9%,transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--health-brand) 23%,transparent),
+             0 0 0 8px color-mix(in srgb,var(--health-brand) 8%,transparent);
 }
 @media (hover:hover) and (pointer:fine) {
   .body-region-marker:hover .body-hotspot-dot {
-    box-shadow:0 0 0 5px color-mix(in srgb,var(--health-brand) 25%,transparent),
-               0 0 0 11px color-mix(in srgb,var(--health-brand) 9%,transparent);
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--health-brand) 23%,transparent),
+               0 0 0 8px color-mix(in srgb,var(--health-brand) 8%,transparent);
   }
 }
 .body-region-marker.selected .body-hotspot-dot {
-  box-shadow:0 0 0 4px color-mix(in srgb,var(--health-brand) 24%,transparent),
-             0 0 0 8px color-mix(in srgb,var(--health-brand) 8%,transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--health-brand) 24%,transparent),
+             0 0 0 7px color-mix(in srgb,var(--health-brand) 8%,transparent);
 }
 .body-region-marker:focus-visible { outline:2px solid var(--health-brand);outline-offset:1px; }
 .body-map-position-layer {
@@ -237,6 +248,7 @@ function onRegionChange(id:string,event:Event) {
              0 0 0 13px color-mix(in srgb,var(--health-brand) 10%,transparent);
 }
 .body-position-instruction { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.55rem;padding:.7rem .8rem;margin-top:.5rem;border:1px solid var(--health-brand);border-radius:var(--health-radius-control);background:var(--health-brand-subtle);color:var(--health-brand-strong);font-size:var(--health-type-label); }
+.body-position-error { width:100%;margin:0;color:var(--health-danger);font-size:var(--health-type-caption); }
 .body-position-actions { display:flex;align-items:center;gap:.4rem; }
 .body-position-actions button { min-height:2.3rem; }
 .body-position-row { display:flex;align-items:center;justify-content:space-between;gap:.4rem;margin:.3rem 0;padding:.2rem 0; }
@@ -259,13 +271,13 @@ function onRegionChange(id:string,event:Event) {
 @container (max-width: 51rem) {
   .body-explorer { grid-template-columns:minmax(0,1fr); }
   .body-map-canvas { min-height:21rem; }
-  .body-silhouette { width:min(100%,17rem); }
+  .body-silhouette { width:min(100%,14rem); }
 }
 /* A phone always stacks, even if a device has a wide browser viewport in landscape. */
 @media (max-width:47.999rem) {
   .body-explorer { grid-template-columns:minmax(0,1fr); }
   .body-map-canvas { min-height:19rem;margin:var(--aloha-space-2) 0; }
-  .body-silhouette { width:min(100%,14.5rem); }
+  .body-silhouette { width:min(100%,13.5rem); }
   .body-card-heading { flex-direction:column;gap:.4rem; }
   .body-map-total { align-self:flex-start; }
 }
