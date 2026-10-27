@@ -1,0 +1,185 @@
+/**
+ * ALOHA Health UI system.
+ *
+ * Global typography originates in @aloha/design-tokens.
+ * Health-specific aliases and density roles live in tokens.css.
+ * All Health screens share this compact rhythm; screen-specific layout stays in style.css.
+ */
+.health-shell {
+  font-size:var(--health-type-body);
+  line-height:var(--health-leading-body);
+}
+.health-shell.compact-density {
+  --health-card-padding:var(--aloha-space-3);
+  --health-page-gap:var(--aloha-space-3);
+  --health-row-pad-block:0.43rem;
+  --health-row-icon:2rem;
+  --health-content-top:var(--aloha-space-2);
+  --health-tab-gap:var(--aloha-space-4);
+}
+
+/* Shared screen surfaces: no individual screen declares a new heading scale. */
+.health-shell .content {
+  padding-top:var(--health-content-top);
+}
+.health-shell .dashboard-layout,
+.health-shell .two-columns,
+.health-shell .detail-columns,
+.health-shell .list-panel {
+  gap:var(--health-page-gap);
+}
+.health-shell .ui-card {
+  padding:var(--health-card-padding);
+}
+.health-shell .hero-card { padding:var(--health-card-padding); min-height:15rem; }
+.health-shell .card-heading {
+  margin-bottom:var(--aloha-space-3);
+  gap:var(--aloha-space-3);
+}
+.health-shell .card-heading h2,
+.health-shell .ui-card > h2,
+.health-shell .future-card h2 {
+  font-size:var(--health-type-section);
+  line-height:var(--health-leading-tight);
+  letter-spacing:-.015em;
+  font-weight:680;
+}
+.health-shell .card-heading .eyebrow,
+.health-shell .eyebrow {
+  font-size:var(--health-type-caption);
+  letter-spacing:0;
+  line-height:1.4;
+}
+.health-shell .body-copy,
+.health-shell .future-card p,
+.health-shell .agent-start p,
+.health-shell .helper-copy {
+  font-size:var(--health-type-body);
+  line-height:var(--health-leading-body);
+}
+
+/* Lists, item titles and leading controls share a single size and spacing. */
+.health-shell .list-row {
+  min-height:3.8rem;
+  gap:var(--aloha-space-3);
+  padding:var(--health-row-pad-block) var(--aloha-space-3);
+}
+.health-shell .row-link {
+  min-height:3.65rem;
+  gap:var(--aloha-space-3);
+  padding:var(--health-row-pad-block) 0;
+}
+.health-shell .row-main b,
+.health-shell .list-row .row-main b,
+.health-shell .task-line .row-main b {
+  font-size:var(--health-type-body);
+  line-height:1.42;
+  font-weight:650;
+}
+.health-shell .row-main small {
+  font-size:var(--health-type-caption);
+  line-height:1.4;
+}
+.health-shell .list-icon {
+  width:var(--health-row-icon);
+  height:var(--health-row-icon);
+  border-radius:var(--health-radius-control);
+}
+.health-shell .list-value {
+  font-size:var(--health-type-body);
+  line-height:var(--health-leading-tight);
+}
+.health-shell .status-chip,
+.health-shell .quiet-caption,
+.health-shell .mini-label,
+.health-shell .below-hint {
+  font-size:var(--health-type-caption);
+}
+
+/* Standard one-line subnavigation and contextual search/action spacing. */
+.health-shell .sub-navigation {
+  gap:var(--health-tab-gap);
+  margin-bottom:var(--health-page-gap);
+}
+.health-shell .sub-navigation button {
+  padding:.65rem .12rem;
+  font-size:var(--health-type-label);
+  line-height:var(--health-leading-tight);
+}
+.health-shell .list-toolbar {
+  gap:var(--aloha-space-3);
+  margin-bottom:var(--aloha-space-3);
+}
+.health-shell .search-field,
+.health-shell .list-toolbar .primary-button {
+  min-height:var(--aloha-control-sm);
+}
+.health-shell .search-field input,
+.health-shell .primary-button,
+.health-shell .quiet-button,
+.health-shell .soft-button,
+.health-shell .inline-link {
+  font-size:var(--health-type-label);
+}
+.health-shell .primary-button,
+.health-shell .quiet-button,
+.health-shell .soft-button {
+  min-height:var(--aloha-control-sm);
+  padding:.45rem .85rem;
+}
+.health-shell .metric-card {
+  padding:var(--aloha-space-3);
+  gap:.16rem;
+}
+.health-shell .metric-card strong,
+.health-shell .metric-hero strong {
+  font-size:var(--health-type-metric);
+  line-height:var(--health-leading-tight);
+  font-weight:720;
+}
+.health-shell .metric-card > span,
+.health-shell .metric-card > small,
+.health-shell .hero-head,
+.health-shell .hero-main p,
+.health-shell .hero-stats span {
+  font-size:var(--health-type-caption);
+}
+.health-shell .hero-main h2 {
+  font-size:var(--health-type-page);
+  line-height:var(--health-leading-tight);
+}
+.health-shell .hero-watermark {
+  width:4rem;
+  height:4rem;
+}
+
+/* Form typography: detail drawers use the exact same tokens as regular screens. */
+.health-shell .drawer-heading h2 {
+  font-size:var(--health-type-page);
+  line-height:var(--health-leading-tight);
+}
+.health-shell .editor-form > label,
+.health-shell .editor-form .form-two label,
+.health-shell .plain-label,
+.health-shell .check-group legend {
+  font-size:var(--health-type-label);
+}
+.health-shell .editor-form input:not([type=checkbox]),
+.health-shell .editor-form select,
+.health-shell .editor-form textarea,
+.health-shell .plain-label input,
+.health-shell .plain-label select,
+.health-shell .agent-dock-composer textarea {
+  font-size:var(--health-type-body);
+}
+.health-shell .detail-fields dt,
+.health-shell .detail-fields dd {
+  font-size:var(--health-type-label);
+}
+
+/* Small screens use the same hierarchy; density adjusts spacing, not readability. */
+@media (max-width:47.999rem) {
+  .health-shell .content { padding-top:var(--health-content-top); }
+  .health-shell .list-row { min-height:3.7rem; }
+  .health-shell .row-link { min-height:3.5rem; }
+}
