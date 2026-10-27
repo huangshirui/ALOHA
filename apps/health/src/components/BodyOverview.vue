@@ -232,33 +232,58 @@ function onRegionChange(id:string,event:Event) {
 .body-silhouette { position:relative;width:min(100%,19.5rem);aspect-ratio:320 / 520; }
 .body-silhouette svg { display:block;height:100%;width:100%;overflow:visible; }
 .body-outline { fill:none;stroke:var(--health-ink);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round; }
+/* A 42px invisible touch target protects the tiny 8px visual dot. */
 .body-region-marker {
-  position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:.17rem;min-width:2.65rem;min-height:2.85rem;
-  transform:translate(-50%,-50%);padding:.14rem .18rem;border:0;
-  background:transparent;color:var(--health-muted);
+  position:absolute;display:grid;place-items:center;z-index:2;
+  width:2.625rem;height:2.625rem;
+  transform:translate(-50%,-50%);padding:0;border:0;
+  background:transparent;border-radius:50%;cursor:pointer;
+  -webkit-tap-highlight-color:transparent;
 }
-.body-marker-count {
-  display:grid;place-items:center;width:1.85rem;height:1.85rem;
-  border:1.5px solid var(--health-border);border-radius:50%;
-  background:var(--health-surface);box-shadow:var(--health-shadow-card);
-  color:var(--health-muted);font-size:var(--health-type-label);font-weight:750;line-height:1;
+.body-hotspot-dot {
+  display:block;width:.5rem;height:.5rem;border-radius:50%;
+  background:var(--health-brand);border:1px solid var(--health-surface);
+  box-shadow:0 0 0 2px var(--health-surface);
+  pointer-events:none;
 }
-.body-region-marker.populated .body-marker-count { background:var(--health-brand);border-color:var(--health-brand);color:var(--health-surface); }
-.body-region-marker.selected .body-marker-count { outline:3px solid color-mix(in srgb,var(--health-brand) 37%,transparent);outline-offset:2px; }
-.body-region-marker:hover .body-marker-count { transform:scale(1.08); }
-.body-region-marker:focus-visible { outline:2px solid var(--health-brand);outline-offset:4px;border-radius:var(--health-radius-control); }
-.body-marker-name { display:block;padding:.08rem .25rem;background:var(--health-surface);border-radius:var(--health-radius-pill);font-size:.66rem;font-weight:680;white-space:nowrap;line-height:1.3; }
-.body-region-marker:not(.selected):not(.populated) .body-marker-name { display:none; }
-.body-region-marker.selected .body-marker-name { color:var(--health-brand-strong); }
-.body-map-key { display:flex;gap:.45rem .65rem;align-items:center;flex-wrap:wrap;font-size:var(--health-type-caption);color:var(--health-muted); }
-.body-key-dot { width:.58rem;height:.58rem;border-radius:50%;background:var(--health-surface);border:1px solid var(--health-border); }
-.body-key-dot.active { background:var(--health-brand);border-color:var(--health-brand); }
-.body-key-outline { width:.64rem;height:.64rem;border-radius:50%;border:2px solid var(--health-brand); }
+.body-region-marker:hover .body-hotspot-dot,
+.body-region-marker:focus-visible .body-hotspot-dot {
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--health-brand) 25%,transparent),
+             0 0 0 11px color-mix(in srgb,var(--health-brand) 9%,transparent);
+}
+.body-region-marker.selected .body-hotspot-dot {
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--health-brand) 24%,transparent),
+             0 0 0 8px color-mix(in srgb,var(--health-brand) 8%,transparent);
+}
+.body-region-marker:focus-visible { outline:2px solid var(--health-brand);outline-offset:1px; }
+.body-map-position-layer {
+  position:absolute;inset:0;z-index:4;width:100%;height:100%;
+  border:0;background:color-mix(in srgb,var(--health-brand-subtle) 13%,transparent);
+  border-radius:var(--health-radius-control);cursor:crosshair;
+  display:grid;place-items:end center;padding:var(--aloha-space-2);
+}
+.body-map-position-layer span {
+  background:var(--health-surface);color:var(--health-brand-strong);
+  padding:.32rem .6rem;border-radius:var(--health-radius-pill);
+  font-size:var(--health-type-caption);pointer-events:none;
+}
+.body-pending-dot {
+  position:absolute;z-index:5;display:block;pointer-events:none;
+  width:.65rem;height:.65rem;transform:translate(-50%,-50%);
+  border-radius:50%;background:var(--health-brand);
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--health-brand) 25%,transparent),
+             0 0 0 13px color-mix(in srgb,var(--health-brand) 10%,transparent);
+}
+.body-position-instruction { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.55rem;padding:.7rem .8rem;margin-top:.5rem;border:1px solid var(--health-brand);border-radius:var(--health-radius-control);background:var(--health-brand-subtle);color:var(--health-brand-strong);font-size:var(--health-type-label); }
+.body-position-actions { display:flex;align-items:center;gap:.4rem; }
+.body-position-actions button { min-height:2.3rem; }
+.body-position-row { display:flex;align-items:center;justify-content:space-between;gap:.4rem;margin:.3rem 0;padding:.2rem 0; }
+.body-position-row span { color:var(--health-muted);font-size:var(--health-type-caption); }
+.body-position-row .inline-link { font-size:var(--health-type-caption); }
 .body-map-note { display:flex;align-items:flex-start;gap:.35rem;margin:.65rem 0 0;color:var(--health-muted);font-size:var(--health-type-caption);line-height:1.5; }
 .body-map-note svg { flex:none;margin-top:.12rem; }
 .body-explorer-aside { display:grid;gap:var(--health-page-gap); }
-.body-region-card { min-height:11rem; }
+.body-region-card { min-height:11rem;scroll-margin-top:5rem; }
 .body-region-card-heading { margin-bottom:var(--aloha-space-3); }
 .body-region-card-heading .status-chip { font-size:.67rem; }
 .body-region-empty { margin:1rem 0 0;font-size:var(--health-type-body);color:var(--health-muted);line-height:1.65; }
@@ -282,5 +307,7 @@ function onRegionChange(id:string,event:Event) {
   .body-card-heading { flex-direction:column;gap:.4rem; }
   .body-map-total { align-self:flex-start; }
 }
-@media(prefers-reduced-motion:no-preference) { .body-marker-count { transition:transform var(--health-motion) ease; } }
+@media(prefers-reduced-motion:no-preference) {
+  .body-hotspot-dot { transition:box-shadow var(--health-motion) ease; }
+}
 </style>
