@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { ChevronRight, HeartPulse, Info, MapPin, CircleDot } from 'lucide-vue-next'
 import {
-  bodyRegions, concernsForRegion, unmappedConcerns,
-  type BodyMapBinding, type BodyMapConcern, type BodyRegionId,
+  bodyRegions, concernHotspots, concernsForRegion, normalizedPoint, unmappedConcerns,
+  type BodyMapBinding, type BodyMapConcern, type BodyPoint, type BodyRegionId,
 } from '../body-map'
 
 const props = defineProps<{
@@ -15,12 +15,49 @@ const emit = defineEmits<{
   selectRegion: [regionId:BodyRegionId]
   openConcern: [concernId:string]
   assign: [concernId:string,regionId:BodyRegionId|'']
+  placePoint: [concernId:string,point:BodyPoint]
 }>()
 const selected = computed(()=>bodyRegions.find(region=>region.id===props.selectedRegion)!)
 const inRegion = computed(()=>concernsForRegion(props.concerns,props.bindings,props.selectedRegion))
 const unassigned = computed(()=>unmappedConcerns(props.concerns,props.bindings))
 const activeConcerns = computed(()=>props.concerns.filter(c=>c.status==='active'))
 const mappedRegions = computed(()=>bodyRegions.filter(region=>concernsForRegion(activeConcerns.value,props.bindings,region.id).length>0).length)
+const hotspots = computed(()=>concernHotspots(props.concerns,props.bindings))
+const locatingConcernId=ref<string|null>(null)
+const pendingPoint=ref<BodyPoint|null>(null)
+const figureEl=ref<HTMLElement|null>(null)
+const regionCardEl=ref<HTMLElement|null>(null)
+const locatingConcernName=computed(()=>props.concerns.find(c=>c.id===locatingConcernId.value)?.name||'健康问题')
+async function selectHotspot(id:BodyRegionId) {
+  emit('selectRegion',id)
+  await nextTick()
+  if(typeof window!=='undefined' && window.matchMedia('(max-width:47.999rem)').matches)
+    regionCardEl.value?.scrollIntoView({block:'start',behavior:'smooth'})
+}
+async function startPositioning(id:string) {
+  locatingConcernId.value=id
+  pendingPoint.value=null
+  await nextTick()
+  figureEl.value?.scrollIntoView({block:'center',behavior:'smooth'})
+}
+function pickMapPoint(event:MouseEvent) {
+  const rect=figureEl.value?.getBoundingClientRect()
+  if(!rect || !locatingConcernId.value) return
+  pendingPoint.value=normalizedPoint(
+    (event.clientX-rect.left)/rect.width,
+    (event.clientY-rect.top)/rect.height,
+  )
+}
+function cancelPositioning() {
+  locatingConcernId.value=null
+  pendingPoint.value=null
+}
+function confirmPositioning() {
+  if(!locatingConcernId.value||!pendingPoint.value) return
+  emit('placePoint',locatingConcernId.value,pendingPoint.value)
+  cancelPositioning()
+}
+
 const otherRegions = computed(()=>bodyRegions.filter(region=>region.id!==props.selectedRegion && concernsForRegion(activeConcerns.value,props.bindings,region.id).length>0))
 function countInRegion(id:BodyRegionId) {
   return concernsForRegion(activeConcerns.value,props.bindings,id).length
@@ -34,15 +71,18 @@ function onRegionChange(id:string,event:Event) {
   <div class="body-explorer">
     <section class="ui-card body-figure-card" aria-labelledby="body-map-heading">
       <div class="body-card-heading">
-        <div>
-          <span class="eyebrow">从身体部位探索</span>
-          <h2 id="body-map-heading">身体健康图</h2>
-          <p>点击图上的标记，查看该部位正在关注的健康问题。</p>
+        <h2 id="body-map-heading">身体图</h2>
+        <span v-if="mappedRegions" class="body-map-total">{{ mappedRegions }} 处标记</span>
+      </div>
+      <div v-if="locatingConcernId" class="body-position-instruction" role="status">
+        <span>为「{{ locatingConcernName }}」标记位置。请点击人体上的一个位置。</span>
+        <div class="body-position-actions">
+          <button type="button" class="quiet-button" @click="cancelPositioning">取消</button>
+          <button class="primary-button" type="button" :disabled="!pendingPoint" @click="confirmPositioning">确认位置</button>
         </div>
-        <span class="body-map-total"><MapPin :size="15"/>{{ mappedRegions }} 个部位</span>
       </div>
       <div class="body-map-canvas">
-        <div class="body-silhouette" role="img" aria-label="无性别的正面抽象人体轮廓，标记头颈、胸部、腹部、上肢和下肢">
+        <div ref="figureEl" class="body-silhouette" role="group" aria-label="身体健康问题位置图">
           <svg viewBox="0 0 320 520" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
             <!-- Gender-neutral front-view line art, deliberately without anatomy or fill.
                  Original vector path: no third-party or screenshot artwork copied. -->
@@ -90,24 +130,32 @@ function onRegionChange(id:string,event:Event) {
                 L158 300"/>
             </g>
           </svg>
-          <button v-for="region in bodyRegions" :key="region.id"
+          <!-- One discreet dot per concerned location. Larger invisible hit area
+               supports touch; the halo appears on hover/focus and selection. -->
+          <button v-for="hotspot in hotspots" :key="hotspot.regionId"
             type="button"
-            :style="{left:region.markerX+'%',top:region.markerY+'%'}"
-            :class="['body-region-marker',{selected:selectedRegion===region.id, populated:countInRegion(region.id)>0}]"
-            :aria-label="region.label + (countInRegion(region.id)?'，'+countInRegion(region.id)+'项正在关注':'，暂无关注')"
-            :aria-pressed="selectedRegion===region.id"
-            @click="emit('selectRegion',region.id)">
-            <span class="body-marker-count">{{ countInRegion(region.id)>0?countInRegion(region.id):'·' }}</span>
-            <span class="body-marker-name">{{ region.label }}</span>
+            :style="{left:(hotspot.point.x*100)+'%',top:(hotspot.point.y*100)+'%'}"
+            :class="['body-region-marker',{selected:selectedRegion===hotspot.regionId}]"
+            :title="bodyRegions.find(r=>r.id===hotspot.regionId)?.label + ' · ' + hotspot.count + '项健康关注'"
+            :aria-label="bodyRegions.find(r=>r.id===hotspot.regionId)?.label+'，'+hotspot.count+'项健康关注'"
+            :aria-pressed="selectedRegion===hotspot.regionId"
+            @click="selectHotspot(hotspot.regionId)">
+            <span class="body-hotspot-dot" aria-hidden="true"></span>
           </button>
+          <button v-if="locatingConcernId" type="button" class="body-map-position-layer"
+            aria-label="在此位置标记健康问题" @click="pickMapPoint">
+            <span>点击定位</span>
+          </button>
+          <span v-if="pendingPoint" class="body-pending-dot"
+            :style="{left:(pendingPoint.x*100)+'%',top:(pendingPoint.y*100)+'%'}"
+            aria-label="待确认的健康问题位置"></span>
         </div>
       </div>
-      <div class="body-map-key"><span class="body-key-dot active"></span>有关注事项 <span class="body-key-dot"></span>暂无关注 <span class="body-key-outline"></span>当前选择</div>
-      <p class="body-map-note"><Info :size="14"/> 身体图仅用于查找相关健康问题，不代表医学诊断或风险等级。</p>
+      <p class="body-map-note"><Info :size="14"/> 小圆点表示已关联的关注位置，点击可查看详情，并不代表医学诊断。</p>
     </section>
 
     <aside class="body-explorer-aside" aria-label="身体图关联的健康问题">
-      <section class="ui-card body-region-card">
+      <section ref="regionCardEl" class="ui-card body-region-card">
         <div class="body-region-card-heading">
           <div><span class="eyebrow">当前部位</span><h2>{{ selected.label }}</h2><p>{{ selected.hint }}</p></div>
           <span class="status-chip">{{ inRegion.filter(c=>c.status==='active').length }} 项关注中</span>
@@ -118,6 +166,10 @@ function onRegionChange(id:string,event:Event) {
           <span class="row-main"><b>{{ concern.name }}</b><small>{{ concern.summary }}</small></span>
           <ChevronRight :size="17" class="subtle-icon"/>
         </button>
+        <div v-for="concern in inRegion" :key="'point-'+concern.id" class="body-position-row">
+          <span>{{ concern.name }}</span>
+          <button type="button" class="inline-link" @click="startPositioning(concern.id)">调整标记位置</button>
+        </div>
         <p v-if="!inRegion.length" class="body-region-empty">这个部位还没有关联健康问题。你可以查看其他部位，或为已有的健康问题指定部位。</p>
       </section>
       <section class="ui-card body-region-summary">
@@ -126,7 +178,7 @@ function onRegionChange(id:string,event:Event) {
           <span class="body-map-total">{{ activeConcerns.length }} 项关注中</span>
         </div>
         <button v-for="region in otherRegions" :key="region.id" type="button"
-          class="body-region-shortcut" @click="emit('selectRegion',region.id)">
+          class="body-region-shortcut" @click="selectHotspot(region.id)">
           <span class="list-icon"><MapPin :size="17"/></span>
           <span class="row-main"><b>{{ region.label }}</b><small>{{ countInRegion(region.id) }} 项关注事项 · 点击定位</small></span>
           <ChevronRight :size="17" class="subtle-icon"/>
@@ -143,6 +195,9 @@ function onRegionChange(id:string,event:Event) {
               <option value="">请选择部位</option>
               <option v-for="region in bodyRegions" :key="region.id" :value="region.id">{{ region.label }}</option>
             </select>
+            <button type="button" class="inline-link" @click="startPositioning(concern.id)">
+              在身体图上点选位置
+            </button>
           </label>
         </div>
       </section>
