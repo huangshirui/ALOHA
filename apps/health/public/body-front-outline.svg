@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 520" fill="none" aria-labelledby="title" role="img">
+  <title id="title">正面无性别人体线框</title>
+  <!-- Front body reference aspect ratio: one intact viewBox, never scaled non-uniformly.
+       The subtle grid can be removed without changing the body coordinate space. -->
+  <g stroke="#D8E0E7" stroke-width=".65" opacity=".45">
+    <path d="M0 60H340 M0 122H340 M0 184H340 M0 246H340 M0 308H340 M0 370H340 M0 432H340 M0 494H340"/>
+    <path d="M17 42V503 M68 42V503 M119 42V503 M170 42V503 M221 42V503 M272 42V503 M323 42V503"/>
+  </g>
+  <g stroke="#112F4B" stroke-width="2.65" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- The user-supplied outline is the proportion reference: long narrow trunk,
+         smooth rounded shoulders, relaxed arms, no sex characteristics. -->
+    <ellipse cx="170" cy="87" rx="24.5" ry="34"/>
+    <!-- Left neck, shoulder, outer arm, hand and return to armpit -->
+    <path d="M156 114
+      C156 124 155 130 144 134
+      C133 139 116 141 110 149
+      C105 156 104 174 103 191
+      C103 214 97 232 95 248
+      C93 268 92 280 90 287
+      C88 293 82 298 78 301
+      C73 304 74 309 77 310
+      C81 311 84 306 88 304
+      C83 313 81 323 84 328
+      C88 334 96 331 99 325
+      C102 318 100 308 101 297
+      C101 286 108 267 114 248
+      C120 225 125 208 124 191
+      C124 185 123 181 122 175"/>
+    <!-- Right neck, shoulder, outer arm, hand and return to armpit -->
+    <path d="M184 114
+      C184 124 185 130 196 134
+      C207 139 224 141 230 149
+      C235 156 236 174 237 191
+      C237 214 243 232 245 248
+      C247 268 248 280 250 287
+      C252 293 258 298 262 301
+      C267 304 266 309 263 310
+      C259 311 256 306 252 304
+      C257 313 259 323 256 328
+      C252 334 244 331 241 325
+      C238 318 240 308 239 297
+      C239 286 232 267 226 248
+      C220 225 215 208 216 191
+      C216 185 217 181 218 175"/>
+    <!-- Torso to hips and legs, two separate continuous edges:
+         no mirrored / scaled path transformation to distort limb proportions. -->
+    <path d="M122 175
+      C128 205 124 228 122 247
+      C118 280 119 312 124 340
+      C130 363 129 379 126 397
+      C123 416 126 440 127 456
+      C128 468 126 479 119 487
+      C115 491 115 497 119 500
+      L147 500
+      C152 497 153 492 151 486
+      C149 477 151 464 153 451
+      C155 433 159 412 160 400
+      C161 387 159 378 160 363
+      C162 345 167 325 168 301"/>
+    <path d="M218 175
+      C212 205 216 228 218 247
+      C222 280 221 312 216 340
+      C210 363 211 379 214 397
+      C217 416 214 440 213 456
+      C212 468 214 479 221 487
+      C225 491 225 497 221 500
+      L193 500
+      C188 497 187 492 189 486
+      C191 477 189 464 187 451
+      C185 433 181 412 180 400
+      C179 387 181 378 180 363
+      C178 345 173 325 172 301"/>
+    <path d="M168 301 L170 300 L172 301"/>
+  </g>
+  <path d="M0 504H340" stroke="#112F4B" stroke-width="2.6" stroke-linecap="round"/>
+</svg>
