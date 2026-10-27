@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ArrowLeft, Sparkles } from 'lucide-vue-next'
+import AlohaHub from './AlohaHub.vue'
 
 /**
  * ALOHA Health's one page-title / action bar, reused for every primary screen.
@@ -11,14 +12,16 @@ defineProps<{
   context?: string
   canBack?: boolean
   agentOpen?: boolean
+  apps: Array<{id:string;name:string;description:string;href?:string}>
+  density: 'comfortable' | 'compact'
 }>()
-defineEmits<{ back: []; ask: [] }>()
+defineEmits<{ back: []; ask: []; selectApp: [id:string]; updateDensity: [value:'comfortable'|'compact'] }>()
 </script>
 
 <template>
   <header class="health-page-heading">
     <div class="health-page-heading-main">
-      <div class="health-page-heading-prefix"><slot name="app-menu"/></div>
+      <div class="health-page-heading-prefix"><AlohaHub :apps="apps" current-app="health" compact preview :density="density" @select-app="$emit('selectApp',$event)" @update:density="$emit('updateDensity',$event)"/></div>
       <div class="health-page-heading-copy">
         <button v-if="canBack" class="health-page-back" type="button" aria-label="返回列表" @click="$emit('back')">
           <ArrowLeft :size="17"/>
