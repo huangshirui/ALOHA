@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { seedDemo } from './demo-model'
 import {
-  BODY_MAP_ASSET_ID, bodyRegions, concernHotspots, concernsForRegion, normalizedPoint,
+  BODY_MAP_ASSET_ID, BODY_MAP_CROP, bodyRegions, closestRegion, concernHotspots, concernsForRegion,
+  isPointOnBody, normalizedPoint, normalizedToSource, sourceToNormalized,
   resolvePoint, seedBodyBindings, setConcernPoint, setConcernRegion, unmappedConcerns,
 } from './body-map'
 
@@ -35,6 +36,25 @@ describe('ALOHA body map — application-only projection', () => {
     expect(binding.point).toEqual(point)
     expect(resolvePoint(binding)).toEqual(point)
     expect(normalizedPoint(-.5,1.6)).toEqual({x:0,y:1})
+  })
+  it('preserves source SVG proportions and uses a cropped viewBox without changing paths', () => {
+    expect(BODY_MAP_CROP).toEqual({x:390,y:40,width:244,height:475})
+    const point={x:512,y:88}
+    const normalized=sourceToNormalized(point)
+    expect(normalized).toEqual({x:0.5,y:48/475})
+    expect(normalizedToSource(normalized)).toEqual(point)
+    expect(isPointOnBody(normalized)).toBe(true)
+    expect(bodyRegions.find(r=>r.id==='head')?.anchor).toEqual(normalized)
+  })
+  it('classifies explicit points by region and rejects background clicks', () => {
+    expect(closestRegion(sourceToNormalized({x:512,y:87}))).toBe('head')
+    expect(closestRegion(sourceToNormalized({x:512,y:195}))).toBe('chest')
+    expect(closestRegion(sourceToNormalized({x:512,y:265}))).toBe('abdomen')
+    expect(closestRegion(sourceToNormalized({x:442,y:260}))).toBe('arms')
+    expect(closestRegion(sourceToNormalized({x:537,y:404}))).toBe('legs')
+    const background=sourceToNormalized({x:610,y:70})
+    expect(isPointOnBody(background)).toBe(false)
+    expect(() => setConcernPoint(seedBodyBindings(),'c-1',background)).toThrow()
   })
   it('groups several concerns in one region as one visual dot, not a giant badge', () => {
     const withTwo=setConcernRegion(seedBodyBindings(),'c-2','chest')
