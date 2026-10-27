@@ -1,76 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 520" fill="none" aria-labelledby="title" role="img">
-  <title id="title">正面无性别人体线框</title>
-  <!-- Front body reference aspect ratio: one intact viewBox, never scaled non-uniformly.
-       The subtle grid can be removed without changing the body coordinate space. -->
-  <g stroke="#D8E0E7" stroke-width=".65" opacity=".45">
-    <path d="M0 60H340 M0 122H340 M0 184H340 M0 246H340 M0 308H340 M0 370H340 M0 432H340 M0 494H340"/>
-    <path d="M17 42V503 M68 42V503 M119 42V503 M170 42V503 M221 42V503 M272 42V503 M323 42V503"/>
-  </g>
-  <g stroke="#112F4B" stroke-width="2.65" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <!-- The user-supplied outline is the proportion reference: long narrow trunk,
-         smooth rounded shoulders, relaxed arms, no sex characteristics. -->
-    <ellipse cx="170" cy="87" rx="24.5" ry="34"/>
-    <!-- Left neck, shoulder, outer arm, hand and return to armpit -->
-    <path d="M156 114
-      C156 124 155 130 144 134
-      C133 139 116 141 110 149
-      C105 156 104 174 103 191
-      C103 214 97 232 95 248
-      C93 268 92 280 90 287
-      C88 293 82 298 78 301
-      C73 304 74 309 77 310
-      C81 311 84 306 88 304
-      C83 313 81 323 84 328
-      C88 334 96 331 99 325
-      C102 318 100 308 101 297
-      C101 286 108 267 114 248
-      C120 225 125 208 124 191
-      C124 185 123 181 122 175"/>
-    <!-- Right neck, shoulder, outer arm, hand and return to armpit -->
-    <path d="M184 114
-      C184 124 185 130 196 134
-      C207 139 224 141 230 149
-      C235 156 236 174 237 191
-      C237 214 243 232 245 248
-      C247 268 248 280 250 287
-      C252 293 258 298 262 301
-      C267 304 266 309 263 310
-      C259 311 256 306 252 304
-      C257 313 259 323 256 328
-      C252 334 244 331 241 325
-      C238 318 240 308 239 297
-      C239 286 232 267 226 248
-      C220 225 215 208 216 191
-      C216 185 217 181 218 175"/>
-    <!-- Torso to hips and legs, two separate continuous edges:
-         no mirrored / scaled path transformation to distort limb proportions. -->
-    <path d="M122 175
-      C128 205 124 228 122 247
-      C118 280 119 312 124 340
-      C130 363 129 379 126 397
-      C123 416 126 440 127 456
-      C128 468 126 479 119 487
-      C115 491 115 497 119 500
-      L147 500
-      C152 497 153 492 151 486
-      C149 477 151 464 153 451
-      C155 433 159 412 160 400
-      C161 387 159 378 160 363
-      C162 345 167 325 168 301"/>
-    <path d="M218 175
-      C212 205 216 228 218 247
-      C222 280 221 312 216 340
-      C210 363 211 379 214 397
-      C217 416 214 440 213 456
-      C212 468 214 479 221 487
-      C225 491 225 497 221 500
-      L193 500
-      C188 497 187 492 189 486
-      C191 477 189 464 187 451
-      C185 433 181 412 180 400
-      C179 387 181 378 180 363
-      C178 345 173 325 172 301"/>
-    <path d="M168 301 L170 300 L172 301"/>
-  </g>
-  <path d="M0 504H340" stroke="#112F4B" stroke-width="2.6" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="244" height="475" viewBox="390 40 244 475" role="img" aria-labelledby="title desc" preserveAspectRatio="xMidYMid meet">
+<title id="title">Neutral body map silhouette</title>
+<desc id="desc">Body outline from the user-supplied body_outline_clean.svg. Original path coordinates and strokes are unchanged; the viewBox only trims blank margins.</desc>
+<g id="body" fill="none" stroke="#0B2B49" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round">
+<!-- head -->
+<path id="head" d="M512 55.5 C498 55.5 487.5 65 487.5 83.5 C487.5 101.5 497 122.5 511.5 122.5 C526 122.5 536.5 101.5 536.5 83.5 C536.5 66 526.5 55.5 512 55.5 Z"/>
+<!-- left neck, shoulder and outer arm, hand -->
+<path id="left-outer" d="M497 115.6 C498 124.2 495.3 130.4 486 134 C475 138.3 461 142.4 455 150 C447 159 448.1 174 448.4 185 C448.5 196 446.7 207 445.4 218 C442.7 230 437.9 241 436.8 253 C434.8 263 435.4 277 432 285.5 C429.4 290.1 422 294.5 419 300 C417.3 302.7 417.7 306.9 421 308.1 C425 309.4 430.9 303.3 436 297.7"/>
+<!-- left hand outer tip, palm and side to torso -->
+<path id="left-hand" d="M425 307.2 C424.8 312.4 424 317 426.8 323.8 C429.2 330 438.2 333.2 443.3 327.7 C449 322 447.7 309.8 448 301 C448.3 286.2 456.5 265.5 461 247 C465 230.5 470.6 215 471.3 200"/>
+<!-- left inner shoulder to armpit -->
+<path id="left-inner-arm" d="M468 175.7 C469.8 185 470.8 193 471.3 200"/>
+<!-- left torso to lower left foot -->
+<path id="left-body-leg" d="M471.3 200 C478.2 218 476.4 233 472.8 253 C469.6 273 467.3 288 467.5 309 C467.5 329 469.1 349 473.3 372 C477 390 470.4 405 471.4 423 C472.1 441 476.1 457 477.1 471 C478.2 485.5 474.6 492 467.8 498.8 C466.1 500.4 466.4 503.2 467.6 503.5"/>
+<!-- left foot to inner calf and crotch -->
+<path id="left-inner-leg" d="M467.6 503.5 L491.5 503.5 C496 502.2 497.9 500 496.6 494 C493.3 481 496 465 498.2 449 C501 432 501.2 413 499.3 398 C504.6 372 504.4 340 510.2 304 C510.6 301.9 512.6 301.9 513 304 C518.5 340 519.4 372 524.7 398 C522.7 415 523.2 430 525.8 449 C528.2 468 530.1 482 527.6 495 C526.6 500.2 528.7 502.5 532.5 503.5 L555.8 503.5"/>
+<!-- right foot to external leg and torso -->
+<path id="right-body-leg" d="M555.8 503.5 C557.8 502.5 555.7 499.2 554 497.5 C547 491 544.6 483 545.8 471 C547 453 551.5 439 552.4 423 C553.7 406 548 390 551.1 373 C555.6 350 557.2 330 556.7 309 C556.8 288 553.8 271 550.2 253 C546.4 234 545.6 218 552.3 200"/>
+<!-- right inner shoulder and arm -->
+<path id="right-inner-arm" d="M556 175.7 C554 184.8 553.1 192.7 552.3 200 C553 216 558.4 232.5 562.6 248 C567.2 265 576.3 287 576 301 C575.3 312 575.8 322.8 581.8 327.2 C587.3 331.9 595.5 329.3 598.1 322.2 C600.3 316.9 598 311.6 597 307.2"/>
+<!-- right hand and external arm -->
+<path id="right-outer" d="M588 298 C592.8 303.5 599 309.5 603.5 307.8 C607.8 306.3 605.2 302 603.4 299.3 C600.4 294.8 592.5 289 590.8 283.4 C588.8 275 589.5 263 587.2 252 C585.5 240 581.1 228.5 579 217 C577.3 206 575.8 196 575.8 185 C576.2 174 576.6 160.7 568.5 151 C561 142 548.7 138 537.6 133.5 C527 129.4 525 125 526 115.6"/>
+</g>
+<path id="baseline" d="M342 504 H682" fill="none" stroke="#0B2B49" stroke-width="2.55" stroke-linecap="round"/>
 </svg>
