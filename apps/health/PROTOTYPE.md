@@ -18,7 +18,7 @@
 ## Mobile 顶部、滚动及表单一致性验收（2026-10-27）
 
 - **顶部排布：** 统一 `HealthPageHeader.vue` 负责移动端 ALOHA Hub、当前标题、主要操作与 Lucide AI 入口，**始终单行**；手机隐藏冗余副标题，AI 用图标按钮保留可访问名称。标题过长时用省略号，不能挤出第二行按钮。
-- **滚动：** Desktop 与 Mobile 的完整大段正文正常滚动；唯一紧凑工具栏使用 `position: sticky`，保证当前页面及操作随时可用；移动端底部主导航保持固定，右侧 AI 保持不遮挡的独立停靠面板。内容不应被吸顶栏盖住。
+- **滚动：** Desktop 与 Mobile 的正文正常滚动；唯一紧凑工具栏采用 `position: sticky`。**在页面顶端工具栏背景透明，与内容画布融为一体；滚动超过 8px 后才显示基于 Canvas Token 的轻磨砂背景和细分隔线**，避免在淡色渐变画布上出现突兀的白色矩形。底部主导航和独立 Agent 面板继续保持可操作。
 - **抽屉轮廓：** Desktop 右侧表单 Drawer 为直角边缘；Mobile/窄平板底部表单和 AI 停靠栏使用一致的顶部双圆角，带自身滚动区；普通表单仍带遮罩，AI 始终非模态。
 - **下拉框：** 所有 Health `select` 使用统一的 Lucide ChevronDown 图形、`appearance:none` 和不小于 2.85rem 的右侧文本空间；在 iOS Safari、Android Chrome、Desktop Chrome 验证箭头不贴边、长文本不覆盖箭头。
 - **必填标志：** 必填号包在和字段名同一行的 `field-label` 内，保持正确视觉对齐；这是之前 `label` 纵向 Flex 把子元素 `*` 排成另一行的根因，不允许在新表单中再直接放裸 `<span>*</span>`。
