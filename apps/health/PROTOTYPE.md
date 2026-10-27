@@ -28,10 +28,10 @@
 
 ## BodyMap 线稿素材与光晕点原型（2026-10-27）
 
-- 采用独立的 `apps/health/public/body-front-outline.svg` 无性别正面人体线框文件（340×520 固定 `viewBox`），页面以 `/health/` 的 Vite 基础路径加载并等比渲染。人体图、坐标叠层、部位标记不应使用彼此独立的缩放尺寸；以后改图片必须更新 `BODY_MAP_ASSET_ID` 及默认锚点。
-- **仅一个点**：每个有关联关注事项的部位显示一个直径 8px 圆点，默认不显示数量和周围标签；桌面 Hover 与键盘 Focus 有有限的柔和双环 Halo，手机点击后用已选中状态的 Halo 代替 Hover。实际可触达区域约 42px；同一区域有多个问题在右侧列表查看。
+- 采用独立的 `apps/health/public/body-front-outline.svg`：直接使用用户提供的 `body_outline_clean.svg` 的原始十条人物轮廓路径，仅将源 1024×559 的画布裁剪为 `viewBox="390 40 244 475"`（无重新描线、拉伸或重拼接），页面以 `/health/` 的 Vite 基础路径加载并等比渲染。人体图、坐标叠层、部位标记不应使用彼此独立的缩放尺寸；以后改图片必须更新 `BODY_MAP_ASSET_ID` 及默认锚点。
+- **仅一个点**：每个有关联关注事项的部位显示一个直径 8px 圆点，默认不显示数量和周围标签；桌面 Hover 与键盘 Focus 有有限的柔和双环 Halo，手机点击后用已选中状态的 Halo 代替 Hover。实际可触达区域 44px；同一区域有多个问题在右侧列表查看。
 - 顶部不再重复「从身体部位探索」「身体健康图」「点击图上标记……」三行介绍，保留单行「身体图」。描述性无诊断意义的说明只在下方保留一次。
-- **坐标模型（ALOHA 投影）**：身体素材的 `assetId` + 归一化 `x/y`，以及 `BodyMapRegion` 的区域锚点；`BodyMapBinding` 将具体 HealthConcern 与部位/可选精准点关联。点击待标记事项 → 在图上点位置 → 预览 → 确认；也可只选大部位。不能把这一展示信息加入 LifeSpace HealthConcern 字段。
+- **坐标模型（ALOHA 投影）**：身体素材版本 `BODY_MAP_ASSET_ID`、`BODY_MAP_CROP`（原图坐标裁剪框）+ 归一化 `x/y`，以及 `BodyMapRegion` 的原图锚点换算；`BodyMapBinding` 将具体 HealthConcern 与部位/可选精准点关联。点击待标记事项 → 在人体轮廓内部点位置（点在白底上不会接受）→ 预览 → 确认；也可只选大部位。不能把这一展示信息加入 LifeSpace HealthConcern 字段。
 - QA：桌面折叠/展开导航、AI 右侧工作区开关、容器双栏/上下；移动端点亮标记后滚动至问题卡片，点位与人体不因缩放偏移；取消选点、确认位置、不同区域的多项关注问题正常；独立 Health Preview 仍待重新部署验证。
 
 ## Mobile 顶部、滚动及表单一致性验收（2026-10-27）
