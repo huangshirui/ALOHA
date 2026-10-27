@@ -1,0 +1,41 @@
+/**
+ * ALOHA Health application-level semantic tokens.
+ * Shared ALOHA primitives live in packages/design-tokens/tokens.css.
+ * These aliases express roles inside the Health surface; no independent palette,
+ * framework or duplicate shared design system is introduced.
+ */
+[data-aloha-surface="health"] {
+  --health-canvas: var(--aloha-color-canvas);
+  --health-surface: var(--aloha-color-surface);
+  --health-surface-secondary: var(--aloha-color-surface-muted);
+  --health-ink: var(--aloha-color-text);
+  --health-muted: var(--aloha-color-text-muted);
+  --health-border: var(--aloha-color-border);
+  --health-brand: var(--aloha-accent);
+  --health-brand-strong: var(--aloha-accent-strong);
+  --health-brand-subtle: var(--aloha-accent-soft);
+  --health-danger: var(--aloha-color-danger);
+
+  --health-radius-sm: var(--aloha-radius-sm);
+  --health-radius-card: var(--aloha-radius-lg);
+  --health-radius-control: var(--aloha-radius-md);
+  --health-radius-pill: var(--aloha-radius-pill);
+  --health-shadow-card: var(--aloha-shadow-card);
+  --health-shadow-float: var(--aloha-shadow-floating);
+  --health-control: var(--aloha-control-md);
+  --health-space-1: var(--aloha-space-1);
+  --health-space-2: var(--aloha-space-2);
+  --health-space-3: var(--aloha-space-3);
+  --health-space-4: var(--aloha-space-4);
+  --health-space-5: var(--aloha-space-5);
+  --health-space-6: var(--aloha-space-6);
+  --health-space-8: var(--aloha-space-8);
+  --health-motion: var(--aloha-motion-fast);
+
+  --health-border-soft: color-mix(in srgb, var(--health-border) 78%, transparent);
+  --health-header-bg: color-mix(in srgb, var(--health-surface) 91%, transparent);
+  --health-hover: color-mix(in srgb, var(--health-brand-subtle) 65%, var(--health-surface));
+  --health-highlight: color-mix(in srgb, var(--health-brand) 8%, var(--health-surface));
+  --health-tint: color-mix(in srgb, var(--health-brand) 4%, var(--health-canvas));
+  --health-illustration: color-mix(in srgb, var(--health-brand) 22%, var(--health-surface));
+}
