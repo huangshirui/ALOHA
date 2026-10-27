@@ -17,7 +17,7 @@ export type PrimaryAction =
 
 export function primaryAction(section:BodySection):PrimaryAction {
   switch(section) {
-    case 'overview': return {mode:'menu',label:'记录',choices:recordChoices}
+    case 'overview': return {mode:'direct',label:'添加健康问题',action:'concern'}
     case 'timeline': return {mode:'menu',label:'新增记录',choices:recordChoices}
     case 'concerns': return {mode:'direct',label:'添加健康问题',action:'concern'}
     case 'metrics': return {mode:'direct',label:'新增指标',action:'metric'}
