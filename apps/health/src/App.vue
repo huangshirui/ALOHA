@@ -177,6 +177,7 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
 function formSave() {
+  formError.value=''
   const v=draft.value, kind=editKind.value
   const mandatory: Record<HealthKind,string[]> = {
     concern:['name'],metric:['name'],observation:['metricId','observedDate'],event:['summary','date'],
@@ -238,7 +239,8 @@ function removeCurrent() {
     for(const collection of ['observations','events','documents','assessments','regimens'] as const)
       for(const record of demo[collection]) record.concernIds=record.concernIds.filter(x=>x!==id)
   }
-  selected.value=null;notice.value='已从演示页面移除。'
+  notice.value='已从演示页面移除。'
+  back()
 }
 function togglePlan(id: string) {
   completedPlanIds.value=completedPlanIds.value.includes(id) ? completedPlanIds.value.filter(x=>x!==id) : [...completedPlanIds.value,id]
