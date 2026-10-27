@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { seedDemo } from './demo-model'
 import {
-  bodyRegions, concernsForRegion, seedBodyBindings, setConcernRegion, unmappedConcerns,
+  BODY_MAP_ASSET_ID, bodyRegions, concernHotspots, concernsForRegion, normalizedPoint,
+  resolvePoint, seedBodyBindings, setConcernPoint, setConcernRegion, unmappedConcerns,
 } from './body-map'
 
 describe('ALOHA body map — application-only projection', () => {
@@ -25,6 +26,27 @@ describe('ALOHA body map — application-only projection', () => {
     const cleared=setConcernRegion(moved,'c-1','')
     expect(unmappedConcerns(concerns,cleared).map(x=>x.id)).toEqual(['c-1'])
     expect(concerns).toEqual(original)
+  })
+  it('stores a stable normalized point anchored to an explicit SVG asset version', () => {
+    const point=normalizedPoint(.66, .77)
+    const updated=setConcernPoint(seedBodyBindings(),'c-1',point)
+    const binding=updated.find(b=>b.concernId==='c-1')!
+    expect(binding.assetId).toBe(BODY_MAP_ASSET_ID)
+    expect(binding.point).toEqual(point)
+    expect(resolvePoint(binding)).toEqual(point)
+    expect(normalizedPoint(-.5,1.6)).toEqual({x:0,y:1})
+  })
+  it('groups several concerns in one region as one visual dot, not a giant badge', () => {
+    const withTwo=setConcernRegion(seedBodyBindings(),'c-2','chest')
+    const hotspots=concernHotspots(concerns,withTwo)
+    expect(hotspots).toHaveLength(1)
+    expect(hotspots[0]!.regionId).toBe('chest')
+    expect(hotspots[0]!.count).toBe(2)
+  })
+  it('does not infer spots for unlinked or inactive concerns', () => {
+    const hotspots=concernHotspots(concerns,seedBodyBindings())
+    expect(hotspots.map(h=>h.regionId).sort()).toEqual(['chest','legs'])
+    expect(concernHotspots(concerns,[])).toEqual([])
   })
   it('shows multiple concerns in the same region as individual results', () => {
     const both=setConcernRegion(seedBodyBindings(),'c-2','chest')
