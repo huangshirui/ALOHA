@@ -51,4 +51,4 @@ The Vite app uses the `/health/` PWA scope. A manual preview-deploy workflow alr
 
 ## Dependency / 合并顺序
 
-This prototype branch is based on the **open** multi-PWA foundation PR #35 (`docs/multi-pwa-deployment`) and should be reviewed **against that branch first**. It cannot be merged directly into `main` as a standalone Health app while the scaffold remains unmerged. Never activate a production route simply to demonstrate the prototype.
+The multi-PWA foundation was merged in [PR #35](https://github.com/huangshirui/ALOHA/pull/35). This prototype's PR #36 is based on current `main`, with only Health UX files changed; keep it Draft until preview/UX acceptance. Never activate a production route simply to demonstrate the prototype.
