@@ -17,6 +17,7 @@ const emit = defineEmits<{
   assign: [concernId:string,regionId:BodyRegionId|'']
   placePoint: [concernId:string,point:BodyPoint]
 }>()
+const bodyArtSrc = import.meta.env.BASE_URL + 'body-front-outline.svg'
 const selected = computed(()=>bodyRegions.find(region=>region.id===props.selectedRegion)!)
 const inRegion = computed(()=>concernsForRegion(props.concerns,props.bindings,props.selectedRegion))
 const unassigned = computed(()=>unmappedConcerns(props.concerns,props.bindings))
@@ -83,53 +84,10 @@ function onRegionChange(id:string,event:Event) {
       </div>
       <div class="body-map-canvas">
         <div ref="figureEl" class="body-silhouette" role="group" aria-label="身体健康问题位置图">
-          <svg viewBox="0 0 320 520" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-            <!-- Gender-neutral front-view line art, deliberately without anatomy or fill.
-                 Original vector path: no third-party or screenshot artwork copied. -->
-            <ellipse cx="160" cy="64" rx="24" ry="35" class="body-outline"/>
-            <g class="body-outline">
-              <path d="M146 98
-                C147 107 145 112 131 118
-                L113 125 C103 130 99 140 98 154
-                L96 186 C94 201 89 220 85 246
-                L80 282 C78 291 74 296 71 301
-                C68 306 70 310 74 309
-                L82 302 C78 315 78 324 83 329
-                C88 333 97 330 99 322
-                C102 312 98 295 100 282
-                L113 231 C120 205 123 182 120 164"/>
-              <path d="M120 164
-                C123 194 117 230 114 254
-                C110 277 113 311 119 340
-                C124 363 121 390 123 409
-                L128 454 C130 468 125 477 117 484
-                C114 487 115 490 121 490
-                L138 490 C143 487 142 481 140 474
-                L146 418 C149 386 148 365 152 336
-                L158 300"/>
-            </g>
-            <g class="body-outline" transform="translate(320 0) scale(-1 1)">
-              <path d="M146 98
-                C147 107 145 112 131 118
-                L113 125 C103 130 99 140 98 154
-                L96 186 C94 201 89 220 85 246
-                L80 282 C78 291 74 296 71 301
-                C68 306 70 310 74 309
-                L82 302 C78 315 78 324 83 329
-                C88 333 97 330 99 322
-                C102 312 98 295 100 282
-                L113 231 C120 205 123 182 120 164"/>
-              <path d="M120 164
-                C123 194 117 230 114 254
-                C110 277 113 311 119 340
-                C124 363 121 390 123 409
-                L128 454 C130 468 125 477 117 484
-                C114 487 115 490 121 490
-                L138 490 C143 487 142 481 140 474
-                L146 418 C149 386 148 365 152 336
-                L158 300"/>
-            </g>
-          </svg>
+          <!-- Static artwork and interactive coordinate layer share one immutable
+               340×520 aspect ratio; SVG never stretches to fit a different box. -->
+          <img class="body-artwork" :src="bodyArtSrc" alt=""
+            width="340" height="520" draggable="false"/>
           <!-- One discreet dot per concerned location. Larger invisible hit area
                supports touch; the halo appears on hover/focus and selection. -->
           <button v-for="hotspot in hotspots" :key="hotspot.regionId"
@@ -229,9 +187,8 @@ function onRegionChange(id:string,event:Event) {
   border-radius:var(--health-radius-control);
   background:var(--health-surface);
 }
-.body-silhouette { position:relative;width:min(100%,19.5rem);aspect-ratio:320 / 520; }
-.body-silhouette svg { display:block;height:100%;width:100%;overflow:visible; }
-.body-outline { fill:none;stroke:var(--health-ink);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round; }
+.body-silhouette { position:relative;width:min(100%,21rem);aspect-ratio:340 / 520;flex:none; }
+.body-artwork { display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none; }
 /* A 42px invisible touch target protects the tiny 8px visual dot. */
 .body-region-marker {
   position:absolute;display:grid;place-items:center;z-index:2;
