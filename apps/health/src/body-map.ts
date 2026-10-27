@@ -87,6 +87,12 @@ export function resolvePoint(binding:BodyMapBinding):BodyPoint {
   return bodyRegions.find(region=>region.id===binding.regionId)?.anchor ?? {x:.5,y:.5}
 }
 export function closestRegion(point:BodyPoint):BodyRegionId {
+  const src=normalizedToSource(point)
+  if(((src.x-512)/26)**2+((src.y-88)/37)**2<=1) return 'head'
+  // Region selection uses the simple silhouette hit zones, never health inference.
+  if(inPolygon(src,regionPolygons[1]!)||inPolygon(src,regionPolygons[2]!)) return 'arms'
+  if(inPolygon(src,regionPolygons[3]!)||inPolygon(src,regionPolygons[4]!)) return 'legs'
+  if(inPolygon(src,regionPolygons[0]!)) return src.y < 224 ? 'chest' : 'abdomen'
   return [...bodyRegions].sort((a,b)=>{
     const distance=(r:BodyMapRegion)=>
       Math.pow(r.anchor.x-point.x,2)+Math.pow(r.anchor.y-point.y,2)
@@ -125,6 +131,7 @@ export function setConcernPoint(
   bindings:ReadonlyArray<BodyMapBinding>,concernId:string,point:BodyPoint,
 ):BodyMapBinding[] {
   const normalized=normalizedPoint(point.x,point.y)
+  if(!isPointOnBody(normalized)) throw new Error('Please select a location inside the body outline.')
   return [...bindings.filter(b=>b.concernId!==concernId),{
     concernId, regionId:closestRegion(normalized),assetId:BODY_MAP_ASSET_ID,point:normalized,
   }]
