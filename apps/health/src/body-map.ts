@@ -5,7 +5,19 @@
  * Coordinates are normalized [0,1] positions on the (cropped) front artwork,
  * never page pixels. Changing artwork requires a new assetId and point map.
  */
-export const BODY_MAP_ASSET_ID = 'front-outline-v1'
+export const BODY_MAP_ASSET_ID = 'body-outline-clean-2026-10-v2'
+/** The uploaded 1024×559 geometry is untouched. Only white margins are cropped. */
+export const BODY_MAP_CROP = { x:390, y:40, width:244, height:475 } as const
+export interface SourcePixel {x:number;y:number}
+/** For one image and its interaction layer, both use this exact cropped viewBox. */
+export function sourceToNormalized(point:SourcePixel):BodyPoint {
+  return normalizedPoint((point.x-BODY_MAP_CROP.x)/BODY_MAP_CROP.width,
+    (point.y-BODY_MAP_CROP.y)/BODY_MAP_CROP.height)
+}
+export function normalizedToSource(point:BodyPoint):SourcePixel {
+  return {x:BODY_MAP_CROP.x+point.x*BODY_MAP_CROP.width,
+    y:BODY_MAP_CROP.y+point.y*BODY_MAP_CROP.height}
+}
 export type BodyRegionId = 'head' | 'chest' | 'abdomen' | 'arms' | 'legs'
 export interface BodyPoint { x: number; y: number }
 export interface BodyMapRegion {
@@ -30,11 +42,11 @@ export interface BodyMapConcern {
 
 /** Seed anchors are layout hints on this artwork, not anatomical inference. */
 export const bodyRegions: ReadonlyArray<BodyMapRegion> = [
-  { id:'head', label:'头颈', anchor:{x:.5,y:.135}, hint:'头部及颈部' },
-  { id:'chest', label:'胸部', anchor:{x:.5,y:.365}, hint:'胸部与循环相关' },
-  { id:'abdomen', label:'腹部', anchor:{x:.5,y:.53}, hint:'腹部相关' },
-  { id:'arms', label:'上肢', anchor:{x:.245,y:.49}, hint:'手臂及肩部' },
-  { id:'legs', label:'下肢', anchor:{x:.58,y:.79}, hint:'下肢及运动恢复' },
+  { id:'head', label:'头颈', anchor:sourceToNormalized({x:512,y:88}), hint:'头部及颈部' },
+  { id:'chest', label:'胸部', anchor:sourceToNormalized({x:512,y:192}), hint:'胸部与循环相关' },
+  { id:'abdomen', label:'腹部', anchor:sourceToNormalized({x:512,y:269}), hint:'腹部相关' },
+  { id:'arms', label:'上肢', anchor:sourceToNormalized({x:446,y:254}), hint:'手臂及肩部' },
+  { id:'legs', label:'下肢', anchor:sourceToNormalized({x:538,y:398}), hint:'下肢及运动恢复' },
 ]
 
 export function normalizedPoint(x:number,y:number):BodyPoint {
@@ -43,6 +55,32 @@ export function normalizedPoint(x:number,y:number):BodyPoint {
     y:Math.max(0,Math.min(1,y)),
   }
 }
+/**
+ * A simple hit mask for placing a point. This is intentionally conservative,
+ * only to reject background clicks; NOT an anatomical segmentation model.
+ */
+function inPolygon(point:SourcePixel,vertices:ReadonlyArray<readonly [number,number]>):boolean {
+  let inside=false
+  for(let i=0,j=vertices.length-1;i<vertices.length;j=i++){
+    const [xi,yi]=vertices[i]!,[xj,yj]=vertices[j]!
+    if(((yi>point.y)!==(yj>point.y)) && point.x < (xj-xi)*(point.y-yi)/(yj-yi)+xi)
+      inside=!inside
+  }
+  return inside
+}
+const regionPolygons:ReadonlyArray<ReadonlyArray<readonly [number,number]>>=[
+  [[456,142],[492,120],[532,120],[568,142],[576,173],[556,207],[555,303],[468,303],[469,207],[448,173]],
+  [[451,149],[471,175],[471,211],[450,280],[446,327],[424,331],[417,305],[434,275],[441,206]],
+  [[573,149],[553,175],[553,211],[574,280],[578,327],[600,331],[607,305],[590,275],[583,206]],
+  [[468,297],[513,297],[507,366],[502,430],[499,504],[466,504],[478,476],[470,416]],
+  [[511,297],[557,297],[554,416],[558,476],[558,504],[525,504],[522,430],[517,366]],
+]
+export function isPointOnBody(point:BodyPoint):boolean {
+  const src=normalizedToSource(point)
+  if(((src.x-512)/26)**2+((src.y-88)/37)**2<=1)return true
+  return regionPolygons.some(polygon=>inPolygon(src,polygon))
+}
+
 export function resolvePoint(binding:BodyMapBinding):BodyPoint {
   if(binding.point && binding.assetId===BODY_MAP_ASSET_ID)
     return normalizedPoint(binding.point.x,binding.point.y)
