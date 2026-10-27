@@ -12,7 +12,7 @@ import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import BodyOverview from './components/BodyOverview.vue'
-import { seedBodyBindings, setConcernRegion, type BodyMapBinding, type BodyRegionId } from './body-map'
+import { seedBodyBindings, setConcernPoint, setConcernRegion, type BodyMapBinding, type BodyPoint, type BodyRegionId } from './body-map'
 import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
@@ -175,6 +175,12 @@ function assignConcernRegion(id:string,region:BodyRegionId|'') {
   bodyBindings.value=setConcernRegion(bodyBindings.value,id,region)
   if(region) selectedBodyRegion.value=region
   notice.value=region?'已为这项健康问题标记部位（仅本次演示）。':'已取消部位标记（仅本次演示）。'
+}
+function assignConcernPoint(id:string,point:BodyPoint) {
+  bodyBindings.value=setConcernPoint(bodyBindings.value,id,point)
+  const placed=bodyBindings.value.find(binding=>binding.concernId===id)
+  if(placed) selectedBodyRegion.value=placed.regionId
+  notice.value='已标记健康问题的位置（仅本次演示）。'
 }
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   const record=id ? getList(kind).find(r=>r.id===id) : null
@@ -510,6 +516,7 @@ function detailName(kind: HealthKind,record:any) {
                 @select-region="selectedBodyRegion=$event"
                 @open-concern="show('concern',$event)"
                 @assign="assignConcernRegion"
+                @place-point="assignConcernPoint"
               />
             </div>
             <template v-else>
