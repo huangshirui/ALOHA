@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildObservationValue, makeEmpty, observationValue, seedDemo,
-  validateConcern, validateObservation, validateRegimen,
+  validateConcern, validateObservation, validateRegimen, validateEventTime,
 } from './demo-model'
 
 describe('健康原型：第一批模型的基础验证', () => {
@@ -37,6 +37,12 @@ describe('健康原型：第一批模型的基础验证', () => {
   it('健康问题不能设置倒置的开始结束日期', () => {
     expect(validateConcern('2026-10-27','2026-10-26')).not.toBeNull()
     expect(validateConcern('2026-10-26','2026-10-27')).toBeNull()
+  })
+  it('健康事件允许只记日期，也支持有效的时间段', () => {
+    expect(validateEventTime('','')).toBeNull()
+    expect(validateEventTime('09:00','')).not.toBeNull()
+    expect(validateEventTime('15:00','14:00')).not.toBeNull()
+    expect(validateEventTime('09:00','10:30')).toBeNull()
   })
   it('重复健康方案必须有首次执行日，且不晚于结束日', () => {
     expect(validateRegimen('','', 'daily','')).not.toBeNull()
