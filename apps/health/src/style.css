@@ -415,3 +415,95 @@
   .agent-dock-footer { padding:var(--health-space-2) var(--health-space-4); }
   .agent-dock-disclaimer { font-size:.62rem; }
 }
+
+
+/* Layout v2 — one contextual page title toolbar and a switchable icon rail.
+   The ALOHA common hub is the only app/account/settings entry. */
+.health-shell { --health-sidebar-width:13.5rem; }
+.health-shell .content { padding-top:var(--health-space-4); }
+.health-shell .intro-row,.health-shell .page-heading,.health-shell .detail-heading {
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:var(--health-space-4);
+  margin-bottom:var(--health-space-5);
+}
+.health-shell .page-title-main { display:flex;align-items:flex-start;gap:var(--health-space-3);flex:1;min-width:0; }
+.health-shell .page-title-main>div:last-child { min-width:0; }
+.health-shell .page-title-main h1 { margin-top:0;overflow-wrap:anywhere; }
+.health-shell .page-actions { display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:.55rem;flex:none; }
+.health-shell .agent-page-button {
+  min-height:var(--health-control);
+  display:inline-flex;
+  gap:.5rem;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--health-brand);
+  background:var(--health-brand-subtle);
+  color:var(--health-brand-strong);
+  border-radius:var(--health-radius-pill);
+  padding:.6rem 1rem;
+  font-size:.8rem;
+  font-weight:700;
+  white-space:nowrap;
+}
+.health-shell .agent-page-button:hover,.health-shell .agent-page-button.active {
+  color:var(--health-surface);
+  background:var(--health-brand);
+}
+.health-shell .mobile-page-hub { display:flex;flex:none; }
+.health-shell .mobile-page-hub .aloha-hub-trigger { padding:0; }
+.health-shell .intro-row p,.health-shell .page-heading p,.health-shell .detail-heading p { margin-bottom:0; }
+.health-shell .detail-heading .back-button { margin:0 0 var(--health-space-2); }
+.health-shell .detail-heading .page-title-main>div:last-child { flex:1; }
+.health-shell .future-page .page-heading { margin-bottom:var(--health-space-6); }
+.health-shell.compact-density .ui-card { padding:var(--health-space-3); }
+.health-shell.compact-density .dashboard-layout,.health-shell.compact-density .two-columns,.health-shell.compact-density .detail-columns { gap:var(--health-space-3); }
+.health-shell.compact-density .row-link { padding:.48rem 0; }
+.health-shell.compact-density .list-row { padding:.6rem .75rem; }
+.health-shell.compact-density .hero-card { min-height:15rem; }
+
+/* Mobile content heading keeps app navigation in the same row as the title. */
+@media (max-width:47.999rem) {
+  .health-shell .content { padding-top:var(--health-space-4); }
+  .health-shell .page-title-main { width:100%; }
+  .health-shell .page-actions { width:100%;justify-content:flex-end; }
+  .health-shell .intro-row,.health-shell .page-heading,.health-shell .detail-heading {
+    flex-direction:column;
+    align-items:stretch;
+    gap:var(--health-space-3);
+    margin-bottom:var(--health-space-4);
+  }
+  .health-shell .mobile-page-hub { align-self:flex-start; }
+  .health-shell .agent-page-button { min-height:var(--aloha-control-sm); }
+}
+/* Desktop: the rail and page offset are governed by the same token.
+   The right agent workspace continues to shrink the page, never the rail. */
+@media (min-width:48rem) {
+  .health-shell .desktop-sidebar { width:var(--health-sidebar-width);padding:var(--health-space-5) .8rem var(--health-space-4); }
+  .health-shell .page-frame { margin-left:var(--health-sidebar-width); }
+  .health-shell .mobile-page-hub { display:none; }
+  .health-shell .sidebar-nav { margin-top:var(--health-space-8); }
+  .health-shell .sidebar-bottom { display:flex;flex-direction:column;gap:var(--health-space-3);margin-top:auto; }
+  .health-shell .sidebar-note { margin-top:0; }
+  .health-shell .sidebar-collapse { display:flex;align-items:center;gap:.6rem;min-height:2.7rem;width:100%;padding:.6rem .8rem;border:0;border-radius:var(--health-radius-control);background:transparent;color:var(--health-muted);text-align:left;font-size:.77rem; }
+  .health-shell .sidebar-collapse:hover { background:var(--health-brand-subtle);color:var(--health-brand-strong); }
+  .health-shell.sidebar-collapsed { --health-sidebar-width:4.7rem; }
+  .health-shell.sidebar-collapsed .desktop-sidebar { padding-left:.5rem;padding-right:.5rem;align-items:center; }
+  .health-shell.sidebar-collapsed .desktop-sidebar>.aloha-hub { width:100%; }
+  .health-shell.sidebar-collapsed .sidebar-nav { width:100%; }
+  .health-shell.sidebar-collapsed .sidebar-nav .nav-link { justify-content:center;width:100%;padding:.85rem 0; }
+  .health-shell.sidebar-collapsed .sidebar-bottom { width:100%; }
+  .health-shell.sidebar-collapsed .sidebar-collapse { justify-content:center;padding:.6rem 0; }
+  .health-shell .content { padding-top:var(--health-space-5); }
+}
+@media (min-width:75rem) {
+  .health-shell { --health-sidebar-width:15.5rem; }
+  .health-shell.sidebar-collapsed { --health-sidebar-width:4.7rem; }
+}
+@media (max-width:28rem) {
+  .health-shell .page-title-main { gap:.55rem; }
+  .health-shell .page-title-main h1 { font-size:1.7rem; }
+  .health-shell .page-actions { gap:.35rem; }
+  .health-shell .agent-page-button { padding:.55rem .7rem; }
+}
