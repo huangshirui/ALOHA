@@ -28,12 +28,16 @@ const locatingConcernId=ref<string|null>(null)
 const pendingPoint=ref<BodyPoint|null>(null)
 const positionError=ref('')
 const figureEl=ref<HTMLElement|null>(null)
+const explorerEl=ref<HTMLElement|null>(null)
 const regionCardEl=ref<HTMLElement|null>(null)
 const locatingConcernName=computed(()=>props.concerns.find(c=>c.id===locatingConcernId.value)?.name||'健康问题')
 async function selectHotspot(id:BodyRegionId) {
   emit('selectRegion',id)
   await nextTick()
-  if(typeof window!=='undefined' && window.matchMedia('(max-width:47.999rem)').matches)
+  // This may stack even on a wide desktop when the AI side panel is open.
+  // Use actual remaining content width, not the browser viewport alone.
+  if((explorerEl.value?.clientWidth ?? Number.POSITIVE_INFINITY) <= 816 ||
+     (typeof window!=='undefined' && window.matchMedia('(max-width:47.999rem)').matches))
     regionCardEl.value?.scrollIntoView({block:'start',behavior:'smooth'})
 }
 async function startPositioning(id:string) {
@@ -79,7 +83,7 @@ function onRegionChange(id:string,event:Event) {
 </script>
 
 <template>
-  <div class="body-explorer">
+  <div ref="explorerEl" class="body-explorer">
     <section class="ui-card body-figure-card" aria-labelledby="body-map-heading">
       <div class="body-card-heading">
         <h2 id="body-map-heading">身体图</h2>
