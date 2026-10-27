@@ -26,6 +26,14 @@
 - **权威边界**：LifeSpace HealthConcern、HealthObservation 等 canonical records 不添加 `bodyRegion` 属性。新的 `body-map.ts` 只表达 ALOHA 应用侧 BodyMapRegion/BodyMapBinding 的演示投影，初始关联均为虚构例子；不是诊断、严重程度或数据授权依据。
 - **本期新增操作**：身体概览页唯一页级新增操作为「添加健康问题」；首页保留“快速记录”，指标/资料/时间线等 Tab 仍按 `JOURNEYS.md` 的唯一主动作策略执行。
 
+## BodyMap 线稿素材与光晕点原型（2026-10-27）
+
+- 采用独立的 `apps/health/public/body-front-outline.svg` 无性别正面人体线框文件（340×520 固定 `viewBox`），页面以 `/health/` 的 Vite 基础路径加载并等比渲染。人体图、坐标叠层、部位标记不应使用彼此独立的缩放尺寸；以后改图片必须更新 `BODY_MAP_ASSET_ID` 及默认锚点。
+- **仅一个点**：每个有关联关注事项的部位显示一个直径 8px 圆点，默认不显示数量和周围标签；桌面 Hover 与键盘 Focus 有有限的柔和双环 Halo，手机点击后用已选中状态的 Halo 代替 Hover。实际可触达区域约 42px；同一区域有多个问题在右侧列表查看。
+- 顶部不再重复「从身体部位探索」「身体健康图」「点击图上标记……」三行介绍，保留单行「身体图」。描述性无诊断意义的说明只在下方保留一次。
+- **坐标模型（ALOHA 投影）**：身体素材的 `assetId` + 归一化 `x/y`，以及 `BodyMapRegion` 的区域锚点；`BodyMapBinding` 将具体 HealthConcern 与部位/可选精准点关联。点击待标记事项 → 在图上点位置 → 预览 → 确认；也可只选大部位。不能把这一展示信息加入 LifeSpace HealthConcern 字段。
+- QA：桌面折叠/展开导航、AI 右侧工作区开关、容器双栏/上下；移动端点亮标记后滚动至问题卡片，点位与人体不因缩放偏移；取消选点、确认位置、不同区域的多项关注问题正常；独立 Health Preview 仍待重新部署验证。
+
 ## Mobile 顶部、滚动及表单一致性验收（2026-10-27）
 
 - **顶部排布：** 统一 `HealthPageHeader.vue` 负责移动端 ALOHA Hub、当前标题、主要操作与 Lucide AI 入口，**始终单行**；手机隐藏冗余副标题，AI 用图标按钮保留可访问名称。标题过长时用省略号，不能挤出第二行按钮。
