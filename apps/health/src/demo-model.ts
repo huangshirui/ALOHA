@@ -44,6 +44,8 @@ export interface HealthEvent extends SharedRecord {
   eventType: string
   summary: string
   date: string // UI demo; canonical HealthEvent.when is temporal_range
+  timeStart: string // optional start time; blank means date-only
+  timeEnd: string // optional end time; blank means date-only
   location: string // UI demo; canonical HealthEvent.location is a structured location
   description: string
   status: 'active' | 'cancelled'
@@ -63,6 +65,7 @@ export interface Assessment extends SharedRecord {
   assessedDate: string
   status: ObservationStatus
   sourceNote: string
+  notes: string
   basisIds: string[] // UI-only based_on relation indexes
 }
 export interface Regimen extends SharedRecord {
@@ -74,6 +77,7 @@ export interface Regimen extends SharedRecord {
   status: RegimenStatus
   sourceDocumentId: string
   sourceNote: string
+  notes: string
   recurrence: 'none' | 'daily' | 'weekly' // UI facade for platform recurrence_rule
   firstDueDate: string
 }
@@ -130,6 +134,12 @@ export function validatePeriod(start: string, end: string): string | null {
   if (start && end && end < start) return '结束日期不能早于开始日期'
   return null
 }
+export function validateEventTime(start: string, end: string): string | null {
+  if (!start && !end) return null
+  if (!start || !end) return '如需记录具体时间，请填写开始和结束时间'
+  if (end <= start) return '结束时间必须晚于开始时间'
+  return null
+}
 export function validateRegimen(start: string, end: string, repeat: Regimen['recurrence'], first: string): string | null {
   const periodError = validatePeriod(start, end)
   if (periodError) return periodError
@@ -152,10 +162,10 @@ export function makeEmpty(kind: HealthKind, date: string): Record<string, unknow
     case 'concern': return { name:'',summary:'',status:'active',onsetDate:'',resolvedDate:'',notes:'',concernIds:[] }
     case 'metric': return { name:'',valueType:'number',defaultUnit:'' }
     case 'observation': return { metricId:'',observedDate:date,value:'',unit:'',interpretation:'',status:'final',sourceDocumentId:'',sourceNote:'',notes:'',concernIds:[] }
-    case 'event': return { eventType:'visit',summary:'',date,location:'',description:'',status:'active',concernIds:[] }
+    case 'event': return { eventType:'visit',summary:'',date,timeStart:'',timeEnd:'',location:'',description:'',status:'active',concernIds:[] }
     case 'document': return { title:'',documentType:'lab_report',issuedDate:date,issuerName:'',eventId:'',fileName:'',notes:'',concernIds:[] }
-    case 'assessment': return { title:'',content:'',assessedDate:date,status:'final',sourceNote:'',basisIds:[],concernIds:[] }
-    case 'regimen': return { name:'',regimenType:'wellness',instructions:'',startDate:date,endDate:'',status:'active',sourceDocumentId:'',sourceNote:'',recurrence:'none',firstDueDate:'',concernIds:[] }
+    case 'assessment': return { title:'',content:'',assessedDate:date,status:'final',sourceNote:'',notes:'',basisIds:[],concernIds:[] }
+    case 'regimen': return { name:'',regimenType:'wellness',instructions:'',startDate:date,endDate:'',status:'active',sourceDocumentId:'',sourceNote:'',notes:'',recurrence:'none',firstDueDate:'',concernIds:[] }
   }
 }
 
@@ -179,16 +189,16 @@ export function seedDemo(): DemoData {
       { id:'o-5',metricId:'m-1',observedDate:'2026-10-20',valueNumber:67.2,valueText:'',valueBoolean:null,unit:'kg',interpretation:'',status:'final',sourceDocumentId:'',sourceNote:'',notes:'',concernIds:[] },
     ],
     events: [
-      { id:'e-1',eventType:'examination',summary:'年度检查',date:'2026-10-16',location:'演示健康中心',description:'留存检查资料，回顾整体情况。',status:'active',concernIds:['c-1'] },
+      { id:'e-1',eventType:'examination',summary:'年度检查',date:'2026-10-16',timeStart:'',timeEnd:'',location:'演示健康中心',description:'留存检查资料，回顾整体情况。',status:'active',concernIds:['c-1'] },
     ],
     documents: [
       { id:'d-1',title:'年度检查记录（示例）',documentType:'physical_exam',issuedDate:'2026-10-16',issuerName:'演示健康中心',eventId:'e-1',fileName:'sample-checkup.pdf',notes:'虚构示例，没有实际文件。',concernIds:['c-1'] },
     ],
     assessments: [
-      { id:'a-1',title:'阶段记录回顾',content:'这是一段演示文字，用于展示评估和来源记录的区别；不构成医学建议。',assessedDate:'2026-10-20',status:'final',sourceNote:'仅用于产品演示',basisIds:['d-1','o-3'],concernIds:['c-1'] },
+      { id:'a-1',title:'阶段记录回顾',content:'这是一段演示文字，用于展示评估和来源记录的区别；不构成医学建议。',assessedDate:'2026-10-20',status:'final',sourceNote:'仅用于产品演示',notes:'',basisIds:['d-1','o-3'],concernIds:['c-1'] },
     ],
     regimens: [
-      { id:'r-1',name:'每周轻活动计划',regimenType:'rehabilitation',instructions:'根据当天身体感受安排轻量活动，必要时调整。',startDate:'2026-10-01',endDate:'',status:'active',sourceDocumentId:'',sourceNote:'演示计划',recurrence:'weekly',firstDueDate:'2026-10-02',concernIds:['c-2'] },
+      { id:'r-1',name:'每周轻活动计划',regimenType:'rehabilitation',instructions:'根据当天身体感受安排轻量活动，必要时调整。',startDate:'2026-10-01',endDate:'',status:'active',sourceDocumentId:'',sourceNote:'演示计划',notes:'',recurrence:'weekly',firstDueDate:'2026-10-02',concernIds:['c-2'] },
     ],
   }
 }
