@@ -1,268 +1,528 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
+import {
+  Activity, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, CheckCircle2,
+  ChevronDown, ChevronRight, CircleHelp, ClipboardCheck, ClipboardList, Clock3, FileHeart,
+  FilePlus2, FileText, FolderHeart, Heart, HeartPulse, Home, Info, LayoutGrid, Link2,
+  ListChecks, Menu, MoreHorizontal, Pencil, Plus, Search, ShieldCheck, Sparkles,
+  Stethoscope, Trash2, TrendingDown, Upload, Utensils, X,
+} from 'lucide-vue-next'
+import {
+  buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
+  observationStatuses, observationValue, regimenStatuses, regimenTypes, seedDemo,
+  validateConcern, validateObservation, validateRegimen, valueTypes,
+  type HealthKind, type Metric, type Observation, type Regimen,
+} from './demo-model'
 
-type Tab = 'home' | 'body' | 'nutrition' | 'exercise'
-type BodyView = '概览' | '健康问题' | '指标' | '时间线' | '资料' | '干预'
-type Overlay = null | 'agent' | 'record' | 'upload' | 'apps' | 'account'
-
-type DemoRecord = { name: string; value: string; unit: string; date: string }
-const tabs: { id: Tab; title: string; mark: string }[] = [
-  { id: 'home', title: '首页', mark: '⌂' },
-  { id: 'body', title: '身体', mark: '♡' },
-  { id: 'nutrition', title: '饮食', mark: '◈' },
-  { id: 'exercise', title: '运动', mark: '↗' },
+type Tab = 'home' | 'body' | 'food' | 'movement'
+type BodyTab = 'overview' | 'concerns' | 'metrics' | 'timeline' | 'documents' | 'regimens'
+type Sheet = '' | 'edit' | 'import' | 'agent' | 'switcher' | 'account'
+type RecordView = { kind: HealthKind; id: string }
+const navItems = [
+  { id: 'home' as Tab, title: '首页', icon: Home },
+  { id: 'body' as Tab, title: '身体', icon: HeartPulse },
+  { id: 'food' as Tab, title: '饮食', icon: Utensils },
+  { id: 'movement' as Tab, title: '运动', icon: Activity },
 ]
-const bodyViews: BodyView[] = ['概览', '健康问题', '指标', '时间线', '资料', '干预']
-const concerns = [
-  { id: 'balance', name: '日常血压观察', caption: '关注测量变化和生活习惯', tone: 'mint', since: '2026 年 8 月' },
-  { id: 'recovery', name: '运动恢复计划', caption: '定期回顾活动量与恢复状况', tone: 'lavender', since: '2026 年 9 月' },
+const bodyTabs = [
+  { id: 'overview' as BodyTab, title: '概览' },
+  { id: 'concerns' as BodyTab, title: '健康问题' },
+  { id: 'metrics' as BodyTab, title: '指标' },
+  { id: 'timeline' as BodyTab, title: '时间线' },
+  { id: 'documents' as BodyTab, title: '资料' },
+  { id: 'regimens' as BodyTab, title: '干预' },
 ]
-const demoTrend = [
-  { month: '5月', value: 121 },
-  { month: '6月', value: 119 },
-  { month: '7月', value: 123 },
-  { month: '8月', value: 118 },
-  { month: '9月', value: 116 },
-  { month: '10月', value: 117 },
-]
-const demoEvents = [
-  { date: '10月22日', title: '记录一次血压测量', sub: 'HealthObservation · 演示数据', symbol: '◉' },
-  { date: '10月18日', title: '添加年度检查资料', sub: 'HealthDocument · 演示数据', symbol: '▤' },
-  { date: '10月12日', title: '更新运动恢复计划', sub: 'HealthRegimen · 演示数据', symbol: '◇' },
-]
+const kindLabel: Record<HealthKind,string> = {
+  concern: '健康问题', metric: '健康指标', observation: '测量记录', event: '健康事件',
+  document: '健康资料', assessment: '健康评估', regimen: '健康方案',
+}
+const kindCollection: Record<HealthKind, keyof ReturnType<typeof seedDemo>> = {
+  concern: 'concerns', metric: 'metrics', observation: 'observations', event: 'events',
+  document: 'documents', assessment: 'assessments', regimen: 'regimens',
+}
+const kindIcon = { concern: Heart, metric: Activity, observation: ClipboardCheck, event: CalendarDays, document: FileText, assessment: BadgeCheck, regimen: ListChecks }
+const demo = reactive(seedDemo())
 const activeTab = ref<Tab>('home')
-const bodyView = ref<BodyView>('概览')
-const selectedConcern = ref<string | null>(null)
-const selectedMetric = ref<string | null>(null)
-const overlay = ref<Overlay>(null)
-const agentDraft = ref('')
-const agentAnswer = ref('')
-const recordingMetric = ref('体重')
-const recordingValue = ref('')
-const recordingNote = ref('')
-const demoRecords = ref<DemoRecord[]>([])
-const checkedTasks = ref<string[]>([])
-const documentName = ref('')
-const documentPreview = ref(false)
+const bodyTab = ref<BodyTab>('overview')
+const selected = ref<RecordView | null>(null)
+const sheet = ref<Sheet>('')
+const editKind = ref<HealthKind>('concern')
+const editId = ref('')
+const draft = ref<Record<string,any>>({})
+const formError = ref('')
+const search = ref('')
 const notice = ref('')
-const label = computed(() => tabs.find(item => item.id === activeTab.value)?.title ?? 'Health')
-const currentConcern = computed(() => concerns.find(item => item.id === selectedConcern.value))
-const currentMetricValue = computed(() => {
-  const latest = [...demoRecords.value].reverse().find(item => item.name === '体重')
-  return latest ? latest.value : '67.2'
-})
-const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric' }).format(new Date())
-
-function navigate(tab: Tab) {
-  activeTab.value = tab
-  selectedConcern.value = null
-  selectedMetric.value = null
-  overlay.value = null
-  if (tab === 'body') bodyView.value = '概览'
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-function showConcern(id: string) {
-  selectedConcern.value = id
-  selectedMetric.value = null
-  activeTab.value = 'body'
-  bodyView.value = '健康问题'
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-function showMetric(name: string) {
-  selectedMetric.value = name
-  selectedConcern.value = null
-  activeTab.value = 'body'
-  bodyView.value = '指标'
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-}
-function selectBody(view: BodyView) {
-  bodyView.value = view
-  selectedConcern.value = null
-  selectedMetric.value = null
-}
-function toast(message: string) {
-  notice.value = message
-}
-function toggleTask(id: string) {
-  checkedTasks.value = checkedTasks.value.includes(id)
-    ? checkedTasks.value.filter(item => item !== id)
-    : [...checkedTasks.value, id]
-}
-function addRecord() {
-  const value = recordingValue.value.trim()
-  if (!value || !Number.isFinite(Number(value)) || Number(value) <= 0) {
-    toast('请输入有效的演示数值。')
-    return
+const agentQuestion = ref('')
+const agentReply = ref('')
+const uploadStage = ref<1|2|3>(1)
+const uploadedName = ref('')
+const uploadTitle = ref('')
+const uploadType = ref('lab_report')
+const uploadConcernId = ref('')
+const uploadIncludeResult = ref(false)
+const completedPlanIds = ref<string[]>([])
+let nextRecordId = 100
+const today = new Date().toISOString().slice(0,10)
+const displayDate = (date: string) => date ? date.replace(/-/g,'.') : '未填写'
+const nameOfMetric = (id: string) => demo.metrics.find(x => x.id === id)?.name ?? '其他指标'
+const nameOfDocument = (id: string) => demo.documents.find(x => x.id === id)?.title ?? '未找到资料'
+const nameOfConcern = (id: string) => demo.concerns.find(x => x.id === id)?.name ?? '健康问题'
+const getList = (kind: HealthKind): any[] => demo[kindCollection[kind]] as any[]
+const current = computed<any | null>(() => selected.value ? getList(selected.value.kind).find(item=>item.id===selected.value?.id) ?? null : null)
+const selectedConcern = computed(() => selected.value?.kind === 'concern' ? selected.value.id : '')
+const related = (record: {concernIds?:string[]},id:string) => (record.concernIds ?? []).includes(id)
+const activeConcerns = computed(() => demo.concerns.filter(c=>c.status==='active'))
+const latestFor = (metricId:string) => [...demo.observations].filter(o=>o.metricId===metricId && o.status !== 'entered_in_error').sort((a,b)=>b.observedDate.localeCompare(a.observedDate))[0]
+const observationTitle = (o: Observation) => nameOfMetric(o.metricId) + ' · ' + observationValue(o,demo.metrics.find(m=>m.id===o.metricId))
+const eventName = (e: {eventType:string}) => labelFrom(eventTypes,e.eventType)
+const docName = (d: {documentType:string}) => labelFrom(documentTypes,d.documentType)
+const assessmentCount = computed(() => demo.assessments.length)
+const docCount = computed(() => demo.documents.length)
+const timeline = computed(() => [
+  ...demo.observations.map(o=>({ id:o.id,kind:'observation' as HealthKind,date:o.observedDate,title:observationTitle(o),meta:'测量记录' })),
+  ...demo.events.map(e=>({ id:e.id,kind:'event' as HealthKind,date:e.date,title:e.summary,meta:eventName(e) })),
+  ...demo.assessments.map(a=>({ id:a.id,kind:'assessment' as HealthKind,date:a.assessedDate,title:a.title,meta:'评估记录' })),
+].sort((a,b)=>b.date.localeCompare(a.date)))
+const filteredConcerns = computed(()=>demo.concerns.filter(c=>c.name.includes(search.value) || c.summary.includes(search.value)))
+const filteredMetrics = computed(()=>demo.metrics.filter(m=>m.name.includes(search.value)))
+const filteredDocuments = computed(()=>demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
+const filteredRegimens = computed(()=>demo.regimens.filter(r=>r.name.includes(search.value)))
+const filteredTimeline = computed(()=>timeline.value.filter(e=>e.title.includes(search.value) || e.meta.includes(search.value)))
+const contextName = computed(()=>current.value ? (current.value.name || current.value.title || current.value.summary || nameOfMetric(current.value.metricId)) : activeTab.value === 'body' ? '身体' : navItems.find(n=>n.id===activeTab.value)?.title ?? '首页')
+const concernRelated = computed(() => {
+  const id = selectedConcern.value
+  return {
+    observations: demo.observations.filter(o=>related(o,id)),
+    events: demo.events.filter(e=>related(e,id)),
+    documents: demo.documents.filter(d=>related(d,id)),
+    assessments: demo.assessments.filter(a=>related(a,id)),
+    regimens: demo.regimens.filter(r=>related(r,id)),
   }
-  demoRecords.value.push({
-    name: recordingMetric.value,
-    value,
-    unit: recordingMetric.value === '体重' ? 'kg' : 'mmHg',
-    date: today,
-  })
-  recordingValue.value = ''
-  recordingNote.value = ''
-  overlay.value = null
-  toast('已添加到此页面的临时演示数据（不会上传或保存）。')
+})
+const valuePreview = computed(() => {
+  if(!current.value || selected.value?.kind !== 'observation') return ''
+  return observationValue(current.value,demo.metrics.find(m=>m.id===current.value.metricId))
+})
+function chartPoints(metricId: string) {
+  const points = demo.observations.filter(o=>o.metricId===metricId && o.valueNumber!==null && o.status!=='entered_in_error').sort((a,b)=>a.observedDate.localeCompare(b.observedDate))
+  if(points.length < 2) return ''
+  const values = points.map(p=>p.valueNumber!)
+  const lo=Math.min(...values)-2, hi=Math.max(...values)+2
+  return points.map((p,i)=>`${Math.round(10+320*i/(points.length-1))},${Math.round(82-60*(p.valueNumber!-lo)/(hi-lo))}`).join(' ')
 }
-function handleFile(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  documentName.value = file?.name ?? ''
-  documentPreview.value = false
+function navigate(tab: Tab) {
+  activeTab.value=tab; selected.value=null; sheet.value=''; bodyTab.value='overview'; search.value=''
+  window.scrollTo({top:0,behavior:'smooth'})
 }
-function demoDocument() {
-  if (!documentName.value) return
-  documentPreview.value = true
-  toast('这是报告导入交互模拟；未读取或上传文件内容。')
+function openBody(tab: BodyTab) { navigate('body');bodyTab.value=tab }
+function show(kind: HealthKind,id: string) {
+  activeTab.value='body'; selected.value={kind,id};sheet.value='';search.value=''
+  window.scrollTo({top:0,behavior:'smooth'})
 }
-function askAgent() {
-  const query = agentDraft.value.trim()
-  if (!query) return
-  agentAnswer.value = query.includes('报告')
-    ? '演示回答：正式版将列出关联报告、来源与可核对的提取结果。本原型没有连接 AI，也没有读取任何个人文件。'
-    : query.includes('变化') || query.includes('趋势')
-      ? '演示回答：您可以在指标详情中比较不同日期的观测，并回溯原始报告。此处显示的是虚构趋势数据，不是医学判断。'
-      : '演示回答：Health Agent 会携带当前页面或健康关注事项作为上下文，帮助您查看记录、理解变化和规划下一步。本原型仅模拟交互。'
+function back() { selected.value=null;window.scrollTo({top:0,behavior:'smooth'}) }
+function openEditor(kind: HealthKind,id='',presetConcernId='') {
+  const record=id ? getList(kind).find(r=>r.id===id) : null
+  if (id && !record) return
+  const d=record ? structuredClone({...record}) : makeEmpty(kind,today)
+  if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
+  if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
+  if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
+  editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
-function closeOverlay() {
-  overlay.value = null
+function formSave() {
+  const v=draft.value, kind=editKind.value
+  const mandatory: Record<HealthKind,string[]> = {
+    concern:['name'],metric:['name'],observation:['metricId','observedDate'],event:['summary','date'],
+    document:['title','fileName'],assessment:['title','content','assessedDate'],regimen:['name','instructions'],
+  }
+  for(const key of mandatory[kind]) {
+    if(typeof v[key]!=='boolean' && !String(v[key]??'').trim()) {
+      formError.value=key==='fileName'?'请先选择一份演示文件':'请填写必填内容'
+      return
+    }
+  }
+  if(kind==='concern') formError.value=validateConcern(v.onsetDate,v.resolvedDate)??''
+  if(kind==='regimen') formError.value=validateRegimen(v.startDate,v.endDate,v.recurrence,v.firstDueDate)??''
+  if(kind==='observation') formError.value=validateObservation(demo.metrics.find(m=>m.id===v.metricId),String(v.value??''))??''
+  if(kind==='metric' && demo.metrics.some(m=>m.name.trim()===String(v.name).trim() && m.id!==editId.value)) formError.value='已有同名指标，可直接使用现有指标'
+  if(formError.value) return
+  const payload:any={...v}
+  if(kind==='observation') {
+    const metric=demo.metrics.find(m=>m.id===v.metricId)!
+    Object.assign(payload,buildObservationValue(metric,String(v.value)))
+    payload.unit=metric.valueType==='number' ? (v.unit || metric.defaultUnit) : ''
+    delete payload.value
+  }
+  // Every remaining relation is an explicit demo UI association; it never deletes source facts.
+  if(!payload.concernIds && kind!=='metric') payload.concernIds=[]
+  const rows=getList(kind)
+  if(editId.value) {
+    const index=rows.findIndex(r=>r.id===editId.value)
+    if(index>=0) rows.splice(index,1,{...rows[index],...payload})
+  } else rows.unshift({...payload,id:'demo-'+(++nextRecordId)})
+  sheet.value=''; notice.value='已保存到当前体验页面，刷新后会恢复初始内容。'
+  search.value=''
+  if(kind==='concern') openBody('concerns')
+  else if(kind==='metric') openBody('metrics')
+  else if(kind==='document') openBody('documents')
+  else if(kind==='regimen') openBody('regimens')
+  else openBody('timeline')
+}
+function removeCurrent() {
+  if(!selected.value||!current.value) return
+  if(!window.confirm('要从本次演示中删除这条记录吗？')) return
+  const kind=selected.value.kind,id=selected.value.id
+  const rows=getList(kind)
+  const i=rows.findIndex(r=>r.id===id)
+  if(i>=0) rows.splice(i,1)
+  // Remove orphaned UI-only relation indexes without cascading health facts.
+  if(kind==='concern') {
+    for(const collection of ['observations','events','documents','assessments','regimens'] as const)
+      for(const record of demo[collection]) record.concernIds=record.concernIds.filter(x=>x!==id)
+  }
+  selected.value=null;notice.value='已从演示页面移除。'
+}
+function togglePlan(id: string) {
+  completedPlanIds.value=completedPlanIds.value.includes(id) ? completedPlanIds.value.filter(x=>x!==id) : [...completedPlanIds.value,id]
+}
+function closeSheet() { sheet.value='';formError.value='' }
+function pickFile(e: Event) {
+  const file=(e.target as HTMLInputElement).files?.[0]
+  // Never read file contents; filename is held only in component memory.
+  if(sheet.value==='edit') draft.value.fileName=file?.name ?? ''
+  else uploadedName.value=file?.name ?? ''
+}
+function openImport(concernId='') {
+  sheet.value='import';uploadStage.value=1;uploadedName.value='';uploadTitle.value='';uploadType.value='lab_report';uploadConcernId.value=concernId;uploadIncludeResult.value=false
+}
+function importNext() {
+  if(uploadStage.value===1) {
+    if(!uploadedName.value){formError.value='请先选择一个示例文件';return}
+    if(!uploadTitle.value.trim())uploadTitle.value=uploadedName.value.replace(/\.[^.]+$/,'')
+    uploadStage.value=2;formError.value='';return
+  }
+  if(uploadStage.value===2) {uploadStage.value=3;return}
+  const id='demo-'+(++nextRecordId)
+  demo.documents.unshift({id,title:uploadTitle.value,documentType:uploadType.value,issuedDate:today,issuerName:'',eventId:'',fileName:uploadedName.value,notes:'此记录只保存了演示文件名，没有上传文件。',concernIds:uploadConcernId.value?[uploadConcernId.value]:[]})
+  if(uploadIncludeResult.value) {
+    demo.observations.unshift({
+      id:'demo-'+(++nextRecordId),metricId:'m-2',observedDate:today,
+      valueNumber:118,valueText:'',valueBoolean:null,unit:'mmHg',
+      interpretation:'',status:'preliminary',sourceDocumentId:id,
+      sourceNote:'模拟提取结果，不来自真实文件',notes:'请核对后再保存真实数据',
+      concernIds:uploadConcernId.value?[uploadConcernId.value]:[],
+    })
+  }
+  sheet.value='';notice.value='资料流程演示完成。文件内容没有被读取或上传。';openBody('documents')
+}
+function sendAgent() {
+  if(!agentQuestion.value.trim())return
+  agentReply.value='这是交互演示。正式版会结合你授权的“'+contextName.value+'”相关资料，列出数据出处，并将建议和已记录的事实分开。这里没有调用 AI，也不会生成真实健康结论。'
+}
+function openAgent() {agentReply.value='';agentQuestion.value='';sheet.value='agent'}
+function labelForKind(kind: HealthKind) {return kindLabel[kind]}
+function detailName(kind: HealthKind,record:any) {
+  if(kind==='observation')return observationTitle(record)
+  return record.name || record.title || record.summary
 }
 </script>
 
 <template>
-  <div class="aloha-surface health-app" data-aloha-surface="health" @keydown.esc="closeOverlay">
-    <aside class="desktop-nav" aria-label="Health 导航">
-      <div class="brand-sign"><span class="brand-heart">♥</span><div><strong>ALOHA</strong><small>HEALTH</small></div></div>
-      <div class="desktop-nav-links">
-        <button v-for="tab in tabs" :key="tab.id" :class="{ active: activeTab === tab.id }" type="button" @click="navigate(tab)">
-          <span class="nav-symbol">{{ tab.mark }}</span>{{ tab.title }}
+  <div class="aloha-surface health-shell" data-aloha-surface="health" @keydown.esc="closeSheet">
+    <aside class="desktop-sidebar" aria-label="主导航">
+      <button type="button" class="sidebar-brand" @click="sheet='switcher'" aria-label="切换应用">
+        <span class="brand-mark"><Heart :size="22" fill="currentColor"/></span>
+        <span><b>ALOHA</b><small>HEALTH</small></span><ChevronDown :size="15"/>
+      </button>
+      <nav class="sidebar-nav">
+        <button v-for="item in navItems" :key="item.id" :class="['nav-link',{selected:activeTab===item.id}]" type="button" @click="navigate(item.id)">
+          <component :is="item.icon" :size="20" :stroke-width="1.9"/><span>{{ item.title }}</span>
         </button>
-      </div>
-      <div class="desktop-nav-bottom">
-        <span class="demo-dot"></span> 交互演示版
-        <p>使用虚构数据 · 不连接真实健康档案</p>
-      </div>
+      </nav>
+      <div class="sidebar-note"><Info :size="16"/><span>这是体验版本<br>所有数据均为虚构示例</span></div>
     </aside>
-
-    <div class="page">
-      <header class="topbar">
-        <button class="brand-control" type="button" aria-label="切换 ALOHA 应用" @click="overlay = 'apps'">
-          <span class="mini-icon">♥</span><span class="brand-copy"><strong>Health</strong><small>ALOHA · 健康空间</small></span><span class="tiny-chevron">⌄</span>
+    <div class="page-frame">
+      <header class="global-header">
+        <button class="header-brand" type="button" @click="sheet='switcher'" aria-label="切换 ALOHA 应用">
+          <span class="brand-mark"><Heart :size="20" fill="currentColor"/></span>
+          <span class="header-brand-name">Health</span><ChevronDown :size="16"/>
         </button>
-        <div class="top-actions">
-          <span class="demo-pill">DEMO</span>
-          <button class="round-action" type="button" aria-label="与 Health Agent 对话" @click="overlay = 'agent'">✦</button>
-          <button class="round-action profile-action" type="button" aria-label="账户及共享入口" @click="overlay = 'account'">◉</button>
+        <div class="header-tools">
+          <span class="preview-label">体验版本</span>
+          <button class="icon-button" type="button" aria-label="问问 Health" title="问问 Health" @click="openAgent"><Sparkles :size="20"/></button>
+          <button class="avatar-button" type="button" aria-label="个人与数据共享" title="个人与数据共享" @click="sheet='account'"><CircleHelp :size="21"/></button>
         </div>
       </header>
 
-      <main class="health-main" id="main-content">
-        <div v-if="activeTab === 'home'" class="home-page">
-          <section class="greeting">
-            <div><p class="eyebrow">{{ today }} · 您的健康空间</p><h1>照顾健康，<br class="compact-break">从了解自己开始。</h1><p>记录身体的变化，持续关注真正重要的事。</p></div>
-            <button type="button" class="subtle-button body-map-button" @click="navigate('body')">♡ 身体健康图 <span>↗</span></button>
-          </section>
-
-          <div class="dashboard-grid">
-            <section class="snapshot-card">
-              <div class="card-topline"><span>健康概览</span><span>最近 30 天 <span class="arrow">↗</span></span></div>
-              <div class="snapshot-heading"><strong>关注进展，<br>而不只是数字。</strong><span class="pulse-illustration" aria-hidden="true">♡</span></div>
-              <p class="snapshot-copy">这里汇总持续关注事项、最近记录与值得回顾的变化，不生成未经验证的健康总分。</p>
-              <div class="snapshot-stats"><button type="button" @click="selectBody('健康问题'); activeTab = 'body'"><b>2</b><span>持续关注 <span>›</span></span></button><button type="button" @click="selectBody('资料'); activeTab = 'body'"><b>1</b><span>演示资料 <span>›</span></span></button></div>
+      <main class="content">
+        <section v-if="activeTab==='home'" class="home-view">
+          <div class="intro-row">
+            <div><span class="eyebrow">你的健康空间</span><h1>慢慢积累记录，<br class="mobile-only">更好地了解自己。</h1><p>从长期状态出发，关注每一次值得记录的变化。</p></div>
+            <button class="quiet-button overview-shortcut" type="button" @click="openBody('overview')"><HeartPulse :size="17"/> 身体概览 <ArrowUpRight :size="16"/></button>
+          </div>
+          <div class="dashboard-layout">
+            <section class="hero-card">
+              <div class="hero-head"><span>健康概览</span><span>持续关注的内容</span></div>
+              <div class="hero-main"><div><h2>{{ activeConcerns.length }} 项正在关注</h2><p>记录已经开始。这里会随着健康资料和日常记录逐步丰富。</p></div><HeartPulse class="hero-watermark" :size="92" :stroke-width="1"/></div>
+              <div class="hero-stats"><button type="button" @click="openBody('concerns')"><b>{{ activeConcerns.length }}</b><span>关注事项 <ChevronRight :size="15"/></span></button><button type="button" @click="openBody('documents')"><b>{{ docCount }}</b><span>资料 <ChevronRight :size="15"/></span></button><button type="button" @click="openBody('timeline')"><b>{{ demo.observations.length }}</b><span>测量记录 <ChevronRight :size="15"/></span></button></div>
             </section>
-
-            <section class="section-card focus-card">
-              <div class="section-heading"><div><p class="eyebrow">MY FOCUS</p><h2>持续关注</h2></div><button class="text-action" type="button" @click="selectBody('健康问题'); activeTab = 'body'">查看全部 ↗</button></div>
-              <button v-for="concern in concerns" :key="concern.id" type="button" class="concern-line" @click="showConcern(concern.id)">
-                <span class="concern-icon" :class="concern.tone">{{ concern.id === 'balance' ? '◷' : '✧' }}</span>
-                <span class="concern-copy"><strong>{{ concern.name }}</strong><small>{{ concern.caption }}</small></span><span class="chevron">›</span>
+            <section class="ui-card focus-panel">
+              <div class="card-heading"><div><span class="eyebrow">持续关注</span><h2>正在关注的健康问题</h2></div><button class="inline-link" type="button" @click="openBody('concerns')">查看全部 <ArrowUpRight :size="15"/></button></div>
+              <button v-for="c in activeConcerns.slice(0,3)" :key="c.id" type="button" class="row-link" @click="show('concern',c.id)">
+                <span class="list-icon"><Heart :size="19"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary || '点击查看关联的健康记录' }}</small></span><ChevronRight :size="18" class="subtle-icon"/>
               </button>
+              <button class="add-inline" type="button" @click="openEditor('concern')"><Plus :size="17"/> 添加关注事项</button>
             </section>
+            <section class="ui-card metrics-panel">
+              <div class="card-heading"><div><span class="eyebrow">关键指标</span><h2>留意长期变化</h2></div><button class="inline-link" type="button" @click="openBody('metrics')">查看指标 <ArrowUpRight :size="15"/></button></div>
+              <div class="metric-grid"><button v-for="metric in demo.metrics.filter(m=>m.valueType==='number').slice(0,2)" :key="metric.id" type="button" class="metric-card" @click="show('metric',metric.id)">
+                <span>{{ metric.name }}</span><strong>{{ latestFor(metric.id)?.valueNumber ?? '—' }} <small>{{ metric.defaultUnit }}</small></strong>
+                <svg class="sparkline" viewBox="0 0 340 100" preserveAspectRatio="none" aria-hidden="true"><polyline :points="chartPoints(metric.id) || '10,75 120,62 220,68 330,45'"/></svg>
+                <small>最近记录：{{ displayDate(latestFor(metric.id)?.observedDate??'') }}</small>
+              </button></div>
+            </section>
+            <section class="ui-card tasks-panel">
+              <div class="card-heading"><div><span class="eyebrow">今天可以做什么</span><h2>正在执行的健康计划</h2></div><button class="inline-link" type="button" @click="openBody('regimens')">全部计划 <ArrowUpRight :size="15"/></button></div>
+              <template v-if="demo.regimens.some(r=>r.status==='active')">
+                <button v-for="r in demo.regimens.filter(r=>r.status==='active').slice(0,3)" :key="r.id" class="task-line" type="button" @click="togglePlan(r.id)">
+                  <span :class="['check-circle',{done:completedPlanIds.includes(r.id)}]"><Check v-if="completedPlanIds.includes(r.id)" :size="15"/></span>
+                  <span class="row-main"><b :class="{struck:completedPlanIds.includes(r.id)}">{{ r.name }}</b><small>{{ r.recurrence==='daily'?'每日安排':r.recurrence==='weekly'?'每周安排':'自主安排' }} · 点击体验完成状态</small></span>
+                </button>
+              </template><p v-else class="empty-inline">目前没有正在执行的计划。</p>
+            </section>
+            <section class="ui-card history-panel">
+              <div class="card-heading"><div><span class="eyebrow">最近记录</span><h2>健康时间线</h2></div><button class="inline-link" type="button" @click="openBody('timeline')">查看全部 <ArrowUpRight :size="15"/></button></div>
+              <button v-for="e in timeline.slice(0,3)" :key="e.kind+e.id" type="button" class="row-link" @click="show(e.kind,e.id)"><span class="list-icon"><component :is="kindIcon[e.kind]" :size="18"/></span><span class="row-main"><b>{{ e.title }}</b><small>{{ e.meta }} · {{ displayDate(e.date) }}</small></span><ChevronRight :size="18" class="subtle-icon"/></button>
+            </section>
+          </div>
+          <button class="agent-prompt" type="button" @click="openAgent"><span class="agent-mark"><Sparkles :size="24"/></span><span><b>问问 Health</b><small>了解记录、回顾变化或准备下一步</small></span><ArrowUpRight :size="20"/></button>
+        </section>
 
-            <section class="section-card trends-card">
-              <div class="section-heading"><div><p class="eyebrow">KEY METRICS</p><h2>关键指标</h2></div><button class="text-action" type="button" @click="selectBody('指标'); activeTab = 'body'">全部指标 ↗</button></div>
-              <div class="metric-grid">
-                <button type="button" class="metric-tile" @click="showMetric('体重')"><span>体重</span><strong>{{ currentMetricValue }} <small>kg</small></strong><span class="mini-line" aria-hidden="true"><svg viewBox="0 0 120 38" preserveAspectRatio="none"><polyline points="0,31 20,25 40,29 60,17 80,20 100,10 120,7"/></svg></span><small>查看记录与趋势 ↗</small></button>
-                <button type="button" class="metric-tile" @click="showMetric('收缩压')"><span>收缩压</span><strong>117 <small>mmHg</small></strong><span class="mini-line secondary" aria-hidden="true"><svg viewBox="0 0 120 38" preserveAspectRatio="none"><polyline points="0,11 20,19 40,9 60,22 80,26 100,19 120,23"/></svg></span><small>查看记录与趋势 ↗</small></button>
+        <section v-else-if="activeTab==='body'" class="body-view">
+          <template v-if="selected && current">
+            <button class="back-button" type="button" @click="back"><ArrowLeft :size="18"/> 返回</button>
+            <div class="detail-heading">
+              <div><span class="eyebrow">{{ labelForKind(selected.kind) }}</span><h1>{{ detailName(selected.kind,current) }}</h1>
+                <p v-if="selected.kind==='concern'">{{ current.summary || '你的长期健康关注事项' }}</p>
+                <p v-else-if="selected.kind==='assessment'">保留判断依据，方便以后回顾</p>
+                <p v-else-if="selected.kind==='document'">原始文件与提取结果分别整理</p>
+                <p v-else>查看详情和相关记录</p>
               </div>
-            </section>
-
-            <section class="section-card today-card">
-              <div class="section-heading"><div><p class="eyebrow">A LITTLE EVERY DAY</p><h2>今天可以做什么</h2></div><span class="muted-count">{{ checkedTasks.length }}/2 已完成</span></div>
-              <button v-for="task in [{id:'record',title:'记录今日体重',desc:'预计 1 分钟'},{id:'stretch',title:'做一组舒展运动',desc:'按自己的节奏'}]" :key="task.id" class="task-row" type="button" @click="toggleTask(task.id)">
-                <span class="task-check" :class="{ done: checkedTasks.includes(task.id) }">{{ checkedTasks.includes(task.id) ? '✓' : '' }}</span>
-                <span><strong :class="{ crossed: checkedTasks.includes(task.id) }">{{ task.title }}</strong><small>{{ task.desc }}</small></span>
-              </button>
-              <button class="text-action inline-action" type="button" @click="overlay = 'record'">＋ 记录一项健康数据</button>
-            </section>
-
-            <section class="section-card recent-card">
-              <div class="section-heading"><div><p class="eyebrow">YOUR HISTORY</p><h2>最近发生</h2></div><button class="text-action" type="button" @click="selectBody('时间线'); activeTab = 'body'">时间线 ↗</button></div>
-              <div v-for="event in demoEvents.slice(0, 2)" :key="event.title" class="timeline-item"><span class="timeline-glyph">{{ event.symbol }}</span><div><strong>{{ event.title }}</strong><small>{{ event.date }} · {{ event.sub }}</small></div></div>
-            </section>
-          </div>
-          <button class="ask-strip" type="button" @click="overlay = 'agent'"><span class="ask-sparkle">✦</span><span><strong>问问 Health</strong><small>分析变化、了解记录、准备下一步</small></span><span class="ask-arrow">↗</span></button>
-        </div>
-
-        <div v-else-if="activeTab === 'body'" class="body-page">
-          <div v-if="selectedConcern" class="detail-view">
-            <button class="back-link" type="button" @click="selectedConcern = null">← 返回健康问题</button>
-            <div class="heading-block"><p class="eyebrow">HEALTH CONCERN</p><h1>{{ currentConcern?.name }}</h1><p>{{ currentConcern?.caption }} · 自 {{ currentConcern?.since }} 起</p></div>
-            <div class="detail-grid">
-              <section class="section-card detail-hero"><div class="section-heading"><h2>现在怎么样？</h2><span class="fake-label">演示数值</span></div><strong class="large-reading">{{ selectedConcern === 'balance' ? '117' : '3 次' }}</strong><span class="reading-unit">{{ selectedConcern === 'balance' ? 'mmHg · 最近测量' : '本月演示训练记录' }}</span><svg viewBox="0 0 340 90" class="chart"><polyline points="5,33 68,45 132,22 196,56 260,64 335,50" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><button type="button" class="text-action" @click="showMetric('收缩压')">查看相关指标 ↗</button></section>
-              <section class="section-card"><div class="section-heading"><h2>正在做什么？</h2></div><p class="card-explanation">可以把持续干预、通用 Task 和 HealthRegimen 组织在这里，保持方案与执行事实分离。</p><button type="button" class="soft-action" @click="overlay = 'record'">＋ 添加观测</button></section>
-              <section class="section-card"><div class="section-heading"><h2>最近发生了什么？</h2></div><div v-for="event in demoEvents.slice(0,2)" :key="event.title" class="timeline-item"><span class="timeline-glyph">{{ event.symbol }}</span><div><strong>{{ event.title }}</strong><small>{{ event.date }}</small></div></div></section>
-              <section class="section-card"><div class="section-heading"><h2>有哪些依据？</h2></div><p class="card-explanation">原始健康资料保留为 HealthDocument，评估必须能回溯到支持它的观测或文档。</p><button type="button" class="soft-action" @click="overlay = 'upload'">▤ 添加报告</button></section>
+              <div class="detail-actions"><button type="button" class="quiet-button" @click="openEditor(selected.kind,current.id)"><Pencil :size="16"/> 修改</button><button type="button" class="icon-button destructive" aria-label="删除演示记录" @click="removeCurrent"><Trash2 :size="18"/></button></div>
             </div>
-          </div>
-          <div v-else-if="selectedMetric" class="detail-view">
-            <button class="back-link" type="button" @click="selectedMetric = null">← 返回指标</button>
-            <div class="heading-block"><p class="eyebrow">HEALTH METRIC</p><h1>{{ selectedMetric }}</h1><p>围绕时间、单位和来源查看数据。</p></div>
-            <section class="section-card wide-detail"><div class="section-heading"><h2>最近的演示趋势</h2><span class="fake-label">示例 · 非医学判断</span></div><div class="reading-box"><strong>{{ selectedMetric === '体重' ? currentMetricValue : '117' }}</strong><span>{{ selectedMetric === '体重' ? 'kg' : 'mmHg' }}</span></div><svg class="chart chart-large" viewBox="0 0 580 170" preserveAspectRatio="none"><polyline points="10,70 120,96 230,48 340,115 450,123 570,87" fill="none" stroke="currentColor" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/></svg><div class="chart-months"><span v-for="item in demoTrend" :key="item.month">{{ item.month }}</span></div><button class="soft-action" type="button" @click="recordingMetric = selectedMetric; overlay = 'record'">＋ 记录 {{ selectedMetric }}</button></section>
-          </div>
-          <template v-else>
-            <div class="heading-block body-heading"><div><p class="eyebrow">UNDERSTAND YOUR BODY</p><h1>身体与健康</h1><p>围绕健康问题、指标、资料和时间展开。</p></div><button type="button" class="primary-action" @click="overlay = 'record'">＋ 新建记录</button></div>
-            <div class="subnav" aria-label="身体子导航"><button v-for="view in bodyViews" :key="view" :class="{ selected: bodyView === view }" type="button" @click="selectBody(view)">{{ view }}</button></div>
-            <div v-if="bodyView === '概览'" class="body-overview">
-              <button class="body-map-preview" type="button" @click="bodyView = '健康问题'"><span class="map-symbol">♙</span><span><strong>身体健康图</strong><small>从身体部位发现相关健康问题，独立视图将在后续完善</small></span><span>↗</span></button>
-              <div class="body-overview-grid"><section class="section-card"><div class="section-heading"><h2>健康问题</h2><button class="text-action" type="button" @click="bodyView = '健康问题'">查看全部 ↗</button></div><button class="concern-line" v-for="c in concerns" :key="c.id" type="button" @click="showConcern(c.id)"><span class="concern-icon" :class="c.tone">♡</span><span class="concern-copy"><strong>{{ c.name }}</strong><small>{{ c.caption }}</small></span><span class="chevron">›</span></button></section><section class="section-card"><div class="section-heading"><h2>最近记录</h2><button class="text-action" type="button" @click="bodyView = '时间线'">时间线 ↗</button></div><div v-for="e in demoEvents" :key="e.title" class="timeline-item"><span class="timeline-glyph">{{ e.symbol }}</span><div><strong>{{ e.title }}</strong><small>{{ e.date }}</small></div></div></section></div>
+            <div v-if="selected.kind==='concern'" class="detail-columns">
+              <section class="ui-card detail-primary">
+                <div class="card-heading"><h2>现在怎么样？</h2><span class="status-chip">{{ current.status==='active'?'持续关注':'已结束' }}</span></div>
+                <p class="body-copy">{{ current.summary || '你可以添加相关指标，逐步建立健康记录。' }}</p>
+                <div class="detail-stat"><b>{{ concernRelated.observations.length }}</b><span>条相关观测</span><span class="stat-separator"></span><b>{{ concernRelated.documents.length }}</b><span>份相关资料</span></div>
+                <div class="mini-label">相关指标</div>
+                <button v-for="o in concernRelated.observations.slice().sort((a,b)=>b.observedDate.localeCompare(a.observedDate)).slice(0,3)" :key="o.id" class="row-link" type="button" @click="show('observation',o.id)"><span class="list-icon"><Activity :size="18"/></span><span class="row-main"><b>{{ observationTitle(o) }}</b><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
+                <p v-if="concernRelated.observations.length===0" class="empty-inline">还没有关联的测量记录。</p>
+                <button class="soft-button" type="button" @click="openEditor('observation','',current.id)"><Plus :size="16"/> 添加测量</button>
+              </section>
+              <section class="ui-card"><div class="card-heading"><h2>正在做什么？</h2></div>
+                <button v-for="r in concernRelated.regimens" :key="r.id" class="row-link" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="18"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenStatuses,r.status) }}</small></span><ChevronRight :size="17"/></button>
+                <p v-if="!concernRelated.regimens.length" class="empty-inline">还没有关联的健康方案。</p>
+                <button class="soft-button" type="button" @click="openEditor('regimen','',current.id)"><Plus :size="16"/> 添加方案</button>
+              </section>
+              <section class="ui-card"><div class="card-heading"><h2>最近发生了什么？</h2></div>
+                <button v-for="e in concernRelated.events" :key="e.id" class="row-link" type="button" @click="show('event',e.id)"><span class="list-icon"><CalendarDays :size="18"/></span><span class="row-main"><b>{{ e.summary }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/></button>
+                <p v-if="!concernRelated.events.length" class="empty-inline">还没有关联的健康事件。</p>
+                <button class="soft-button" type="button" @click="openEditor('event','',current.id)"><Plus :size="16"/> 记录事件</button>
+              </section>
+              <section class="ui-card"><div class="card-heading"><h2>有哪些依据？</h2></div>
+                <button v-for="d in concernRelated.documents" :key="d.id" class="row-link" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }}</small></span><ChevronRight :size="17"/></button>
+                <button v-for="a in concernRelated.assessments" :key="a.id" class="row-link" type="button" @click="show('assessment',a.id)"><span class="list-icon"><BadgeCheck :size="18"/></span><span class="row-main"><b>{{ a.title }}</b><small>评估 · {{ displayDate(a.assessedDate) }}</small></span><ChevronRight :size="17"/></button>
+                <p v-if="!concernRelated.assessments.length&&!concernRelated.documents.length" class="empty-inline">还没有报告或评估记录。</p>
+                <div class="action-row"><button class="soft-button" type="button" @click="openImport(current.id)"><Plus :size="16"/> 添加资料</button><button class="soft-button" type="button" @click="openEditor('assessment','',current.id)"><Plus :size="16"/> 新建评估</button></div>
+              </section>
             </div>
-            <div v-else-if="bodyView === '健康问题'" class="list-panel"><button v-for="c in concerns" :key="c.id" type="button" class="list-card" @click="showConcern(c.id)"><span class="concern-icon" :class="c.tone">♡</span><span><strong>{{ c.name }}</strong><small>{{ c.caption }}</small></span><span class="chevron">›</span></button></div>
-            <div v-else-if="bodyView === '指标'" class="list-panel"><button v-for="m in ['体重','收缩压']" :key="m" type="button" class="list-card" @click="showMetric(m)"><span class="concern-icon mint">⌁</span><span><strong>{{ m }}</strong><small>观测记录、趋势与原始来源</small></span><span class="chevron">›</span></button></div>
-            <div v-else-if="bodyView === '时间线'" class="list-panel"><div v-for="event in demoEvents" :key="event.title" class="list-card static-card"><span class="timeline-glyph">{{ event.symbol }}</span><span><strong>{{ event.title }}</strong><small>{{ event.date }} · {{ event.sub }}</small></span></div><div v-for="item in demoRecords" :key="item.date + item.name + item.value" class="list-card static-card"><span class="timeline-glyph">◉</span><span><strong>手动记录 {{ item.name }} {{ item.value }} {{ item.unit }}</strong><small>{{ item.date }} · 仅本页面模拟</small></span></div></div>
-            <div v-else-if="bodyView === '资料'" class="section-card empty-workspace"><span class="empty-icon">▤</span><h2>每份资料，都有出处</h2><p>上传检验单、报告或其他健康文档，后续由 AI 提取并由用户核对。原始文件和结构化结果相互独立。</p><button type="button" class="primary-action" @click="overlay = 'upload'">模拟上传健康报告</button></div>
-            <div v-else class="section-card empty-workspace"><span class="empty-icon">◇</span><h2>让持续方案变得可执行</h2><p>这里汇集 HealthRegimen、通用 Task 与 Recurrence 生成的待办；目前仅展示交互方向。</p><button type="button" class="soft-action" @click="toast('健康方案编辑将在下一阶段接入模型。')">查看功能规划</button></div>
+
+            <div v-else-if="selected.kind==='metric'" class="detail-columns">
+              <section class="ui-card detail-primary">
+                <div class="card-heading"><h2>观测趋势</h2><span class="quiet-caption">{{ current.defaultUnit || '无单位' }}</span></div>
+                <div class="metric-hero"><strong>{{ latestFor(current.id) ? observationValue(latestFor(current.id)!,current) : '暂无记录' }}</strong><span>最近一次观测</span></div>
+                <div v-if="chartPoints(current.id)" class="chart-wrap"><svg viewBox="0 0 340 100" preserveAspectRatio="none" aria-label="按时间变化的示意趋势"><polyline :points="chartPoints(current.id)"/></svg></div>
+                <p class="helper-copy">图表仅连接已记录的数值，不自动判断健康状况。</p>
+                <button class="primary-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
+              </section>
+              <section class="ui-card"><h2>历史记录</h2>
+                <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><b>{{ observationValue(o,current) }}</b><small>{{ displayDate(o.observedDate) }} · {{ labelFrom(observationStatuses,o.status) }}</small></span><ChevronRight :size="16"/></button>
+                <p v-if="!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
+              </section>
+            </div>
+            <div v-else class="detail-columns">
+              <section class="ui-card detail-primary">
+                <div class="card-heading"><h2>记录详情</h2><span v-if="selected.kind==='observation'||selected.kind==='assessment'" class="status-chip">{{ labelFrom(observationStatuses,current.status) }}</span><span v-else-if="selected.kind==='regimen'" class="status-chip">{{ labelFrom(regimenStatuses,current.status) }}</span></div>
+                <template v-if="selected.kind==='observation'">
+                  <div class="metric-hero"><strong>{{ valuePreview }}</strong><span>{{ nameOfMetric(current.metricId) }}</span></div>
+                  <dl class="detail-fields"><div><dt>记录日期</dt><dd>{{ displayDate(current.observedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'手动记录' }}</dd></div><div v-if="current.interpretation"><dt>原记录标记</dt><dd>{{ labelFrom(interpretationTypes,current.interpretation) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
+                </template>
+                <template v-else-if="selected.kind==='event'"><p class="body-copy">{{ current.description || '没有补充说明' }}</p><dl class="detail-fields"><div><dt>事件类型</dt><dd>{{ eventName(current) }}</dd></div><div><dt>发生日期</dt><dd>{{ displayDate(current.date) }}</dd></div><div><dt>地点</dt><dd>{{ current.location||'未填写' }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><small>体验版仅保存文件名，不包含实际文件</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='assessment'"><p class="body-copy">{{ current.content }}</p><dl class="detail-fields"><div><dt>评估日期</dt><dd>{{ displayDate(current.assessedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'未填写' }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='regimen'"><p class="body-copy">{{ current.instructions }}</p><dl class="detail-fields"><div><dt>方案类型</dt><dd>{{ labelFrom(regimenTypes,current.regimenType) }}</dd></div><div><dt>安排</dt><dd>{{ current.recurrence==='daily'?'每日':current.recurrence==='weekly'?'每周':'不重复' }}</dd></div><div><dt>首次执行</dt><dd>{{ displayDate(current.firstDueDate) }}</dd></div><div><dt>开始日期</dt><dd>{{ displayDate(current.startDate) }}</dd></div><div><dt>结束日期</dt><dd>{{ displayDate(current.endDate) }}</dd></div></dl></template>
+                <div class="relation-tags" v-if="current.concernIds?.length"><span class="mini-label">相关健康问题</span><button v-for="cid in current.concernIds" :key="cid" type="button" class="relation-pill" @click="show('concern',cid)"><Link2 :size="13"/>{{ nameOfConcern(cid) }}</button></div>
+              </section>
+              <section class="ui-card"><div class="card-heading"><h2>{{ selected.kind==='assessment'?'判断依据':'关联资料' }}</h2></div>
+                <template v-if="selected.kind==='assessment'"><button v-for="id in current.basisIds" :key="id" type="button" class="row-link" @click="show(id.startsWith('d-')||demo.documents.some(d=>d.id===id)?'document':'observation',id)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ demo.documents.find(d=>d.id===id)?.title||observationTitle(demo.observations.find(o=>o.id===id)!) }}</b><small>已关联的依据</small></span><ChevronRight :size="17"/></button><p v-if="!current.basisIds.length" class="empty-inline">还没有关联依据，可以通过“修改”补充。</p></template>
+                <template v-else-if="selected.kind==='observation'&&current.sourceDocumentId"><button class="row-link" type="button" @click="show('document',current.sourceDocumentId)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ nameOfDocument(current.sourceDocumentId) }}</b><small>原始资料</small></span><ChevronRight :size="17"/></button></template>
+                <template v-else-if="selected.kind==='regimen'&&current.sourceDocumentId"><button class="row-link" type="button" @click="show('document',current.sourceDocumentId)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ nameOfDocument(current.sourceDocumentId) }}</b><small>方案来源</small></span><ChevronRight :size="17"/></button></template>
+                <p v-else-if="selected.kind!=='assessment'" class="empty-inline">这里会显示与当前记录有关的资料和记录。</p>
+              </section>
+            </div>
           </template>
-        </div>
 
-        <div v-else class="coming-page">
-          <div class="heading-block"><p class="eyebrow">NEXT IN ALOHA HEALTH</p><h1>{{ label }}</h1><p>与身体管理使用相同的健康语言，但拥有独立的记录与分析体验。</p></div>
-          <div class="section-card coming-card"><div class="coming-icon">{{ activeTab === 'nutrition' ? '◈' : '↗' }}</div><h2>{{ activeTab === 'nutrition' ? '理解你的饮食' : '看见你的运动进展' }}</h2><p>{{ activeTab === 'nutrition' ? '食物摄入、营养结构与健康关注事项的关联，是后续 NutritionIntake 模型的体验范围。' : '运动 Session、训练记录和身体变化，将在 ExerciseSession 模型准备好后接入。' }}</p><span class="second-phase">第二批 · 当前为导航原型</span></div>
-        </div>
+          <template v-else>
+            <div class="page-heading"><div><span class="eyebrow">身体健康</span><h1>从记录到理解</h1><p>集中查看健康问题、指标、事件、资料和长期方案。</p></div><button class="primary-button" type="button" @click="openEditor('observation')"><Plus :size="18"/> 添加记录</button></div>
+            <nav class="sub-navigation" aria-label="身体页面导航">
+              <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="bodyTab=item.id;search=''">{{ item.title }}</button>
+            </nav>
+            <div v-if="bodyTab==='overview'" class="body-overview">
+              <button type="button" class="body-map-link" @click="bodyTab='concerns'"><span class="body-map-icon"><HeartPulse :size="30"/></span><span><b>身体健康图</b><small>从身体状态进入你关注的问题</small></span><ArrowUpRight :size="20"/></button>
+              <div class="two-columns">
+                <section class="ui-card"><div class="card-heading"><h2>健康问题</h2><button class="inline-link" type="button" @click="bodyTab='concerns'">查看全部 <ArrowUpRight :size="15"/></button></div><button v-for="c in demo.concerns" :key="c.id" class="row-link" type="button" @click="show('concern',c.id)"><span class="list-icon"><Heart :size="18"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary }}</small></span><ChevronRight :size="17"/></button></section>
+                <section class="ui-card"><div class="card-heading"><h2>最近的记录</h2><button class="inline-link" type="button" @click="bodyTab='timeline'">时间线 <ArrowUpRight :size="15"/></button></div><button v-for="e in timeline.slice(0,4)" :key="e.id" class="row-link" type="button" @click="show(e.kind,e.id)"><span class="list-icon"><component :is="kindIcon[e.kind]" :size="18"/></span><span class="row-main"><b>{{ e.title }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/></button></section>
+              </div>
+              <div class="quick-actions"><button type="button" @click="openEditor('event')"><CalendarDays :size="18"/> 记一件健康事件</button><button type="button" @click="openImport()"><Upload :size="18"/> 整理报告</button><button type="button" @click="openEditor('assessment')"><BadgeCheck :size="18"/> 记录健康评估</button></div>
+            </div>
+            <template v-else>
+              <div class="list-toolbar">
+                <label class="search-field"><Search :size="17"/><input v-model="search" aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
+                <button class="primary-button" type="button" @click="bodyTab==='concerns'?openEditor('concern'):bodyTab==='metrics'?openEditor('metric'):bodyTab==='documents'?openImport():bodyTab==='regimens'?openEditor('regimen'):openEditor('event')">
+                  <Plus :size="17"/>{{ bodyTab==='concerns'?'添加关注':bodyTab==='metrics'?'新增指标':bodyTab==='documents'?'添加资料':bodyTab==='regimens'?'新建方案':'记一件事' }}
+                </button>
+              </div>
+              <div v-if="bodyTab==='timeline'" class="quick-actions slim"><button @click="openEditor('observation')" type="button"><ClipboardCheck :size="17"/> 测量</button><button @click="openEditor('event')" type="button"><CalendarDays :size="17"/> 事件</button><button @click="openEditor('assessment')" type="button"><BadgeCheck :size="17"/> 评估</button></div>
+              <div class="list-panel">
+                <template v-if="bodyTab==='concerns'"><button v-for="c in filteredConcerns" :key="c.id" class="list-row" type="button" @click="show('concern',c.id)"><span class="list-icon"><Heart :size="19"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary||'持续记录和回顾' }}</small></span><span class="status-chip">{{ c.status==='active'?'关注中':'已结束' }}</span><ChevronRight :size="18"/></button></template>
+                <template v-if="bodyTab==='metrics'"><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong><ChevronRight :size="18"/></button></template>
+                <template v-if="bodyTab==='timeline'"><button v-for="e in filteredTimeline" :key="e.kind+e.id" class="list-row" type="button" @click="show(e.kind,e.id)"><span class="list-icon"><component :is="kindIcon[e.kind]" :size="19"/></span><span class="row-main"><b>{{ e.title }}</b><small>{{ e.meta }} · {{ displayDate(e.date) }}</small></span><ChevronRight :size="18"/></button></template>
+                <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
+                <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
+                <div v-if="(bodyTab==='concerns'&&!filteredConcerns.length)||(bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='timeline'&&!filteredTimeline.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length)" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
+              </div>
+              <p v-if="bodyTab==='documents'" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
+            </template>
+          </template>
+        </section>
+
+        <section v-else class="future-page"><span class="eyebrow">接下来还会逐步完善</span><h1>{{ activeTab==='food'?'饮食管理':'运动管理' }}</h1><p>{{ activeTab==='food'?'把日常饮食记录和身体变化联系起来。':'了解运动频率、训练表现和身体恢复。' }}</p><div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('overview')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
       </main>
     </div>
+    <nav class="bottom-nav" aria-label="主导航"><button v-for="item in navItems" :key="item.id" :class="{active:activeTab===item.id}" type="button" @click="navigate(item.id)"><component :is="item.icon" :size="22" :stroke-width="1.8"/><span>{{ item.title }}</span></button></nav>
 
-    <nav class="mobile-tabs" aria-label="Health 主导航">
-      <button v-for="tab in tabs" :key="tab.id" type="button" :class="{ active: activeTab === tab.id }" @click="navigate(tab)"><span>{{ tab.mark }}</span><small>{{ tab.title }}</small></button>
-    </nav>
+    <div v-if="sheet" class="modal-backdrop" @click.self="closeSheet">
+      <section class="drawer" role="dialog" aria-modal="true" :aria-label="sheet==='edit'?'编辑健康记录':sheet==='import'?'整理报告':sheet==='agent'?'问问 Health':'应用菜单'">
+        <div class="drawer-handle"></div>
+        <header class="drawer-heading"><div><span class="eyebrow">{{ sheet==='edit'?'健康记录':sheet==='import'?'整理一份健康资料':'ALOHA Health' }}</span><h2>{{ sheet==='edit'?(editId?'修改':'添加')+kindLabel[editKind]:sheet==='import'?'整理健康报告':sheet==='agent'?'问问 Health':sheet==='switcher'?'切换应用':'个人与数据共享' }}</h2></div><button class="icon-button" aria-label="关闭" type="button" @click="closeSheet"><X :size="20"/></button></header>
 
-    <div v-if="overlay" class="overlay-screen" @click.self="closeOverlay">
-      <section class="overlay-sheet" role="dialog" aria-modal="true" :aria-label="overlay === 'agent' ? 'Health Agent 演示' : overlay === 'record' ? '录入健康数据演示' : 'Health 功能面板'">
-        <div class="sheet-handle"></div>
-        <div class="sheet-title"><div><p class="eyebrow">ALOHA HEALTH · PREVIEW</p><h2>{{ overlay === 'agent' ? '问问 Health ✦' : overlay === 'record' ? '快速记录' : overlay === 'upload' ? '导入健康报告' : overlay === 'apps' ? 'ALOHA 应用' : '账号与授权' }}</h2></div><button class="round-action" aria-label="关闭" type="button" @click="closeOverlay">×</button></div>
+        <form v-if="sheet==='edit'" class="editor-form" @submit.prevent="formSave">
+          <p class="form-intro">填写你知道的内容即可，之后还可以修改。</p>
+          <template v-if="editKind==='concern'">
+            <label>关注事项名称 <span>*</span><input v-model="draft.name" maxlength="160" required placeholder="例如：睡眠调整"/></label>
+            <label>情况说明<textarea v-model="draft.summary" rows="3" placeholder="为什么想持续关注这件事？"/></label>
+            <label>当前状态<select v-model="draft.status"><option value="active">持续关注</option><option value="inactive">已结束</option></select></label>
+            <div class="form-two"><label>开始日期<input v-model="draft.onsetDate" type="date"/></label><label>结束日期<input v-model="draft.resolvedDate" type="date"/></label></div>
+            <label>备注<textarea v-model="draft.notes" rows="2"/></label>
+          </template>
+          <template v-else-if="editKind==='metric'">
+            <label>指标名称 <span>*</span><input v-model="draft.name" maxlength="160" required placeholder="例如：静息心率"/></label>
+            <label>记录方式 <select v-model="draft.valueType"><option v-for="[value,name] in valueTypes" :key="value" :value="value">{{ name }}</option></select></label>
+            <label v-if="draft.valueType==='number'">单位<input v-model="draft.defaultUnit" placeholder="例如：次/分"/></label>
+            <p class="helper-copy">同一种指标只需建一次，之后可以持续记录。</p>
+          </template>
+          <template v-else-if="editKind==='observation'">
+            <label>记录哪一项 <span>*</span><select v-model="draft.metricId"><option v-for="m in demo.metrics" :key="m.id" :value="m.id">{{ m.name }}</option></select></label>
+            <template v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='boolean'"><label>本次结果 <span>*</span><select v-model="draft.value"><option value="">请选择</option><option value="true">是</option><option value="false">否</option></select></label></template>
+            <template v-else><label>记录结果 <span>*</span><input v-model="draft.value" :type="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'number':'text'" :step="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'any':undefined" required placeholder="填写此次记录"/></label></template>
+            <label v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'">单位<input v-model="draft.unit" :placeholder="demo.metrics.find(m=>m.id===draft.metricId)?.defaultUnit||'选填'"/></label>
+            <label>测量日期 <span>*</span><input v-model="draft.observedDate" type="date" required/></label>
+            <div class="form-two"><label>记录状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label><label>原报告标记<select v-model="draft.interpretation"><option v-for="[value,name] in interpretationTypes" :key="value" :value="value">{{ name }}</option></select></label></div>
+            <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
+            <label>来源说明<input v-model="draft.sourceNote" placeholder="例如：家用设备"/></label>
+            <label>备注<textarea v-model="draft.notes" rows="2"/></label>
+          </template>
+          <template v-else-if="editKind==='event'">
+            <label>发生了什么 <span>*</span><input v-model="draft.summary" maxlength="200" required placeholder="例如：一次门诊咨询"/></label>
+            <label>事件类型<select v-model="draft.eventType"><option v-for="[value,name] in eventTypes" :key="value" :value="value">{{ name }}</option></select></label>
+            <label>发生日期 <span>*</span><input v-model="draft.date" type="date" required/></label>
+            <label>地点<input v-model="draft.location" placeholder="例如：社区医院"/></label>
+            <label>事情经过<textarea v-model="draft.description" rows="3"/></label>
+            <label>状态<select v-model="draft.status"><option value="active">已记录</option><option value="cancelled">已取消</option></select></label>
+          </template>
+          <template v-else-if="editKind==='document'">
+            <label>资料名称 <span>*</span><input v-model="draft.title" required placeholder="例如：年度检查报告"/></label>
+            <label>资料类型<select v-model="draft.documentType"><option v-for="[value,name] in documentTypes" :key="value" :value="value">{{ name }}</option></select></label>
+            <label>选择文件 <span>*</span><input type="file" accept=".pdf,.png,.jpg,.jpeg" @change="pickFile"/><small>只保留文件名，不读取内容。</small></label>
+            <p v-if="draft.fileName" class="file-picked"><FileText :size="16"/>{{ draft.fileName }}</p>
+            <div class="form-two"><label>资料日期<input v-model="draft.issuedDate" type="date"/></label><label>出具机构<input v-model="draft.issuerName" placeholder="选填"/></label></div>
+            <label>相关健康事件<select v-model="draft.eventId"><option value="">不关联</option><option v-for="e in demo.events" :key="e.id" :value="e.id">{{ e.summary }}</option></select></label>
+            <label>备注<textarea v-model="draft.notes" rows="2"/></label>
+          </template>
+          <template v-else-if="editKind==='assessment'">
+            <label>评估标题 <span>*</span><input v-model="draft.title" required placeholder="例如：本次检查结果回顾"/></label>
+            <label>评估内容 <span>*</span><textarea v-model="draft.content" rows="4" required placeholder="记录医生意见或经确认的总结，不要混作原始数据"/></label>
+            <div class="form-two"><label>评估日期 <span>*</span><input v-model="draft.assessedDate" required type="date"/></label><label>状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label></div>
+            <fieldset class="check-group"><legend>依据哪些记录？</legend><label v-for="d in demo.documents" :key="d.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="d.id"/>{{ d.title }}</label><label v-for="o in demo.observations.slice(0,5)" :key="o.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="o.id"/>{{ observationTitle(o) }}</label></fieldset>
+            <label>来源说明<input v-model="draft.sourceNote" placeholder="例如：医生意见、个人整理"/></label>
+          </template>
+          <template v-else-if="editKind==='regimen'">
+            <label>方案名称 <span>*</span><input v-model="draft.name" required placeholder="例如：每周活动计划"/></label>
+            <label>方案类型<select v-model="draft.regimenType"><option v-for="[value,name] in regimenTypes" :key="value" :value="value">{{ name }}</option></select></label>
+            <label>怎么执行 <span>*</span><textarea v-model="draft.instructions" rows="3" required placeholder="记录具体可执行的安排"/></label>
+            <label>状态<select v-model="draft.status"><option v-for="[value,name] in regimenStatuses" :key="value" :value="value">{{ name }}</option></select></label>
+            <div class="form-two"><label>开始日期<input v-model="draft.startDate" type="date"/></label><label>结束日期<input v-model="draft.endDate" type="date"/></label></div>
+            <label>需要重复提醒吗？<select v-model="draft.recurrence"><option value="none">不重复</option><option value="daily">每天</option><option value="weekly">每周</option></select></label>
+            <label v-if="draft.recurrence!=='none'">首次执行日期 <span>*</span><input v-model="draft.firstDueDate" required type="date"/></label>
+            <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
+            <label>方案来源<input v-model="draft.sourceNote" placeholder="例如：个人计划"/></label>
+            <p class="helper-copy">真实版本会由平台生成待办，不会由页面自行定时。</p>
+          </template>
+          <fieldset v-if="editKind!=='metric'&&editKind!=='concern'" class="check-group"><legend>相关健康问题（可多选）</legend><label v-for="c in demo.concerns" :key="c.id" class="checkbox-line"><input v-model="draft.concernIds" type="checkbox" :value="c.id"/>{{ c.name }}</label><p v-if="!demo.concerns.length" class="helper-copy">可以先创建健康问题，后续再关联。</p></fieldset>
+          <p v-if="formError" class="form-error" role="alert"><Info :size="16"/>{{ formError }}</p>
+          <div class="form-actions"><button type="button" class="quiet-button" @click="closeSheet">取消</button><button type="submit" class="primary-button"><Check :size="17"/> 保存记录</button></div>
+          <p class="privacy-note"><ShieldCheck :size="15"/> 仅当前页面有效。刷新后不会保留本次修改。</p>
+        </form>
 
-        <template v-if="overlay === 'agent'"><div class="agent-intro"><span class="agent-orb">✦</span><strong>在当前页面直接提问</strong><p>演示上下文：{{ currentConcern?.name ?? selectedMetric ?? label }}。本演示不连接 AI 服务，也不会读取真实健康数据。</p></div><div class="suggestions"><button type="button" @click="agentDraft = '帮我看一下最近的趋势'; askAgent()">看看最近的变化</button><button type="button" @click="agentDraft = '帮我理解这份报告'; askAgent()">如何理解报告？</button></div><div v-if="agentAnswer" class="agent-reply">{{ agentAnswer }}</div><form class="sheet-form" @submit.prevent="askAgent"><label for="agent-input">输入问题</label><textarea id="agent-input" v-model="agentDraft" rows="3" placeholder="想了解哪些健康记录？"></textarea><button class="primary-action" type="submit">模拟提问 ↗</button></form></template>
+        <div v-else-if="sheet==='import'" class="import-flow">
+          <div class="step-track"><span v-for="num in [1,2,3]" :key="num" :class="{active:uploadStage>=num}">{{ num }}</span></div>
+          <template v-if="uploadStage===1">
+            <div class="flow-copy"><h3>先把原始资料留下来</h3><p>选取一个示例文件并命名。演示不会打开、读取或上传文件内容。</p></div>
+            <label class="upload-field"><Upload :size="27"/><b>选择 PDF 或图片</b><span>仅使用文件名演示下一步</span><input type="file" accept=".pdf,.png,.jpg,.jpeg" @change="pickFile"/></label>
+            <p v-if="uploadedName" class="file-picked"><FileText :size="16"/>{{ uploadedName }}</p>
+            <label class="plain-label">资料名称<input v-model="uploadTitle" placeholder="例如：一次检查报告"/></label>
+            <label class="plain-label">资料类型<select v-model="uploadType"><option v-for="[value,name] in documentTypes" :key="value" :value="value">{{ name }}</option></select></label>
+            <label class="plain-label">相关健康问题<select v-model="uploadConcernId"><option value="">暂不关联</option><option v-for="c in demo.concerns" :key="c.id" :value="c.id">{{ c.name }}</option></select></label>
+          </template>
+          <template v-else-if="uploadStage===2">
+            <div class="flow-copy"><h3>查看可能整理出的内容</h3><p>以下是一条独立生成的<strong>虚构示例</strong>，与所选文件内容无关。正式版本将在识别后要求你核对。</p></div>
+            <div class="extract-card"><div class="extract-head"><ClipboardCheck :size="19"/><b>示例：一次血压测量</b></div><strong>118 <small>mmHg</small></strong><p>测量日期：今天 · 尚未确认</p><label class="checkbox-line"><input v-model="uploadIncludeResult" type="checkbox"/> 同时添加这条演示结果</label></div>
+            <p class="helper-copy">未勾选时，只创建一份资料记录；不会凭空添加身体测量。</p>
+          </template>
+          <template v-else>
+            <div class="flow-copy"><h3>确认本次整理</h3><p>你可以回到上一步修改，确认后将只向当前体验页添加临时演示记录。</p></div>
+            <div class="summary-block"><p><CheckCircle2 :size="17"/> 资料：{{ uploadTitle }}</p><p><CheckCircle2 :size="17"/> 已选文件名：{{ uploadedName }}</p><p><CheckCircle2 :size="17"/> 示例测量：{{ uploadIncludeResult?'同时添加':'不添加' }}</p></div>
+          </template>
+          <p v-if="formError" class="form-error"><Info :size="16"/>{{ formError }}</p>
+          <div class="form-actions"><button class="quiet-button" type="button" @click="uploadStage===1?closeSheet():uploadStage--">{{ uploadStage===1?'取消':'上一步' }}</button><button class="primary-button" type="button" @click="importNext">{{ uploadStage===3?'确认添加':'下一步' }} <ArrowRight :size="17"/></button></div>
+        </div>
 
-        <form v-else-if="overlay === 'record'" class="sheet-form" @submit.prevent="addRecord"><p class="sheet-help">演示记录只在当前页面内存中显示，刷新后清空，不会发送到服务器。</p><label for="metric-input">健康指标</label><select id="metric-input" v-model="recordingMetric"><option>体重</option><option>收缩压</option></select><label for="value-input">观测数值（{{ recordingMetric === '体重' ? 'kg' : 'mmHg' }}）</label><input id="value-input" v-model="recordingValue" inputmode="decimal" placeholder="请输入数值" required><label for="note-input">补充说明（选填）</label><textarea id="note-input" v-model="recordingNote" rows="2" placeholder="例如：早晨测量"></textarea><button class="primary-action" type="submit">加入演示时间线</button></form>
+        <div v-else-if="sheet==='agent'" class="agent-flow">
+          <div class="agent-welcome"><span class="agent-glow"><Sparkles :size="25"/></span><h3>你可以从这里提问</h3><p>正在查看：{{ contextName }}。正式版本会结合你已授权的记录给出有来源的解释。</p></div>
+          <button class="suggestion" type="button" @click="agentQuestion='最近的健康记录有哪些变化？';sendAgent()">最近有哪些变化？ <ArrowUpRight :size="15"/></button>
+          <button class="suggestion" type="button" @click="agentQuestion='这些资料分别记录了什么？';sendAgent()">帮我整理一下资料 <ArrowUpRight :size="15"/></button>
+          <div v-if="agentReply" class="agent-reply"><Sparkles :size="18"/><span>{{ agentReply }}</span></div>
+          <form class="agent-input" @submit.prevent="sendAgent"><textarea v-model="agentQuestion" rows="3" placeholder="想了解什么？"/><button class="primary-button" type="submit">模拟提问 <ArrowRight :size="16"/></button></form>
+          <p class="privacy-note"><ShieldCheck :size="15"/> 此处为固定演示回复，未接入真实 AI 或健康数据。</p>
+        </div>
 
-        <div v-else-if="overlay === 'upload'" class="sheet-form"><p class="sheet-help">模拟 HealthDocument → AI 提取 → 确认的用户路径。为了隐私，此处不读取文件内容、也不上传。</p><label for="file-input" class="upload-drop"><span>▤</span><strong>选取一份本地演示文件</strong><small>仅显示文件名，不保存文件</small></label><input id="file-input" type="file" accept=".pdf,.png,.jpg,.jpeg" @change="handleFile"><div v-if="documentName" class="picked-file">已选择：{{ documentName }}</div><button type="button" class="primary-action" :disabled="!documentName" @click="demoDocument">预览提取流程</button><div v-if="documentPreview" class="agent-reply"><strong>演示提取预览</strong><p>1. 保留原始 HealthDocument</p><p>2. 检查结构化 Observation / Event / Assessment</p><p>3. 用户确认后写入 LifeSpace（原型未执行）</p></div></div>
-
-        <div v-else-if="overlay === 'apps'" class="switcher-list"><div class="switcher-item is-current"><span class="app-emoji">♥</span><div><strong>Health</strong><small>当前演示应用</small></div><span>✓</span></div><button v-for="app in ['Assistant','Finance','Things']" :key="app" class="switcher-item" type="button" @click="toast(app + ' 的切换路由尚未在本原型接入。')"><span class="app-emoji">{{ app === 'Assistant' ? '✦' : app === 'Finance' ? '▥' : '⬡' }}</span><div><strong>{{ app }}</strong><small>共享 ALOHA 产品入口 · 待联调</small></div><span>↗</span></button></div>
-
-        <div v-else class="agent-intro"><span class="agent-orb">◉</span><strong>统一的个人与授权入口</strong><p>Health 只管理当前用户的 Personal Space，不提供家庭成员切换。跨应用与数据共享使用 LifeSpace 授权；此处仅为导航占位。</p></div>
+        <div v-else-if="sheet==='switcher'" class="switcher-flow">
+          <button v-for="item in ['Health','Assistant','Finance','Things']" :key="item" class="switcher-row" type="button" @click="item==='Health'?closeSheet():notice='其他应用入口尚未开放，本页仅演示切换样式。'"><span class="app-emblem"><Heart v-if="item==='Health'" :size="22"/><Sparkles v-else-if="item==='Assistant'" :size="22"/><Activity v-else-if="item==='Finance'" :size="22"/><LayoutGrid v-else :size="22"/></span><span><b>{{ item }}</b><small>{{ item==='Health'?'当前健康空间':'其他 ALOHA 应用' }}</small></span><Check v-if="item==='Health'" :size="19"/><ArrowUpRight v-else :size="18"/></button>
+        </div>
+        <div v-else class="account-flow"><ShieldCheck :size="32"/><h3>你的健康记录由你掌握</h3><p>正式版本会使用统一的 ALOHA 账号和数据共享设置。你可以决定是否向已授权的人或应用开放健康数据。</p><div class="account-note">当前是单人体验原型，没有连接账号，也不会展示其他家庭成员的数据。</div></div>
       </section>
     </div>
-    <div v-if="notice" class="notice" role="status"><span>{{ notice }}</span><button aria-label="关闭提示" type="button" @click="notice = ''">×</button></div>
+    <div v-if="notice" role="status" class="toast"><span>{{ notice }}</span><button type="button" aria-label="关闭提示" @click="notice=''"><X :size="17"/></button></div>
   </div>
 </template>
