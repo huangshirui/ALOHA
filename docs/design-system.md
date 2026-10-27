@@ -26,6 +26,26 @@ Each PWA keeps its own install name, path, icon and accent while remaining visua
 
 The accent differentiates surfaces; neutral colors, typography rhythm, spacing, radii, elevation and interaction feedback remain shared.
 
+## Typography hierarchy / 字体层级
+
+ALOHA's four PWAs share the same framework-agnostic type scale from `packages/design-tokens/tokens.css`. This is the **only** cross-surface typography source; individual pages must not invent a new display-title scale.
+
+| Shared role | Token | Default | Typical use |
+| --- | --- | --- | --- |
+| Caption / 辅助说明 | `--aloha-type-caption` | 12px | secondary description, date and note |
+| Label / 控件文字 | `--aloha-type-label` | 13px | navigation, form label, button |
+| Body / 正文 | `--aloha-type-body` | 14px | list items, record content |
+| Emphasis / 强调 | `--aloha-type-emphasis` | 16px | short emphasis |
+| Section title / 模块标题 | `--aloha-type-section` | 17px | card and panel title |
+| Page title / 页面标题 | `--aloha-type-page` | 22px | one per screen, including detail screens |
+| Metric / 关键数字 | `--aloha-type-metric` | 28px | a few prominent numeric readings |
+
+Use `--aloha-leading-tight` for headings and `--aloha-leading-body` for body text. The default type sizes are not a requirement to shrink critical touch targets; hit areas still use `--aloha-control-*`. Keep contrast and text wrapping accessible, especially on installed Mobile.
+
+**Page hierarchy rule:** Each primary screen has one title and one contextual action row; navigation tabs and search appear immediately below it. A long decorative headline or full-paragraph summary must not push the primary list/action down. Supporting description can be a short single-line caption (truncate safely on small screens), or moved into the contextual information section. Common components and semantic tokens define structure; individual screen CSS handles content layout only.
+
+**Shared vs local rule:** Shared type sizes and accessibility are universal tokens; a PWA can alias them for roles or compose its own `PageHeader`, lists and cards. Do not promote a domain page component into `@aloha/ui` until two real PWA consumers exist, per `packages/ui/AGENTS.md`.
+
 ## Responsive baseline
 
 Every first-party PWA must be intentionally designed for all three layout classes:
