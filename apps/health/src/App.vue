@@ -10,6 +10,8 @@ import {
 import { useDemoAgentSession } from './agent-demo'
 import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
+import HealthCreateMenu from './components/HealthCreateMenu.vue'
+import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
   observationStatuses, observationValue, regimenStatuses, regimenTypes, seedDemo,
@@ -59,7 +61,7 @@ const demo = reactive(seedDemo())
 const activeTab = ref<Tab>('home')
 const bodyTab = ref<BodyTab>('overview')
 const selected = ref<RecordView | null>(null)
-const returnAfterEdit = ref<RecordView | null>(null)
+const routeStack = ref<HealthLocation[]>([])
 const sheet = ref<Sheet>('')
 const editKind = ref<HealthKind>('concern')
 const editId = ref('')
@@ -80,6 +82,7 @@ const uploadType = ref('lab_report')
 const uploadConcernId = ref('')
 const uploadIncludeResult = ref(false)
 const completedPlanIds = ref<string[]>([])
+const bodyCreateAction = computed(() => primaryAction(bodyTab.value))
 let nextRecordId = 100
 const today = new Date().toISOString().slice(0,10)
 const displayDate = (date: string) => date ? date.replace(/-/g,'.') : '未填写'
@@ -129,16 +132,41 @@ function chartPoints(metricId: string) {
   const lo=Math.min(...values)-2, hi=Math.max(...values)+2
   return points.map((p,i)=>`${Math.round(10+320*i/(points.length-1))},${Math.round(82-60*(p.valueNumber!-lo)/(hi-lo))}`).join(' ')
 }
+function location(): HealthLocation {
+  return { tab:activeTab.value, section:bodyTab.value, record:selected.value ? {...selected.value} : null }
+}
 function navigate(tab: Tab) {
+  routeStack.value=[]
   activeTab.value=tab; selected.value=null; sheet.value=''; bodyTab.value='overview'; search.value=''
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body');bodyTab.value=tab }
+function changeBodyTab(tab:BodyTab) {
+  selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value=''
+}
 function show(kind: HealthKind,id: string) {
-  activeTab.value='body'; selected.value={kind,id};sheet.value='';search.value=''
+  if (selected.value?.kind === kind && selected.value.id===id) return
+  routeStack.value.push(location())
+  activeTab.value='body'; selected.value=saveDestination(kind,id);sheet.value='';search.value=''
   window.scrollTo({top:0,behavior:'smooth'})
 }
-function back() { selected.value=null;window.scrollTo({top:0,behavior:'smooth'}) }
+function back() {
+  const previous=routeStack.value.pop()
+  if(previous) {
+    activeTab.value=previous.tab
+    bodyTab.value=previous.section
+    selected.value=previous.record
+  } else selected.value=null
+  window.scrollTo({top:0,behavior:'smooth'})
+}
+function startCreate(kind: HealthKind) {
+  if(kind==='document') openImport(selected.value?.kind==='concern' ? selected.value.id : '')
+  else openEditor(kind,'', selected.value?.kind==='concern' ? selected.value.id : '')
+}
+function runBodyPrimary() {
+  const action=bodyCreateAction.value
+  if(action.mode==='direct') startCreate(action.action)
+}
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   const record=id ? getList(kind).find(r=>r.id===id) : null
   if (id && !record) return
@@ -146,7 +174,6 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
   if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
-  returnAfterEdit.value=selected.value ? {...selected.value} : null
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
 function formSave() {
@@ -178,20 +205,18 @@ function formSave() {
   // Every remaining relation is an explicit demo UI association; it never deletes source facts.
   if(!payload.concernIds && kind!=='metric') payload.concernIds=[]
   const rows=getList(kind)
+  const savedId=editId.value || 'demo-'+(++nextRecordId)
   if(editId.value) {
     const index=rows.findIndex(r=>r.id===editId.value)
     if(index>=0) rows.splice(index,1,{...rows[index],...payload})
-  } else rows.unshift({...payload,id:'demo-'+(++nextRecordId)})
-  sheet.value=''; notice.value='已保存到当前体验页面，刷新后会恢复初始内容。'
+  } else rows.unshift({...payload,id:savedId})
+  sheet.value=''
+  formError.value=''
+  notice.value='已保存。当前为演示数据，刷新页面后将恢复。'
   search.value=''
-  if(returnAfterEdit.value?.kind==='concern'){ show('concern',returnAfterEdit.value.id);return }
-  if(returnAfterEdit.value?.kind==='metric'){ show('metric',returnAfterEdit.value.id);return }
-  if(editId.value){ show(kind,editId.value);return }
-  if(kind==='concern') openBody('concerns')
-  else if(kind==='metric') openBody('metrics')
-  else if(kind==='document') openBody('documents')
-  else if(kind==='regimen') openBody('regimens')
-  else openBody('timeline')
+  // Save -> detail -> Back returns to the exact list, concern or metric that started the action.
+  if(selected.value?.kind===kind && selected.value.id===savedId) return
+  show(kind,savedId)
 }
 function removeCurrent() {
   if(!selected.value||!current.value) return
@@ -246,7 +271,7 @@ function importNext() {
       concernIds:uploadConcernId.value?[uploadConcernId.value]:[],
     })
   }
-  sheet.value='';notice.value='资料流程演示完成。文件内容没有被读取或上传。';if(uploadConcernId.value)show('concern',uploadConcernId.value);else openBody('documents')
+  sheet.value='';notice.value='已整理资料。文件内容没有被读取或上传。';show('document',id)
 }
 async function sendAgent() {
   if (!agentSession.send(agentQuestion.value, contextName.value)) return
