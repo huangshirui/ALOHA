@@ -9,6 +9,7 @@ import {
 } from 'lucide-vue-next'
 import { useDemoAgentSession } from './agent-demo'
 import AlohaHub from './components/AlohaHub.vue'
+import HealthPageHeader from './components/HealthPageHeader.vue'
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
   observationStatuses, observationValue, regimenStatuses, regimenTypes, seedDemo,
@@ -308,20 +309,16 @@ function detailName(kind: HealthKind,record:any) {
     <div class="page-frame">
       <main class="content">
         <section v-if="activeTab==='home'" class="home-view">
-          <div class="intro-row">
-            <div class="page-title-main">
-              <AlohaHub class="mobile-page-hub" :apps="alohaApps" current-app="health" compact
-              :density="uiDensity" preview @select-app="handleAppSelection" @update:density="uiDensity=$event"/>
-              <div><span class="eyebrow">你的健康空间</span><h1>慢慢积累记录，<br class="mobile-only">更好地了解自己。</h1><p>从长期状态出发，关注每一次值得记录的变化。</p></div>
-            </div>
-            <div class="page-actions">
-              <button class="quiet-button overview-shortcut" type="button" @click="openBody('overview')"><HeartPulse :size="17"/> 身体概览 <ArrowUpRight :size="16"/></button>
-              <button type="button" :class="['agent-page-button',{active:agentOpen}]"
-              :aria-expanded="agentOpen" aria-controls="health-agent-panel" @click="openAgent">
-              <Sparkles :size="19"/><span>问问 Health</span>
-            </button>
-            </div>
-          </div>
+          <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
+            :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
+            @select-app="handleAppSelection" @update-density="uiDensity=$event"
+            @ask="openAgent">
+            <template #actions>
+              <button class="quiet-button overview-shortcut" type="button" @click="openBody('overview')">
+                <HeartPulse :size="17"/> 身体概览 <ArrowUpRight :size="16"/>
+              </button>
+            </template>
+          </HealthPageHeader>
           <div class="dashboard-layout">
             <section class="hero-card">
               <div class="hero-head"><span>健康概览</span><span>持续关注的内容</span></div>
@@ -361,28 +358,19 @@ function detailName(kind: HealthKind,record:any) {
 
         <section v-else-if="activeTab==='body'" class="body-view">
           <template v-if="selected && current">
-            <div class="detail-heading">
-              <div class="page-title-main">
-                <AlohaHub class="mobile-page-hub" :apps="alohaApps" current-app="health" compact
-              :density="uiDensity" preview @select-app="handleAppSelection" @update:density="uiDensity=$event"/>
-                <div>
-                  <button class="back-button" type="button" @click="back"><ArrowLeft :size="18"/> 返回</button>
-                  <span class="eyebrow">{{ labelForKind(selected.kind) }}</span><h1>{{ detailName(selected.kind,current) }}</h1>
-                <p v-if="selected.kind==='concern'">{{ current.summary || '你的长期健康关注事项' }}</p>
-                <p v-else-if="selected.kind==='assessment'">保留判断依据，方便以后回顾</p>
-                <p v-else-if="selected.kind==='document'">原始文件与提取结果分别整理</p>
-                <p v-else>查看详情和相关记录</p>
-                </div>
-              </div>
-              <div class="page-actions">
-                <button type="button" class="quiet-button" @click="openEditor(selected.kind,current.id)"><Pencil :size="16"/> 修改</button>
-                <button type="button" class="icon-button destructive" title="删除演示记录" aria-label="删除演示记录" @click="removeCurrent"><Trash2 :size="18"/></button>
-                <button type="button" :class="['agent-page-button',{active:agentOpen}]"
-              :aria-expanded="agentOpen" aria-controls="health-agent-panel" @click="openAgent">
-              <Sparkles :size="19"/><span>问问 Health</span>
-            </button>
-              </div>
-            </div>
+            <HealthPageHeader :title="detailName(selected.kind,current)" :context="labelForKind(selected.kind)"
+              :subtitle="selected.kind==='concern' ? (current.summary || '持续关注的健康问题') : undefined"
+              can-back :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
+            @select-app="handleAppSelection" @update-density="uiDensity=$event"
+            @ask="openAgent" @back="back">
+              <template #actions>
+                <button type="button" class="quiet-button" @click="openEditor(selected.kind,current.id)">
+                  <Pencil :size="16"/> 修改
+                </button>
+                <button type="button" class="icon-button destructive" title="删除演示记录"
+                  aria-label="删除演示记录" @click="removeCurrent"><Trash2 :size="18"/></button>
+              </template>
+            </HealthPageHeader>
             <div v-if="selected.kind==='concern'" class="detail-columns">
               <section class="ui-card detail-primary">
                 <div class="card-heading"><h2>现在怎么样？</h2><span class="status-chip">{{ current.status==='active'?'持续关注':'已结束' }}</span></div>
@@ -448,17 +436,14 @@ function detailName(kind: HealthKind,record:any) {
           </template>
 
           <template v-else>
-            <div class="page-heading">
-              <div class="page-title-main"><AlohaHub class="mobile-page-hub" :apps="alohaApps" current-app="health" compact
-              :density="uiDensity" preview @select-app="handleAppSelection" @update:density="uiDensity=$event"/><div><span class="eyebrow">身体健康</span><h1>从记录到理解</h1><p>集中查看健康问题、指标、事件、资料和长期方案。</p></div></div>
-              <div class="page-actions">
+            <HealthPageHeader title="身体健康" subtitle="健康问题、指标、事件与资料"
+              :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
+            @select-app="handleAppSelection" @update-density="uiDensity=$event"
+            @ask="openAgent">
+              <template #actions>
                 <button class="primary-button" type="button" @click="openEditor('observation')"><Plus :size="18"/> 添加记录</button>
-                <button type="button" :class="['agent-page-button',{active:agentOpen}]"
-              :aria-expanded="agentOpen" aria-controls="health-agent-panel" @click="openAgent">
-              <Sparkles :size="19"/><span>问问 Health</span>
-            </button>
-              </div>
-            </div>
+              </template>
+            </HealthPageHeader>
             <nav class="sub-navigation" aria-label="身体页面导航">
               <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="bodyTab=item.id;search=''">{{ item.title }}</button>
             </nav>
@@ -492,14 +477,11 @@ function detailName(kind: HealthKind,record:any) {
         </section>
 
         <section v-else class="future-page">
-          <div class="page-heading">
-            <div class="page-title-main"><AlohaHub class="mobile-page-hub" :apps="alohaApps" current-app="health" compact
-              :density="uiDensity" preview @select-app="handleAppSelection" @update:density="uiDensity=$event"/><div><span class="eyebrow">接下来还会逐步完善</span><h1>{{ activeTab==='food'?'饮食管理':'运动管理' }}</h1><p>{{ activeTab==='food'?'把日常饮食记录和身体变化联系起来。':'了解运动频率、训练表现和身体恢复。' }}</p></div></div>
-            <div class="page-actions"><button type="button" :class="['agent-page-button',{active:agentOpen}]"
-              :aria-expanded="agentOpen" aria-controls="health-agent-panel" @click="openAgent">
-              <Sparkles :size="19"/><span>问问 Health</span>
-            </button></div>
-          </div>
+          <HealthPageHeader :title="activeTab==='food'?'饮食管理':'运动管理'"
+              subtitle="逐步连接日常习惯与身体变化"
+              :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
+            @select-app="handleAppSelection" @update-density="uiDensity=$event"
+            @ask="openAgent"/>
           <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('overview')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
       </main>
     </div>
