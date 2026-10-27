@@ -339,9 +339,7 @@ function detailName(kind: HealthKind,record:any) {
             @select-app="handleAppSelection" @update-density="uiDensity=$event"
             @ask="openAgent">
             <template #actions>
-              <button class="quiet-button overview-shortcut" type="button" aria-label="身体概览" title="身体概览" @click="openBody('overview')">
-                <HeartPulse :size="17"/> 身体概览 <ArrowUpRight :size="16"/>
-              </button>
+              <HealthCreateMenu label="快速记录" :choices="recordChoices" @select="startCreate($event)"/>
             </template>
           </HealthPageHeader>
           <div class="dashboard-layout">
@@ -355,7 +353,6 @@ function detailName(kind: HealthKind,record:any) {
               <button v-for="c in activeConcerns.slice(0,3)" :key="c.id" type="button" class="row-link" @click="show('concern',c.id)">
                 <span class="list-icon"><Heart :size="19"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary || '点击查看关联的健康记录' }}</small></span><ChevronRight :size="18" class="subtle-icon"/>
               </button>
-              <button class="add-inline" type="button" @click="openEditor('concern')"><Plus :size="17"/> 添加关注事项</button>
             </section>
             <section class="ui-card metrics-panel">
               <div class="card-heading"><div><span class="eyebrow">关键指标</span><h2>留意长期变化</h2></div><button class="inline-link" type="button" @click="openBody('metrics')">查看指标 <ArrowUpRight :size="15"/></button></div>
@@ -463,14 +460,19 @@ function detailName(kind: HealthKind,record:any) {
           <template v-else>
             <HealthPageHeader title="身体健康" subtitle="健康问题、指标、事件与资料"
               :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
-            @select-app="handleAppSelection" @update-density="uiDensity=$event"
-            @ask="openAgent">
+              @select-app="handleAppSelection" @update-density="uiDensity=$event"
+              @ask="openAgent">
               <template #actions>
-                <button class="primary-button" type="button" @click="openEditor('observation')"><Plus :size="18"/> 添加记录</button>
+                <HealthCreateMenu v-if="bodyCreateAction.mode==='menu'"
+                  :label="bodyCreateAction.label" :choices="bodyCreateAction.choices"
+                  @select="startCreate($event)"/>
+                <button v-else class="primary-button" type="button" @click="runBodyPrimary">
+                  <Plus :size="17"/>{{ bodyCreateAction.label }}
+                </button>
               </template>
             </HealthPageHeader>
             <nav class="sub-navigation" aria-label="身体页面导航">
-              <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="bodyTab=item.id;search=''">{{ item.title }}</button>
+              <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="changeBodyTab(item.id)">{{ item.title }}</button>
             </nav>
             <div v-if="bodyTab==='overview'" class="body-overview">
               <button type="button" class="body-map-link" @click="bodyTab='concerns'"><span class="body-map-icon"><HeartPulse :size="30"/></span><span><b>身体健康图</b><small>从身体状态进入你关注的问题</small></span><ArrowUpRight :size="20"/></button>
@@ -478,16 +480,13 @@ function detailName(kind: HealthKind,record:any) {
                 <section class="ui-card"><div class="card-heading"><h2>健康问题</h2><button class="inline-link" type="button" @click="bodyTab='concerns'">查看全部 <ArrowUpRight :size="15"/></button></div><button v-for="c in demo.concerns" :key="c.id" class="row-link" type="button" @click="show('concern',c.id)"><span class="list-icon"><Heart :size="18"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary }}</small></span><ChevronRight :size="17"/></button></section>
                 <section class="ui-card"><div class="card-heading"><h2>最近的记录</h2><button class="inline-link" type="button" @click="bodyTab='timeline'">时间线 <ArrowUpRight :size="15"/></button></div><button v-for="e in timeline.slice(0,4)" :key="e.id" class="row-link" type="button" @click="show(e.kind,e.id)"><span class="list-icon"><component :is="kindIcon[e.kind]" :size="18"/></span><span class="row-main"><b>{{ e.title }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/></button></section>
               </div>
-              <div class="quick-actions"><button type="button" @click="openEditor('event')"><CalendarDays :size="18"/> 记一件健康事件</button><button type="button" @click="openImport()"><Upload :size="18"/> 整理报告</button><button type="button" @click="openEditor('assessment')"><BadgeCheck :size="18"/> 记录健康评估</button></div>
+
             </div>
             <template v-else>
               <div class="list-toolbar">
-                <label class="search-field"><Search :size="17"/><input v-model="search" aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
-                <button class="primary-button" type="button" @click="bodyTab==='concerns'?openEditor('concern'):bodyTab==='metrics'?openEditor('metric'):bodyTab==='documents'?openImport():bodyTab==='regimens'?openEditor('regimen'):openEditor('event')">
-                  <Plus :size="17"/>{{ bodyTab==='concerns'?'添加关注':bodyTab==='metrics'?'新增指标':bodyTab==='documents'?'添加资料':bodyTab==='regimens'?'新建方案':'记一件事' }}
-                </button>
+                <label class="search-field"><Search :size="17"/><input v-model="search"
+                  aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
               </div>
-              <div v-if="bodyTab==='timeline'" class="quick-actions slim"><button @click="openEditor('observation')" type="button"><ClipboardCheck :size="17"/> 测量</button><button @click="openEditor('event')" type="button"><CalendarDays :size="17"/> 事件</button><button @click="openEditor('assessment')" type="button"><BadgeCheck :size="17"/> 评估</button></div>
               <div class="list-panel">
                 <template v-if="bodyTab==='concerns'"><button v-for="c in filteredConcerns" :key="c.id" class="list-row" type="button" @click="show('concern',c.id)"><span class="list-icon"><Heart :size="19"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary||'持续记录和回顾' }}</small></span><span class="status-chip">{{ c.status==='active'?'关注中':'已结束' }}</span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='metrics'"><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong><ChevronRight :size="18"/></button></template>
