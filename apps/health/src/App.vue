@@ -8,7 +8,7 @@ import {
   Stethoscope, Trash2, TrendingDown, Upload, Utensils, X, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import { useDemoAgentSession } from './agent-demo'
-import AlohaHub, { type AlohaAppLink } from './components/AlohaHub.vue'
+import AlohaHub from './components/AlohaHub.vue'
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
   observationStatuses, observationValue, regimenStatuses, regimenTypes, seedDemo,
@@ -20,7 +20,7 @@ type Tab = 'home' | 'body' | 'food' | 'movement'
 type BodyTab = 'overview' | 'concerns' | 'metrics' | 'timeline' | 'documents' | 'regimens'
 type Sheet = '' | 'edit' | 'import'
 type RecordView = { kind: HealthKind; id: string }
-const alohaApps: AlohaAppLink[] = [
+const alohaApps = [
   { id:'assistant', name:'Assistant', description:'个人 AI 助手' },
   { id:'health', name:'Health', description:'健康记录与管理' },
   { id:'finance', name:'Finance', description:'财务与资产' },
