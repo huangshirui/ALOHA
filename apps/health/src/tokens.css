@@ -30,6 +30,26 @@
   --health-space-5: var(--aloha-space-5);
   --health-space-6: var(--aloha-space-6);
   --health-space-8: var(--aloha-space-8);
+  /* One typography scale, inherited from shared ALOHA foundations. */
+  --health-type-caption: var(--aloha-type-caption);
+  --health-type-label: var(--aloha-type-label);
+  --health-type-body: var(--aloha-type-body);
+  --health-type-emphasis: var(--aloha-type-emphasis);
+  --health-type-section: var(--aloha-type-section);
+  --health-type-page: var(--aloha-type-page);
+  --health-type-metric: var(--aloha-type-metric);
+  --health-leading-tight: var(--aloha-leading-tight);
+  --health-leading-body: var(--aloha-leading-body);
+
+  /* Shared surface rhythm, controlled centrally by the density setting. */
+  --health-page-gap: var(--aloha-space-4);
+  --health-card-padding: var(--aloha-space-4);
+  --health-row-pad-block: 0.6rem;
+  --health-row-icon: 2.2rem;
+  --health-tab-gap: var(--aloha-space-5);
+  --health-content-top: var(--aloha-space-3);
+  --health-action-height: var(--aloha-control-sm);
+
   --health-motion: var(--aloha-motion-fast);
 
   --health-border-soft: color-mix(in srgb, var(--health-border) 78%, transparent);
