@@ -10,7 +10,7 @@ import {
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
   observationStatuses, observationValue, regimenStatuses, regimenTypes, seedDemo,
-  validateConcern, validateObservation, validateRegimen, valueTypes,
+  validateConcern, validateObservation, validateRegimen, validateEventTime, valueTypes,
   type HealthKind, type Metric, type Observation, type Regimen,
 } from './demo-model'
 
@@ -45,6 +45,7 @@ const demo = reactive(seedDemo())
 const activeTab = ref<Tab>('home')
 const bodyTab = ref<BodyTab>('overview')
 const selected = ref<RecordView | null>(null)
+const returnAfterEdit = ref<RecordView | null>(null)
 const sheet = ref<Sheet>('')
 const editKind = ref<HealthKind>('concern')
 const editId = ref('')
@@ -127,6 +128,7 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
   if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
+  returnAfterEdit.value=selected.value ? {...selected.value} : null
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
 function formSave() {
@@ -142,9 +144,11 @@ function formSave() {
     }
   }
   if(kind==='concern') formError.value=validateConcern(v.onsetDate,v.resolvedDate)??''
+  if(kind==='event') formError.value=validateEventTime(v.timeStart,v.timeEnd)??''
   if(kind==='regimen') formError.value=validateRegimen(v.startDate,v.endDate,v.recurrence,v.firstDueDate)??''
   if(kind==='observation') formError.value=validateObservation(demo.metrics.find(m=>m.id===v.metricId),String(v.value??''))??''
   if(kind==='metric' && demo.metrics.some(m=>m.name.trim()===String(v.name).trim() && m.id!==editId.value)) formError.value='已有同名指标，可直接使用现有指标'
+  if(kind==='metric' && editId.value && demo.metrics.find(m=>m.id===editId.value)?.valueType!==v.valueType && demo.observations.some(o=>o.metricId===editId.value)) formError.value='已经有历史记录的指标不能改动记录方式'
   if(formError.value) return
   const payload:any={...v}
   if(kind==='observation') {
@@ -162,6 +166,9 @@ function formSave() {
   } else rows.unshift({...payload,id:'demo-'+(++nextRecordId)})
   sheet.value=''; notice.value='已保存到当前体验页面，刷新后会恢复初始内容。'
   search.value=''
+  if(returnAfterEdit.value?.kind==='concern'){ show('concern',returnAfterEdit.value.id);return }
+  if(returnAfterEdit.value?.kind==='metric'){ show('metric',returnAfterEdit.value.id);return }
+  if(editId.value){ show(kind,editId.value);return }
   if(kind==='concern') openBody('concerns')
   else if(kind==='metric') openBody('metrics')
   else if(kind==='document') openBody('documents')
@@ -172,10 +179,18 @@ function removeCurrent() {
   if(!selected.value||!current.value) return
   if(!window.confirm('要从本次演示中删除这条记录吗？')) return
   const kind=selected.value.kind,id=selected.value.id
+  if(kind==='metric' && demo.observations.some(o=>o.metricId===id)) {notice.value='该指标已有测量记录，请先保留指标与历史数据。';return}
   const rows=getList(kind)
   const i=rows.findIndex(r=>r.id===id)
   if(i>=0) rows.splice(i,1)
   // Remove orphaned UI-only relation indexes without cascading health facts.
+  if(kind==='document') {
+    demo.observations.forEach(o=>{if(o.sourceDocumentId===id)o.sourceDocumentId=''})
+    demo.regimens.forEach(r=>{if(r.sourceDocumentId===id)r.sourceDocumentId=''})
+    demo.assessments.forEach(a=>{a.basisIds=a.basisIds.filter(x=>x!==id)})
+  }
+  if(kind==='observation')demo.assessments.forEach(a=>{a.basisIds=a.basisIds.filter(x=>x!==id)})
+  if(kind==='event')demo.documents.forEach(d=>{if(d.eventId===id)d.eventId=''})
   if(kind==='concern') {
     for(const collection of ['observations','events','documents','assessments','regimens'] as const)
       for(const record of demo[collection]) record.concernIds=record.concernIds.filter(x=>x!==id)
@@ -213,7 +228,7 @@ function importNext() {
       concernIds:uploadConcernId.value?[uploadConcernId.value]:[],
     })
   }
-  sheet.value='';notice.value='资料流程演示完成。文件内容没有被读取或上传。';openBody('documents')
+  sheet.value='';notice.value='资料流程演示完成。文件内容没有被读取或上传。';if(uploadConcernId.value)show('concern',uploadConcernId.value);else openBody('documents')
 }
 function sendAgent() {
   if(!agentQuestion.value.trim())return
@@ -315,6 +330,7 @@ function detailName(kind: HealthKind,record:any) {
                 <div class="card-heading"><h2>现在怎么样？</h2><span class="status-chip">{{ current.status==='active'?'持续关注':'已结束' }}</span></div>
                 <p class="body-copy">{{ current.summary || '你可以添加相关指标，逐步建立健康记录。' }}</p>
                 <div class="detail-stat"><b>{{ concernRelated.observations.length }}</b><span>条相关观测</span><span class="stat-separator"></span><b>{{ concernRelated.documents.length }}</b><span>份相关资料</span></div>
+                <dl class="detail-fields"><div><dt>开始关注</dt><dd>{{ displayDate(current.onsetDate) }}</dd></div><div v-if="current.resolvedDate"><dt>结束日期</dt><dd>{{ displayDate(current.resolvedDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 <div class="mini-label">相关指标</div>
                 <button v-for="o in concernRelated.observations.slice().sort((a,b)=>b.observedDate.localeCompare(a.observedDate)).slice(0,3)" :key="o.id" class="row-link" type="button" @click="show('observation',o.id)"><span class="list-icon"><Activity :size="18"/></span><span class="row-main"><b>{{ observationTitle(o) }}</b><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
                 <p v-if="concernRelated.observations.length===0" class="empty-inline">还没有关联的测量记录。</p>
@@ -358,10 +374,10 @@ function detailName(kind: HealthKind,record:any) {
                   <div class="metric-hero"><strong>{{ valuePreview }}</strong><span>{{ nameOfMetric(current.metricId) }}</span></div>
                   <dl class="detail-fields"><div><dt>记录日期</dt><dd>{{ displayDate(current.observedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'手动记录' }}</dd></div><div v-if="current.interpretation"><dt>原记录标记</dt><dd>{{ labelFrom(interpretationTypes,current.interpretation) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 </template>
-                <template v-else-if="selected.kind==='event'"><p class="body-copy">{{ current.description || '没有补充说明' }}</p><dl class="detail-fields"><div><dt>事件类型</dt><dd>{{ eventName(current) }}</dd></div><div><dt>发生日期</dt><dd>{{ displayDate(current.date) }}</dd></div><div><dt>地点</dt><dd>{{ current.location||'未填写' }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='event'"><p class="body-copy">{{ current.description || '没有补充说明' }}</p><dl class="detail-fields"><div><dt>事件类型</dt><dd>{{ eventName(current) }}</dd></div><div><dt>发生日期</dt><dd>{{ displayDate(current.date) }}</dd></div><div v-if="current.timeStart"><dt>发生时段</dt><dd>{{ current.timeStart }}—{{ current.timeEnd }}</dd></div><div><dt>地点</dt><dd>{{ current.location||'未填写' }}</dd></div></dl></template>
                 <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><small>体验版仅保存文件名，不包含实际文件</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
-                <template v-else-if="selected.kind==='assessment'"><p class="body-copy">{{ current.content }}</p><dl class="detail-fields"><div><dt>评估日期</dt><dd>{{ displayDate(current.assessedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'未填写' }}</dd></div></dl></template>
-                <template v-else-if="selected.kind==='regimen'"><p class="body-copy">{{ current.instructions }}</p><dl class="detail-fields"><div><dt>方案类型</dt><dd>{{ labelFrom(regimenTypes,current.regimenType) }}</dd></div><div><dt>安排</dt><dd>{{ current.recurrence==='daily'?'每日':current.recurrence==='weekly'?'每周':'不重复' }}</dd></div><div><dt>首次执行</dt><dd>{{ displayDate(current.firstDueDate) }}</dd></div><div><dt>开始日期</dt><dd>{{ displayDate(current.startDate) }}</dd></div><div><dt>结束日期</dt><dd>{{ displayDate(current.endDate) }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='assessment'"><p class="body-copy">{{ current.content }}</p><dl class="detail-fields"><div><dt>评估日期</dt><dd>{{ displayDate(current.assessedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'未填写' }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='regimen'"><p class="body-copy">{{ current.instructions }}</p><dl class="detail-fields"><div><dt>方案类型</dt><dd>{{ labelFrom(regimenTypes,current.regimenType) }}</dd></div><div><dt>安排</dt><dd>{{ current.recurrence==='daily'?'每日':current.recurrence==='weekly'?'每周':'不重复' }}</dd></div><div><dt>首次执行</dt><dd>{{ displayDate(current.firstDueDate) }}</dd></div><div><dt>开始日期</dt><dd>{{ displayDate(current.startDate) }}</dd></div><div><dt>结束日期</dt><dd>{{ displayDate(current.endDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
                 <div class="relation-tags" v-if="current.concernIds?.length"><span class="mini-label">相关健康问题</span><button v-for="cid in current.concernIds" :key="cid" type="button" class="relation-pill" @click="show('concern',cid)"><Link2 :size="13"/>{{ nameOfConcern(cid) }}</button></div>
               </section>
               <section class="ui-card"><div class="card-heading"><h2>{{ selected.kind==='assessment'?'判断依据':'关联资料' }}</h2></div>
@@ -447,6 +463,8 @@ function detailName(kind: HealthKind,record:any) {
             <label>发生了什么 <span>*</span><input v-model="draft.summary" maxlength="200" required placeholder="例如：一次门诊咨询"/></label>
             <label>事件类型<select v-model="draft.eventType"><option v-for="[value,name] in eventTypes" :key="value" :value="value">{{ name }}</option></select></label>
             <label>发生日期 <span>*</span><input v-model="draft.date" type="date" required/></label>
+            <div class="form-two"><label>开始时间（选填）<input v-model="draft.timeStart" type="time"/></label><label>结束时间（选填）<input v-model="draft.timeEnd" type="time"/></label></div>
+            <p class="helper-copy">只记日期也可以；填写时间时，需要同时填写开始和结束时间。</p>
             <label>地点<input v-model="draft.location" placeholder="例如：社区医院"/></label>
             <label>事情经过<textarea v-model="draft.description" rows="3"/></label>
             <label>状态<select v-model="draft.status"><option value="active">已记录</option><option value="cancelled">已取消</option></select></label>
@@ -466,6 +484,7 @@ function detailName(kind: HealthKind,record:any) {
             <div class="form-two"><label>评估日期 <span>*</span><input v-model="draft.assessedDate" required type="date"/></label><label>状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label></div>
             <fieldset class="check-group"><legend>依据哪些记录？</legend><label v-for="d in demo.documents" :key="d.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="d.id"/>{{ d.title }}</label><label v-for="o in demo.observations.slice(0,5)" :key="o.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="o.id"/>{{ observationTitle(o) }}</label></fieldset>
             <label>来源说明<input v-model="draft.sourceNote" placeholder="例如：医生意见、个人整理"/></label>
+            <label>补充备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='regimen'">
             <label>方案名称 <span>*</span><input v-model="draft.name" required placeholder="例如：每周活动计划"/></label>
@@ -477,6 +496,7 @@ function detailName(kind: HealthKind,record:any) {
             <label v-if="draft.recurrence!=='none'">首次执行日期 <span>*</span><input v-model="draft.firstDueDate" required type="date"/></label>
             <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>方案来源<input v-model="draft.sourceNote" placeholder="例如：个人计划"/></label>
+            <label>备注<textarea v-model="draft.notes" rows="2"/></label>
             <p class="helper-copy">真实版本会由平台生成待办，不会由页面自行定时。</p>
           </template>
           <fieldset v-if="editKind!=='metric'&&editKind!=='concern'" class="check-group"><legend>相关健康问题（可多选）</legend><label v-for="c in demo.concerns" :key="c.id" class="checkbox-line"><input v-model="draft.concernIds" type="checkbox" :value="c.id"/>{{ c.name }}</label><p v-if="!demo.concerns.length" class="helper-copy">可以先创建健康问题，后续再关联。</p></fieldset>
