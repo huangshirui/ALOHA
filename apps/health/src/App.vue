@@ -256,6 +256,12 @@ function handleEscape() {
   if (sheet.value) closeSheet()
   else if (agentOpen.value) closeAgent()
 }
+function handleAgentEnter(event: KeyboardEvent) {
+  // Preserve Chinese IME candidate confirmation instead of sending mid-composition.
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  void sendAgent()
+}
 function labelForKind(kind: HealthKind) {return kindLabel[kind]}
 function detailName(kind: HealthKind,record:any) {
   if(kind==='observation')return observationTitle(record)
@@ -471,7 +477,7 @@ function detailName(kind: HealthKind,record:any) {
       <footer class="agent-dock-footer">
         <form class="agent-dock-composer" @submit.prevent="sendAgent">
           <label class="sr-only" for="health-agent-question">向 Health 提问</label>
-          <textarea id="health-agent-question" ref="agentInput" v-model="agentQuestion" rows="2" placeholder="想了解什么？" @keydown.enter.exact.prevent="sendAgent"/>
+          <textarea id="health-agent-question" ref="agentInput" v-model="agentQuestion" rows="2" placeholder="想了解什么？" @keydown.enter.exact="handleAgentEnter"/>
           <button class="primary-button agent-send" type="submit" :disabled="!agentQuestion.trim()">发送 <ArrowRight :size="17"/></button>
         </form>
         <p class="agent-dock-disclaimer"><ShieldCheck :size="14"/> 当前为演示对话，未接入真实 AI 或健康档案。</p>
