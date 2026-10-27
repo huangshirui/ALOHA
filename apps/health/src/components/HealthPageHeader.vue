@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue'
 import { ArrowLeft, Sparkles } from 'lucide-vue-next'
 import AlohaHub from './AlohaHub.vue'
 
@@ -16,10 +17,22 @@ defineProps<{
   density: 'comfortable' | 'compact'
 }>()
 defineEmits<{ back: []; ask: []; selectApp: [id:string]; updateDensity: [value:'comfortable'|'compact'] }>()
+
+const isScrolled = ref(false)
+function updateScrollState() {
+  // Keep the header visually part of the page at rest. Only while scrolling
+  // should it need a surface behind the text and action controls.
+  isScrolled.value = window.scrollY > 8
+}
+onMounted(() => {
+  updateScrollState()
+  window.addEventListener('scroll', updateScrollState, { passive: true })
+})
+onUnmounted(() => window.removeEventListener('scroll', updateScrollState))
 </script>
 
 <template>
-  <header class="health-page-heading">
+  <header class="health-page-heading" :class="{ 'is-scrolled': isScrolled }">
     <div class="health-page-heading-main">
       <div class="health-page-heading-prefix"><AlohaHub :apps="apps" current-app="health" compact preview :density="density" @select-app="$emit('selectApp',$event)" @update:density="$emit('updateDensity',$event)"/></div>
       <div class="health-page-heading-copy">
@@ -59,10 +72,14 @@ defineEmits<{ back: []; ask: []; selectApp: [id:string]; updateDensity: [value:'
   min-height:3.55rem;
   margin:0 0 var(--aloha-space-3);
   padding:.45rem 0;
-  background:var(--health-header-bg);
+  background:transparent;
+  border-bottom:1px solid transparent;
+}
+.health-page-heading.is-scrolled {
+  background:color-mix(in srgb, var(--health-canvas) 91%, transparent);
   backdrop-filter:blur(14px);
   -webkit-backdrop-filter:blur(14px);
-  border-bottom:1px solid var(--health-border-soft);
+  border-bottom-color:var(--health-border-soft);
 }
 .health-page-heading-main,.health-page-heading-copy {
   display:flex;
