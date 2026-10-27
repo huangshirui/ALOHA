@@ -11,6 +11,8 @@ import { useDemoAgentSession } from './agent-demo'
 import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
+import BodyOverview from './components/BodyOverview.vue'
+import { seedBodyBindings, setConcernRegion, type BodyMapBinding, type BodyRegionId } from './body-map'
 import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
@@ -60,6 +62,8 @@ const kindIcon = { concern: Heart, metric: Activity, observation: ClipboardCheck
 const demo = reactive(seedDemo())
 const activeTab = ref<Tab>('home')
 const bodyTab = ref<BodyTab>('overview')
+const selectedBodyRegion = ref<BodyRegionId>('chest')
+const bodyBindings = ref<BodyMapBinding[]>(seedBodyBindings())
 const selected = ref<RecordView | null>(null)
 const routeStack = ref<HealthLocation[]>([])
 const sheet = ref<Sheet>('')
@@ -167,6 +171,11 @@ function runBodyPrimary() {
   const action=bodyCreateAction.value
   if(action.mode==='direct') startCreate(action.action)
 }
+function assignConcernRegion(id:string,region:BodyRegionId|'') {
+  bodyBindings.value=setConcernRegion(bodyBindings.value,id,region)
+  if(region) selectedBodyRegion.value=region
+  notice.value=region?'已为这项健康问题标记部位（仅本次演示）。':'已取消部位标记（仅本次演示）。'
+}
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   const record=id ? getList(kind).find(r=>r.id===id) : null
   if (id && !record) return
@@ -236,6 +245,7 @@ function removeCurrent() {
   if(kind==='observation')demo.assessments.forEach(a=>{a.basisIds=a.basisIds.filter(x=>x!==id)})
   if(kind==='event')demo.documents.forEach(d=>{if(d.eventId===id)d.eventId=''})
   if(kind==='concern') {
+    bodyBindings.value=bodyBindings.value.filter(binding=>binding.concernId!==id)
     for(const collection of ['observations','events','documents','assessments','regimens'] as const)
       for(const record of demo[collection]) record.concernIds=record.concernIds.filter(x=>x!==id)
   }
@@ -493,12 +503,14 @@ function detailName(kind: HealthKind,record:any) {
               <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="changeBodyTab(item.id)">{{ item.title }}</button>
             </nav>
             <div v-if="bodyTab==='overview'" class="body-overview">
-              <button type="button" class="body-map-link" @click="bodyTab='concerns'"><span class="body-map-icon"><HeartPulse :size="30"/></span><span><b>身体健康图</b><small>从身体状态进入你关注的问题</small></span><ArrowUpRight :size="20"/></button>
-              <div class="two-columns">
-                <section class="ui-card"><div class="card-heading"><h2>健康问题</h2><button class="inline-link" type="button" @click="bodyTab='concerns'">查看全部 <ArrowUpRight :size="15"/></button></div><button v-for="c in demo.concerns" :key="c.id" class="row-link" type="button" @click="show('concern',c.id)"><span class="list-icon"><Heart :size="18"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary }}</small></span><ChevronRight :size="17"/></button></section>
-                <section class="ui-card"><div class="card-heading"><h2>最近的记录</h2><button class="inline-link" type="button" @click="bodyTab='timeline'">时间线 <ArrowUpRight :size="15"/></button></div><button v-for="e in timeline.slice(0,4)" :key="e.id" class="row-link" type="button" @click="show(e.kind,e.id)"><span class="list-icon"><component :is="kindIcon[e.kind]" :size="18"/></span><span class="row-main"><b>{{ e.title }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/></button></section>
-              </div>
-
+              <BodyOverview
+                :concerns="demo.concerns"
+                :bindings="bodyBindings"
+                :selected-region="selectedBodyRegion"
+                @select-region="selectedBodyRegion=$event"
+                @open-concern="show('concern',$event)"
+                @assign="assignConcernRegion"
+              />
             </div>
             <template v-else>
               <div class="list-toolbar">
