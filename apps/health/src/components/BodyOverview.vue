@@ -23,7 +23,12 @@ const figureEl=ref<HTMLElement|null>(null)
 const explorerEl=ref<HTMLElement|null>(null)
 const recordsCardEl=ref<HTMLElement|null>(null)
 const spots=computed(()=>visibleHotspots(props.concerns,props.bindings,props.view))
-const filteredConcerns=computed(()=>props.concerns.filter(c=>(c.name+' '+c.summary).toLowerCase().includes(search.value.trim().toLowerCase())))
+const filteredConcerns=computed(()=>{
+  const term=search.value.trim().toLowerCase()
+  return props.concerns
+    .filter(c=>(c.name+' '+c.summary).toLowerCase().includes(term))
+    .sort((a,b)=>Number(b.id===props.selectedConcernId)-Number(a.id===props.selectedConcernId))
+})
 function locationLabel(id:string){
   const binding=props.bindings.find(b=>b.concernId===id && b.assetId===BODY_MAP_ASSET_ID)
   return binding ? (binding.view==='front'?'正面':'背面') : '未定位'
