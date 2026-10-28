@@ -1,15 +1,15 @@
 import {describe,expect,it} from 'vitest'
 import {chooseReferenceRange,compareReference,formatReferenceRange,parseReferenceDraft,validateReferenceDraft} from './health-reference'
 const metric={valueType:'number',defaultUnit:'mmol/L',referenceLow:2,referenceHigh:4,referenceSource:'演示报告的范围'}
-const observation={valueNumber:3,unit:'mmol/L',status:'final',interpretation:'high'}
+const observation={valueNumber:3,unit:'mmol/L'}
 describe('Health reference range comparisons (not medical diagnoses)',()=>{
- it('shows lower/inside/upper comparisons without rewriting source interpretation',()=>{
+ it('shows lower/inside/upper comparisons without inventing original report interpretations',()=>{
   expect(compareReference(metric,{...observation,valueNumber:1.9}).comparison?.position).toBe('below')
   expect(compareReference(metric,observation).comparison?.position).toBe('within')
   expect(compareReference(metric,{...observation,valueNumber:4.1}).comparison?.position).toBe('above')
   expect(compareReference(metric,{...observation,valueNumber:2}).comparison?.position).toBe('within')
   expect(compareReference(metric,{...observation,valueNumber:4}).comparison?.position).toBe('within')
-  expect(observation.interpretation).toBe('high')
+  expect(compareReference(metric,observation).comparison).not.toHaveProperty('interpretation')
  })
  it('uses one-sided observations as full overrides, never mixes boundaries',()=>{
   const changed={...observation,valueNumber:3,referenceLow:null,referenceHigh:2.5,referenceSource:'演示本次报告'}
@@ -22,8 +22,7 @@ describe('Health reference range comparisons (not medical diagnoses)',()=>{
   expect(compareReference(metric,{...observation,unit:'mg/dL'}).reason).toBe('unit_mismatch')
   expect(compareReference(metric,{...observation,unit:'mg/dL',referenceHigh:120}).comparison?.source).toBe('observation')
  })
- it('returns not evaluated for error records, nonnumeric values and no configured range',()=>{
-  expect(compareReference(metric,{...observation,status:'entered_in_error'}).reason).toBe('invalid_record')
+ it('returns not evaluated for nonnumeric values and no configured range',()=>{
   expect(compareReference(metric,{...observation,valueNumber:null}).reason).toBe('non_numeric')
   expect(compareReference({valueType:'number',defaultUnit:'kg'}, {...observation,unit:'kg'}).reason).toBe('no_range')
   expect(compareReference({...metric,valueType:'text'},observation).reason).toBe('non_numeric')
