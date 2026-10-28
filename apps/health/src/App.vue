@@ -88,9 +88,9 @@ const activeTab = ref<Tab>('body')
 const bodyTab = ref<BodyTab>('focus')
 const mapView = ref<BodyView>('front')
 const mapSelectedConcern = ref<string|null>(null)
-const bodyBindings = ref<BodyMapBinding[]>(seedBodyBindings())
+const bodyBindings = ref<BodyMapBinding[]>(liveMode ? [] : seedBodyBindings())
 // App-only user priorities; this does not extend the LifeSpace HealthConcern schema.
-const attentionByConcern = ref<Record<string,ConcernAttention>>({'c-1':'watch','c-2':'routine'})
+const attentionByConcern = ref<Record<string,ConcernAttention>>(liveMode ? {} : {'c-1':'watch','c-2':'routine'})
 const selected = ref<RecordView | null>(null)
 const routeStack = ref<HealthLocation[]>([])
 const sheet = ref<Sheet>('')
@@ -310,7 +310,7 @@ function onAttentionChange(id:string,event:Event) {
 function assignConcernPoint(id:string,view:BodyView,point:BodyPoint) {
   try {
     bodyBindings.value=setConcernPoint(bodyBindings.value,id,view,point)
-    notice.value='已为关注事项标记位置（仅本次演示）。'
+    notice.value=liveMode?'已标记位置（仅本次页面，尚未同步至 LifeSpace）。':'已为关注事项标记位置（仅本次演示）。'
   } catch { notice.value='请点选人体轮廓内的位置。' }
 }
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
@@ -586,7 +586,7 @@ function detailName(kind: HealthKind,record:any) {
               <template v-if="demo.regimens.some(r=>r.status==='active')">
                 <button v-for="r in demo.regimens.filter(r=>r.status==='active').slice(0,3)" :key="r.id" class="task-line" type="button" @click="togglePlan(r.id)">
                   <span :class="['check-circle',{done:completedPlanIds.includes(r.id)}]"><Check v-if="completedPlanIds.includes(r.id)" :size="15"/></span>
-                  <span class="row-main"><b :class="{struck:completedPlanIds.includes(r.id)}">{{ r.name }}</b><small>{{ r.recurrence==='daily'?'每日安排':r.recurrence==='weekly'?'每周安排':'自主安排' }} · 点击体验完成状态</small></span>
+                  <span class="row-main"><b :class="{struck:completedPlanIds.includes(r.id)}">{{ r.name }}</b><small>{{ r.recurrence==='daily'?'每日安排':r.recurrence==='weekly'?'每周安排':'自主安排' }} · {{ liveMode?'任务完成尚未接入':'点击体验完成状态' }}</small></span>
                 </button>
               </template><p v-else class="empty-inline">目前没有正在执行的计划。</p>
             </section>
