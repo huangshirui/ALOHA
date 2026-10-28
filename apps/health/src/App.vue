@@ -109,6 +109,9 @@ const selectedConcern = computed(() => selected.value?.kind === 'concern' ? sele
 const related = (record: {concernIds?:string[]},id:string) => (record.concernIds ?? []).includes(id)
 const activeConcerns = computed(() => demo.concerns.filter(c=>c.status==='active'))
 const latestFor = (metricId:string) => [...demo.observations].filter(o=>o.metricId===metricId && o.status !== 'entered_in_error').sort((a,b)=>b.observedDate.localeCompare(a.observedDate))[0]
+const referenceFor=(observation:Observation,metric?:Metric)=>metric?compareReference(metric,observation):null
+const referenceLabel=(observation:Observation,metric?:Metric)=>referenceFor(observation,metric)?.comparison?.label??''
+const metricRangeLabel=(metric:Metric)=>formatReferenceRange(metric,metric.defaultUnit)
 const observationTitle = (o: Observation) => nameOfMetric(o.metricId) + ' · ' + observationValue(o,demo.metrics.find(m=>m.id===o.metricId))
 const eventName = (e: {eventType:string}) => labelFrom(eventTypes,e.eventType)
 const docName = (d: {documentType:string}) => labelFrom(documentTypes,d.documentType)
@@ -480,18 +483,30 @@ function detailName(kind: HealthKind,record:any) {
             <div v-else-if="selected.kind==='metric'" class="detail-columns metric-detail-layout">
               <section class="ui-card detail-primary">
                 <div class="metric-summary">
-                  <div class="metric-hero"><strong>{{ latestFor(current.id) ? observationValue(latestFor(current.id)!,current) : '暂无记录' }}</strong><span>{{ latestFor(current.id) ? '最新记录 · '+displayDate(latestFor(current.id)!.observedDate) : '还没有观测记录' }}</span></div>
+                  <div class="metric-hero"><strong>{{ latestFor(current.id) ? observationValue(latestFor(current.id)!,current) : '暂无记录' }}</strong><span>{{ latestFor(current.id) ? '最新记录 · '+displayDate(latestFor(current.id)!.observedDate) : '还没有观测记录' }}</span>
+                    <span v-if="latestFor(current.id) && referenceFor(latestFor(current.id)!,current)?.comparison"
+                      class="reference-comparison" :class="'reference-'+referenceFor(latestFor(current.id)!,current)?.comparison?.position">
+                      {{ referenceLabel(latestFor(current.id)!,current) }}
+                    </span>
+                  </div>
                   <button class="primary-button metric-add-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
                 </div>
                 <div class="card-heading metric-chart-heading"><h2>变化趋势</h2></div>
+                <p v-if="current.valueType==='number' && (current.referenceLow!=null || current.referenceHigh!=null)" class="reference-range-note">
+                  参考范围：{{ metricRangeLabel(current) }} · {{ current.referenceSource||'来源未注明' }}
+                  <span>仅用于比较，不代表医学诊断。</span>
+                </p>
                 <MetricTrend v-if="current.valueType==='number'"
                   :metric-name="current.name" :unit="current.defaultUnit"
-                  :observations="demo.observations.filter(o=>o.metricId===current.id)"
+                  :reference-low="current.referenceLow" :reference-high="current.referenceHigh"
+                  :reference-source="current.referenceSource"
+                  :observations="demo.observations.filter(o=>o.metricId===current.id && (o.unit||current.defaultUnit)===current.defaultUnit)"
                   @open-observation="show('observation',$event)"/>
                 <p v-else class="helper-copy">该指标记录的是{{ current.valueType==='text'?'文字':'是或否' }}，可在右侧查看历史记录，不适合用数值趋势图展示。</p>
               </section>
               <section class="ui-card metric-history"><div class="card-heading"><h2>历史记录</h2><span class="quiet-caption">{{ demo.observations.filter(o=>o.metricId===current.id).length }} 条</span></div>
-                <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><b>{{ observationValue(o,current) }}</b><small>{{ displayDate(o.observedDate) }} · {{ labelFrom(observationStatuses,o.status) }}</small></span><ChevronRight :size="16"/></button>
+                <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><b>{{ observationValue(o,current) }}</b><small>{{ displayDate(o.observedDate) }} · {{ labelFrom(observationStatuses,o.status) }}</small><span v-if="referenceLabel(o,current)" class="reference-comparison reference-inline"
+                    :class="'reference-'+referenceFor(o,current)?.comparison?.position">{{ referenceLabel(o,current) }}</span></span><ChevronRight :size="16"/></button>
                 <p v-if="!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
               </section>
             </div>
@@ -499,8 +514,14 @@ function detailName(kind: HealthKind,record:any) {
               <section class="ui-card detail-primary">
                 <div class="card-heading"><h2>记录详情</h2><span v-if="selected.kind==='observation'||selected.kind==='assessment'" class="status-chip">{{ labelFrom(observationStatuses,current.status) }}</span><span v-else-if="selected.kind==='regimen'" class="status-chip">{{ labelFrom(regimenStatuses,current.status) }}</span></div>
                 <template v-if="selected.kind==='observation'">
-                  <div class="metric-hero"><strong>{{ valuePreview }}</strong><span>{{ nameOfMetric(current.metricId) }}</span></div>
-                  <dl class="detail-fields"><div><dt>记录日期</dt><dd>{{ displayDate(current.observedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'手动记录' }}</dd></div><div v-if="current.interpretation"><dt>原记录标记</dt><dd>{{ labelFrom(interpretationTypes,current.interpretation) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
+                  <div class="metric-hero"><strong>{{ valuePreview }}</strong><span>{{ nameOfMetric(current.metricId) }}</span>
+                    <span v-if="referenceLabel(current,demo.metrics.find(m=>m.id===current.metricId))" class="reference-comparison"
+                      :class="'reference-'+referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.comparison?.position">
+                      {{ referenceLabel(current,demo.metrics.find(m=>m.id===current.metricId)) }}
+                    </span>
+                  </div>
+                  <dl class="detail-fields"><div><dt>记录日期</dt><dd>{{ displayDate(current.observedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'手动记录' }}</dd></div><div v-if="current.interpretation"><dt>原记录标记</dt><dd>{{ labelFrom(interpretationTypes,current.interpretation) }}</dd></div><div v-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.comparison"><dt>本次比较依据</dt><dd>{{ formatReferenceRange(referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.range,referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.unit) }} · {{ referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.sourceNote }}{{ referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.source==='observation'?'（本次报告）':'（指标默认）' }}</dd></div>
+                    <div v-else-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.reason==='unit_mismatch'"><dt>范围比较</dt><dd>单位不同，暂不比较</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 </template>
                 <template v-else-if="selected.kind==='event'"><p class="body-copy">{{ current.description || '没有补充说明' }}</p><dl class="detail-fields"><div><dt>事件类型</dt><dd>{{ eventName(current) }}</dd></div><div><dt>发生日期</dt><dd>{{ displayDate(current.date) }}</dd></div><div v-if="current.timeStart"><dt>发生时段</dt><dd>{{ current.timeStart }}—{{ current.timeEnd }}</dd></div><div><dt>地点</dt><dd>{{ current.location||'未填写' }}</dd></div></dl></template>
                 <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><small>体验版仅保存文件名，不包含实际文件</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
