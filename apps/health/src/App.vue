@@ -659,6 +659,15 @@ function detailName(kind: HealthKind,record:any) {
             <label><span class="field-label">指标名称 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.name" maxlength="160" required placeholder="例如：静息心率"/></label>
             <label>记录方式 <select v-model="draft.valueType"><option v-for="[value,name] in valueTypes" :key="value" :value="value">{{ name }}</option></select></label>
             <label v-if="draft.valueType==='number'">单位<input v-model="draft.defaultUnit" placeholder="例如：次/分"/></label>
+            <fieldset v-if="draft.valueType==='number'" class="health-reference-fieldset">
+              <legend>参考范围（可选）</legend>
+              <p class="helper-copy">有明确依据时才填写。范围内不代表医学上一定正常，个人目标请在目标中管理。</p>
+              <div class="form-two">
+                <label>参考下限<input v-model="draft.referenceLow" type="number" step="any" placeholder="不设下限"/></label>
+                <label>参考上限<input v-model="draft.referenceHigh" type="number" step="any" placeholder="不设上限"/></label>
+              </div>
+              <label>参考范围来源<input v-model="draft.referenceSource" placeholder="例如：报告提供的参考范围"/></label>
+            </fieldset>
             <p class="helper-copy">同一种指标只需建一次，之后可以持续记录。</p>
           </template>
           <template v-else-if="editKind==='observation'">
@@ -666,6 +675,15 @@ function detailName(kind: HealthKind,record:any) {
             <template v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='boolean'"><label><span class="field-label">本次结果 <span class="required-mark" aria-hidden="true">*</span></span><select v-model="draft.value"><option value="">请选择</option><option value="true">是</option><option value="false">否</option></select></label></template>
             <template v-else><label><span class="field-label">记录结果 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.value" :type="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'number':'text'" :step="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'any':undefined" required placeholder="填写此次记录"/></label></template>
             <label v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'">单位<input v-model="draft.unit" :placeholder="demo.metrics.find(m=>m.id===draft.metricId)?.defaultUnit||'选填'"/></label>
+            <fieldset v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'" class="health-reference-fieldset">
+              <legend>本次报告的参考范围（可选）</legend>
+              <p class="helper-copy">报告写明的上下限可以填在这里；不填则按该指标的默认范围比较。只填写一侧也可以。</p>
+              <div class="form-two">
+                <label>本次下限<input v-model="draft.referenceLow" type="number" step="any" placeholder="沿用默认范围"/></label>
+                <label>本次上限<input v-model="draft.referenceHigh" type="number" step="any" placeholder="沿用默认范围"/></label>
+              </div>
+              <label>范围来源<input v-model="draft.referenceSource" placeholder="例如：本次化验报告"/></label>
+            </fieldset>
             <label><span class="field-label">测量日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.observedDate" type="date" required/></label>
             <div class="form-two"><label>记录状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label><label>原报告标记<select v-model="draft.interpretation"><option v-for="[value,name] in interpretationTypes" :key="value" :value="value">{{ name }}</option></select></label></div>
             <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
