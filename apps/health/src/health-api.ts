@@ -37,9 +37,9 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 // Core still verifies every requested Space against the authenticated LifeSpace user.
 export const listAuthorizedSpaces = () =>
   api<Array<{id:string,name:string,role:string,timezone?:string}>>('/spaces')
-export const listSpacePeople = (spaceId:string) =>
-  api<{items:Array<{id:string,displayName:string}>,nextCursor:string|null}>(
-    `/spaces/${encodeURIComponent(spaceId)}/people`)
+// Person is resolved by the trusted BFF from current verified Principal + membership.
+export const getOwnSpacePerson = (spaceId:string) =>
+  api<{personId:string}>(`/spaces/${encodeURIComponent(spaceId)}/own-person`)
 const recordsPath = (spaceId:string, model:HealthModelKey) =>
   `/spaces/${encodeURIComponent(spaceId)}/models/${model}/records`
 export const listHealthRecords = <T extends HealthRecord>(
