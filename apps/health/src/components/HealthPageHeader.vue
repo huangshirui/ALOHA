@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { ArrowLeft, Sparkles } from 'lucide-vue-next'
-import AlohaHub from './AlohaHub.vue'
 
 /**
  * ALOHA Health's one page-title / action bar, reused for every primary screen.
@@ -13,10 +12,8 @@ defineProps<{
   context?: string
   canBack?: boolean
   agentOpen?: boolean
-  apps: Array<{id:string;name:string;description:string;href?:string}>
-  density: 'comfortable' | 'compact'
 }>()
-defineEmits<{ back: []; ask: []; selectApp: [id:string]; updateDensity: [value:'comfortable'|'compact'] }>()
+defineEmits<{ back: []; ask: [] }>()
 
 const isScrolled = ref(false)
 function updateScrollState() {
@@ -34,7 +31,6 @@ onUnmounted(() => window.removeEventListener('scroll', updateScrollState))
 <template>
   <header class="health-page-heading" :class="{ 'is-scrolled': isScrolled }">
     <div class="health-page-heading-main">
-      <div class="health-page-heading-prefix"><AlohaHub :apps="apps" current-app="health" compact preview :density="density" @select-app="$emit('selectApp',$event)" @update:density="$emit('updateDensity',$event)"/></div>
       <div class="health-page-heading-copy">
         <button v-if="canBack" class="health-page-back" type="button" aria-label="返回列表" @click="$emit('back')">
           <ArrowLeft :size="17"/>
@@ -89,7 +85,6 @@ onUnmounted(() => window.removeEventListener('scroll', updateScrollState))
 }
 .health-page-heading-main { flex:1; }
 .health-page-heading-copy { flex:1; }
-.health-page-heading-prefix { display:none; }
 .health-page-heading-text { display:flex;flex-direction:column;gap:.14rem;min-width:0;flex:1; }
 .health-page-heading-titleline { display:flex;align-items:baseline;gap:.6rem;min-width:0; }
 .health-page-heading h1 {
@@ -122,7 +117,6 @@ onUnmounted(() => window.removeEventListener('scroll', updateScrollState))
     margin-bottom:var(--aloha-space-3);
   }
   .health-page-heading-main,.health-page-heading-copy { gap:.35rem;min-width:0; }
-  .health-page-heading-prefix { display:flex;flex:none; }
   .health-page-heading h1 { font-size:var(--health-type-section); }
   .health-page-context,.health-page-subtitle { display:none; }
   .health-page-toolbar { gap:.3rem;white-space:nowrap; }
