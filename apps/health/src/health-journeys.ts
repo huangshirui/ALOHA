@@ -29,7 +29,7 @@ export function primaryAction(section:BodySection):PrimaryAction {
 /** Route history is UI-only. It avoids losing the originating concern/metric
  * when entering an observation or document and pressing Back. */
 export interface HealthLocation {
-  tab:'home'|'body'|'food'|'movement'
+  tab:'home'|'body'|'food'|'movement'|'more'
   section:BodySection
   record:null|{kind:CreationAction;id:string}
 }
