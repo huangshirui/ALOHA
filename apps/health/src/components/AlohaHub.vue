@@ -22,16 +22,20 @@ const props = withDefaults(defineProps<{
   density?: Density
   preview?: boolean
   bottomNav?: boolean
-}>(), { compact: false, density: 'comfortable', preview: false, bottomNav: false })
+  page?: boolean
+  entryOnly?: boolean
+}>(), { compact:false, density:'comfortable', preview:false, bottomNav:false, page:false, entryOnly:false })
 
 const emit = defineEmits<{
   selectApp: [id: string]
   'update:density': [value: Density]
+  openMore: []
 }>()
 
 const opened = ref(false)
 const section = ref<HubSection>('apps')
 function showMenu() {
+  if(props.entryOnly){ emit('openMore');return }
   section.value = 'apps'
   opened.value = !opened.value
 }
@@ -51,8 +55,8 @@ function selectApp(app: AlohaAppLink) {
 </script>
 
 <template>
-  <div class="aloha-hub" :class="{ 'bottom-nav-hub': bottomNav }">
-    <button type="button" class="aloha-hub-trigger" :class="{ compact }"
+  <div class="aloha-hub" :class="{ 'bottom-nav-hub': bottomNav, 'page-hub': page }">
+    <button v-if="!page" type="button" class="aloha-hub-trigger" :class="{ compact }"
       :aria-expanded="opened" aria-haspopup="dialog" :aria-label="bottomNav?'应用、账号与设置':'ALOHA 公共菜单'"
       title="应用、账号与设置" @click="showMenu">
       <template v-if="bottomNav"><LayoutGrid :size="22" :stroke-width="1.8"/><span class="aloha-hub-bottom-label">应用</span></template>
@@ -62,14 +66,14 @@ function selectApp(app: AlohaAppLink) {
         <ChevronDown v-if="!compact" :size="17" class="aloha-hub-chevron"/>
       </template>
     </button>
-    <template v-if="opened">
-      <button class="aloha-hub-dismiss" aria-label="关闭公共菜单" type="button" @click="close"></button>
-      <section class="aloha-hub-popup" role="dialog" aria-label="ALOHA 应用及公共设置" @keydown.esc.stop="close">
+    <template v-if="opened || page">
+      <button v-if="!page" class="aloha-hub-dismiss" aria-label="关闭公共菜单" type="button" @click="close"></button>
+      <section class="aloha-hub-popup" :role="page?'region':'dialog'" aria-label="ALOHA 应用及公共设置" @keydown.esc.stop="close">
         <header class="aloha-hub-topline">
           <button v-if="section!=='apps'" type="button" class="aloha-hub-icon" aria-label="返回应用列表" @click="goTo('apps')"><ArrowLeft :size="18"/></button>
           <div><strong>{{ section==='apps'?'ALOHA':section==='account'?'账号与安全':section==='settings'?'通用设置':section==='privacy'?'隐私与授权':'帮助与反馈' }}</strong>
             <small>{{ section==='apps'?'同一个 ALOHA · 不同的入口':'这些设置适用于整个 ALOHA' }}</small></div>
-          <button type="button" class="aloha-hub-icon" aria-label="关闭菜单" @click="close"><X :size="18"/></button>
+          <button v-if="!page" type="button" class="aloha-hub-icon" aria-label="关闭菜单" @click="close"><X :size="18"/></button>
         </header>
 
         <div v-if="section==='apps'" class="aloha-hub-panel-body">
@@ -128,6 +132,13 @@ function selectApp(app: AlohaAppLink) {
 
 <style scoped>
 .aloha-hub { position:relative; min-width:0; }
+.page-hub { width:100%;max-width:54rem; }
+.page-hub .aloha-hub-popup { position:static;width:100%;max-height:none;overflow:visible;box-shadow:none;border-radius:var(--health-radius-card); }
+.page-hub .aloha-hub-topline { padding:1rem 1.2rem; }
+.page-hub .aloha-hub-panel-body { padding:1rem 1.2rem; }
+.page-hub .aloha-hub-group-caption { font-size:var(--health-type-label); }
+.page-hub .aloha-hub-app-copy b { font-size:var(--health-type-body); }
+.page-hub .aloha-hub-app-copy small { font-size:var(--health-type-caption); }
 .aloha-hub.bottom-nav-hub { display:flex;align-self:stretch;width:100%;min-width:0; }
 .bottom-nav-hub .aloha-hub-trigger { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.22rem;height:100%;padding:0 .2rem;color:var(--health-muted);border-radius:var(--health-radius-control); }
 .bottom-nav-hub .aloha-hub-trigger:hover,.bottom-nav-hub .aloha-hub-trigger[aria-expanded="true"] { color:var(--health-brand-strong);background:var(--health-brand-subtle); }
