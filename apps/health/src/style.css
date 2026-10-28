@@ -569,3 +569,7 @@
 .reference-inline {margin-top:.18rem;}
 .reference-range-note {margin:0 0 var(--health-space-3);font-size:var(--health-type-caption);color:var(--health-muted);line-height:1.6;}
 .reference-range-note span {display:block;}
+
+.metric-list-result {display:flex;flex-direction:column;align-items:flex-end;gap:.2rem;min-width:0;flex:none;}
+.metric-list-result .reference-comparison {align-self:flex-end;white-space:nowrap;}
+@media(max-width:47.999rem){.metric-list-result .reference-comparison {font-size:.67rem;}}
