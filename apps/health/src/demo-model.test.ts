@@ -31,6 +31,15 @@ describe('健康原型：第一批模型的基础验证', () => {
     expect(buildObservationValue(textMetric,'疲惫')).toEqual({valueNumber:null,valueText:'疲惫',valueBoolean:null})
     expect(buildObservationValue(boolMetric,'false')).toEqual({valueNumber:null,valueText:'',valueBoolean:false})
   })
+  it('观测数据不再包含状态、原报告标记和自由文本来源说明', () => {
+    const observation = makeEmpty('observation','2026-10-28')
+    for (const key of ['status','interpretation','sourceNote']) {
+      expect(observation).not.toHaveProperty(key)
+      expect(data.observations.every(record => !Object.hasOwn(record,key))).toBe(true)
+    }
+    expect(observation).toHaveProperty('sourceDocumentId','')
+    expect(observation).toHaveProperty('referenceSource','')
+  })
   it('已有观测可被格式化为普通人可读的值', () => {
     expect(observationValue(data.observations[0]!, data.metrics[1])).toContain('mmHg')
   })
