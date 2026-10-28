@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest'
 import {
- aggregateTrend,buildTrendChart,smoothPath,
+ aggregateTrend,buildTrendChart,smoothPath,selectedTrendPoint,
  type NumericObservation,
 } from './metric-trend'
 
@@ -53,6 +53,18 @@ describe('Health metric trends — true observation dates',()=>{
      .toBe('M 0 10 C 10 10, 20 90, 30 90')
    expect(smoothPath([{x:0,y:90},{x:30,y:10}]))
      .toBe('M 0 90 C 10 90, 20 10, 30 10')
+ })
+ it('shows an observation readout only after an explicit point selection',()=>{
+   const points=buildTrendChart(readings,'day').points
+   // Latest reading already appears in the hero. Never repeat it under the chart by default.
+   expect(selectedTrendPoint(points,'')).toBeNull()
+   expect(selectedTrendPoint(points,'2026-02-01')).toMatchObject({
+     key:'2026-02-01',value:140,count:1,recordIds:['o4'],
+   })
+   expect(selectedTrendPoint(points,'2099-01-01')).toBeNull()
+   // After changing from day to month, an old day-level selection must be cleared.
+   const monthly=buildTrendChart(readings,'month').points
+   expect(selectedTrendPoint(monthly,'2026-02-01')).toBeNull()
  })
  it('does not mutate the source readings',()=>{
    const before=JSON.stringify(readings)
