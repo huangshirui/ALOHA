@@ -70,7 +70,7 @@ export function parsePresentationPatch(value:unknown,concernId:string):Presentat
 }
 function convertRow(row:Row):ConcernPresentation {
   const view=row.view
-  const placement=view==='front'||view==='back'
+  const placement:BodyMapBinding|null=view==='front'||view==='back'
     ? row.asset_id===BODY_MAP_ASSET_IDS[view] && typeof row.x==='number' &&
       typeof row.y==='number' && Number.isFinite(row.x) && Number.isFinite(row.y) &&
       row.x>=0&&row.x<=1&&row.y>=0&&row.y<=1
