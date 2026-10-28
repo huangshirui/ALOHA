@@ -13,6 +13,7 @@ import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import BodyOverview from './components/BodyOverview.vue'
 import HealthTimeline from './components/HealthTimeline.vue'
+import MetricTrend from './components/MetricTrend.vue'
 import type { TimelineFilter } from './health-timeline'
 import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
 import { concernAttentionOptions, attentionColor, parseConcernAttention, type ConcernAttention } from './concern-attention'
@@ -468,8 +469,11 @@ function detailName(kind: HealthKind,record:any) {
               <section class="ui-card detail-primary">
                 <div class="card-heading"><h2>观测趋势</h2><span class="quiet-caption">{{ current.defaultUnit || '无单位' }}</span></div>
                 <div class="metric-hero"><strong>{{ latestFor(current.id) ? observationValue(latestFor(current.id)!,current) : '暂无记录' }}</strong><span>最近一次观测</span></div>
-                <div v-if="chartPoints(current.id)" class="chart-wrap"><svg viewBox="0 0 340 100" preserveAspectRatio="none" aria-label="按时间变化的示意趋势"><polyline :points="chartPoints(current.id)"/></svg></div>
-                <p class="helper-copy">图表仅连接已记录的数值，不自动判断健康状况。</p>
+                <MetricTrend v-if="current.valueType==='number'"
+                  :metric-name="current.name" :unit="current.defaultUnit"
+                  :observations="demo.observations.filter(o=>o.metricId===current.id)"
+                  @open-observation="show('observation',$event)"/>
+                <p v-else class="helper-copy">该指标记录的是{{ current.valueType==='text'?'文字':'是或否' }}，可在右侧查看历史记录，不适合用数值趋势图展示。</p>
                 <button class="primary-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
               </section>
               <section class="ui-card"><h2>历史记录</h2>
