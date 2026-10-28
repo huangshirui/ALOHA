@@ -13,6 +13,7 @@ import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import BodyOverview from './components/BodyOverview.vue'
 import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
+import { concernAttentionOptions, attentionColor, parseConcernAttention, type ConcernAttention } from './concern-attention'
 import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
@@ -65,6 +66,8 @@ const bodyTab = ref<BodyTab>('focus')
 const mapView = ref<BodyView>('front')
 const mapSelectedConcern = ref<string|null>(null)
 const bodyBindings = ref<BodyMapBinding[]>(seedBodyBindings())
+// App-only user priorities; this does not extend the LifeSpace HealthConcern schema.
+const attentionByConcern = ref<Record<string,ConcernAttention>>({'c-1':'watch','c-2':'routine'})
 const selected = ref<RecordView | null>(null)
 const routeStack = ref<HealthLocation[]>([])
 const sheet = ref<Sheet>('')
@@ -171,6 +174,10 @@ function runBodyPrimary() {
   const action=bodyCreateAction.value
   if(action.mode==='direct') startCreate(action.action)
 }
+function onAttentionChange(id:string,event:Event) {
+  const value=(event.target as HTMLSelectElement).value
+  attentionByConcern.value={...attentionByConcern.value,[id]:parseConcernAttention(value)}
+}
 function assignConcernPoint(id:string,view:BodyView,point:BodyPoint) {
   try {
     bodyBindings.value=setConcernPoint(bodyBindings.value,id,view,point)
@@ -247,6 +254,7 @@ function removeCurrent() {
   if(kind==='event')demo.documents.forEach(d=>{if(d.eventId===id)d.eventId=''})
   if(kind==='concern') {
     if(mapSelectedConcern.value===id) mapSelectedConcern.value=null
+    const next={...attentionByConcern.value};delete next[id];attentionByConcern.value=next
     bodyBindings.value=bodyBindings.value.filter(binding=>binding.concernId!==id)
     for(const collection of ['observations','events','documents','assessments','regimens'] as const)
       for(const record of demo[collection]) record.concernIds=record.concernIds.filter(x=>x!==id)
@@ -412,7 +420,15 @@ function detailName(kind: HealthKind,record:any) {
                 <div class="card-heading"><h2>现在怎么样？</h2><span class="status-chip">{{ current.status==='active'?'持续关注':'已结束' }}</span></div>
                 <p class="body-copy">{{ current.summary || '你可以添加相关指标，逐步建立健康记录。' }}</p>
                 <div class="detail-stat"><b>{{ concernRelated.observations.length }}</b><span>条相关观测</span><span class="stat-separator"></span><b>{{ concernRelated.documents.length }}</b><span>份相关资料</span></div>
-                <dl class="detail-fields"><div><dt>开始关注</dt><dd>{{ displayDate(current.onsetDate) }}</dd></div><div v-if="current.resolvedDate"><dt>结束日期</dt><dd>{{ displayDate(current.resolvedDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
+                <dl class="detail-fields">
+                  <div><dt>关注度</dt><dd class="concern-attention-value">
+                    <span class="concern-attention-dot" :style="{'--body-dot-color':attentionColor(attentionByConcern[current.id]??'unset')}" aria-hidden="true"/>
+                    <select :value="attentionByConcern[current.id]??'unset'" class="concern-attention-select"
+                      :aria-label="'设置'+current.name+'的关注度'" @change="onAttentionChange(current.id,$event)">
+                      <option v-for="option in concernAttentionOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                    </select>
+                  </dd></div>
+                  <div><dt>开始关注</dt><dd>{{ displayDate(current.onsetDate) }}</dd></div><div v-if="current.resolvedDate"><dt>结束日期</dt><dd>{{ displayDate(current.resolvedDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 <div class="mini-label">相关指标</div>
                 <button v-for="o in concernRelated.observations.slice().sort((a,b)=>b.observedDate.localeCompare(a.observedDate)).slice(0,3)" :key="o.id" class="row-link" type="button" @click="show('observation',o.id)"><span class="list-icon"><Activity :size="18"/></span><span class="row-main"><b>{{ observationTitle(o) }}</b><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
                 <p v-if="concernRelated.observations.length===0" class="empty-inline">还没有关联的测量记录。</p>
@@ -508,6 +524,7 @@ function detailName(kind: HealthKind,record:any) {
               <BodyOverview
                 :concerns="demo.concerns"
                 :bindings="bodyBindings"
+                :attention-by-concern="attentionByConcern"
                 :view="mapView"
                 :selected-concern-id="mapSelectedConcern"
                 @update:view="mapView=$event"
