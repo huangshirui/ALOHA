@@ -54,7 +54,7 @@ A PWA split does not imply a backend split. Gateway and Agent Control remain sha
 ## Current deployment state
 
 - **Assistant:** workspace is `apps/assistant`, but production remains on the legacy root-scope assets attached to `workers/gateway` until the LifeSpace-dependent migration is ready.
-- **Health:** `apps/health`, scope `/health/`, assets-only Worker `aloha-app-health`, manual preview deployment available; no production route yet.
+- **Health:** `apps/health`, scope `/health/`, `aloha-app-health` Preview Worker. Draft branch adds same-origin LifeSpace BFF and separately bound, user-scoped D1 presentation data; no production route or online acceptance yet.
 - **Finance:** `apps/finance`, scope `/finance/`, assets-only Worker `aloha-app-finance`, manual preview deployment available; no production route yet.
 - **Things:** `apps/things`, scope `/things/`, assets-only Worker `aloha-app-things`, manual preview deployment available; no production route yet.
 
