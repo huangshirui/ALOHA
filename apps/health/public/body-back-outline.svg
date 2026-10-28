@@ -1,16 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="244" height="475" viewBox="390 40 244 475" role="img" aria-labelledby="title desc" preserveAspectRatio="xMidYMid meet">
 <title id="title">Neutral body map — back view</title>
-<desc id="desc">Original companion back-view illustration: preserves the front outline proportions, adds posterior ears, shoulder-blade contours and restrained gluteal crease lines. No third-party reference image is copied.</desc>
+<desc id="desc">Minimal back-view illustration sharing the front outline proportions: clean nape, two short scapular cues, raised understated gluteal creases and simplified back-of-hand silhouettes. Original path design; no third-party reference was copied.</desc>
 <g id="body" fill="none" stroke="#0B2B49" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round">
 <!-- head -->
 <!-- Posterior skull ends at the nape: no closed, front-facing chin line. -->
 <path id="head" d="M497 115.6 C490.1 106.8 487.5 96.5 487.5 83.5
   C487.5 65 498 55.5 512 55.5 C526 55.5 536.5 66 536.5 83.5
   C536.5 96.5 533.9 106.8 526 115.6"/>
-<!-- left neck, shoulder and outer arm, hand -->
-<path id="left-outer" d="M497 115.6 C498 124.2 495.3 130.4 486 134 C475 138.3 461 142.4 455 150 C447 159 448.1 174 448.4 185 C448.5 196 446.7 207 445.4 218 C442.7 230 437.9 241 436.8 253 C434.8 263 435.4 277 432 285.5 C429.4 290.1 422 294.5 419 300 C417.3 302.7 417.7 306.9 421 308.1 C425 309.4 430.9 303.3 436 297.7"/>
-<!-- left hand outer tip, palm and side to torso -->
-<path id="left-hand" d="M425 307.2 C424.8 312.4 424 317 426.8 323.8 C429.2 330 438.2 333.2 443.3 327.7 C449 322 447.7 309.8 448 301 C448.3 286.2 456.5 265.5 461 247 C465 230.5 470.6 215 471.3 200"/>
+<!-- Continuous arm and back-of-hand silhouette: no separated thumb or palm line. -->
+<path id="left-outer" d="M497 115.6 C498 124.2 495.3 130.4 486 134 C475 138.3 461 142.4 455 150 C447 159 448.1 174 448.4 185 C448.5 196 446.7 207 445.4 218 C442.7 230 437.9 241 436.8 253 C434.8 263 435.4 277 432 285.5 C429 294 423 306 424 315 C425 327 432 332 440 328 C447 325 447 312 448 301 C448.3 286.2 456.5 265.5 461 247 C465 230.5 470.6 215 471.3 200"/>
 <!-- left inner shoulder to armpit -->
 <path id="left-inner-arm" d="M468 175.7 C469.8 185 470.8 193 471.3 200"/>
 <!-- left torso to lower left foot -->
@@ -19,24 +17,17 @@
 <path id="left-inner-leg" d="M467.6 503.5 L491.5 503.5 C496 502.2 497.9 500 496.6 494 C493.3 481 496 465 498.2 449 C501 432 501.2 413 499.3 398 C504.6 372 504.4 340 510.2 304 C510.6 301.9 512.6 301.9 513 304 C518.5 340 519.4 372 524.7 398 C522.7 415 523.2 430 525.8 449 C528.2 468 530.1 482 527.6 495 C526.6 500.2 528.7 502.5 532.5 503.5 L555.8 503.5"/>
 <!-- right foot to external leg and torso -->
 <path id="right-body-leg" d="M555.8 503.5 C557.8 502.5 555.7 499.2 554 497.5 C547 491 544.6 483 545.8 471 C547 453 551.5 439 552.4 423 C553.7 406 548 390 551.1 373 C555.6 350 557.2 330 556.7 309 C556.8 288 553.8 271 550.2 253 C546.4 234 545.6 218 552.3 200"/>
-<!-- right inner shoulder and arm -->
-<path id="right-inner-arm" d="M556 175.7 C554 184.8 553.1 192.7 552.3 200 C553 216 558.4 232.5 562.6 248 C567.2 265 576.3 287 576 301 C575.3 312 575.8 322.8 581.8 327.2 C587.3 331.9 595.5 329.3 598.1 322.2 C600.3 316.9 598 311.6 597 307.2"/>
-<!-- right hand and external arm -->
-<path id="right-outer" d="M588 298 C592.8 303.5 599 309.5 603.5 307.8 C607.8 306.3 605.2 302 603.4 299.3 C600.4 294.8 592.5 289 590.8 283.4 C588.8 275 589.5 263 587.2 252 C585.5 240 581.1 228.5 579 217 C577.3 206 575.8 196 575.8 185 C576.2 174 576.6 160.7 568.5 151 C561 142 548.7 138 537.6 133.5 C527 129.4 525 125 526 115.6"/>
+<!-- Continuous back-of-hand and external arm, mirrored in visual weight. -->
+<path id="right-inner-arm" d="M556 175.7 C554 184.8 553.1 192.7 552.3 200 C553 216 558.4 232.5 562.6 248 C567.2 265 576.3 287 576 301 C577 312 577 325 584 328 C592 332 599 327 600 315 C601 306 595 294 591 285.5 C588.8 275 589.5 263 587.2 252 C585.5 240 581.1 228.5 579 217 C577.3 206 575.8 196 575.8 185 C576.2 174 576.6 160.7 568.5 151 C561 142 548.7 138 537.6 133.5 C527 129.4 525 125 526 115.6"/>
 </g>
-<!-- Back-specific cues use the same coordinate system as the unwarped outline.
-     Gentle ears visually replace the front-facing chin impression.
-     Two scapular curves and subtle upper buttock creases provide orientation. -->
-<g id="posterior-details" fill="none" stroke="#0B2B49" stroke-width="1.9"
+<!-- The only posterior identifiers: two quiet, short scapular arcs and
+     two slightly raised gluteal creases. No ears, fingers or interior palm. -->
+<g id="posterior-details" fill="none" stroke="#0B2B49" stroke-width="1.8"
    stroke-linecap="round" stroke-linejoin="round">
-  <path id="left-ear" d="M488.2 84.3 C481.3 80.5 479.5 86.2 481.9 94.3 C483.1 99.2 486.0 102.3 489.4 101.3"/>
-  <path id="right-ear" d="M535.8 84.3 C542.7 80.5 544.5 86.2 542.1 94.3 C540.9 99.2 538.0 102.3 534.6 101.3"/>
-  <path id="scapula-left" d="M497.8 161.8 C497.5 177.0 490.0 191.3 483.5 201.4
-    C483.2 210.3 489.1 216.4 494.3 218.9"/>
-  <path id="scapula-right" d="M526.2 161.8 C526.5 177.0 534.0 191.3 540.5 201.4
-    C540.8 210.3 534.9 216.4 529.7 218.9"/>
-  <path id="gluteal-crease-left" d="M477 323.0 C484.7 331.7 496.2 334.9 505.4 331.5"/>
-  <path id="gluteal-crease-right" d="M518.6 331.5 C527.8 334.9 539.3 331.7 547 323.0"/>
+  <path id="scapula-left" d="M498 163 C498 175 494 187 489 195"/>
+  <path id="scapula-right" d="M526 163 C526 175 530 187 535 195"/>
+  <path id="gluteal-crease-left" d="M477 300 C485 307 497 309 505 305"/>
+  <path id="gluteal-crease-right" d="M519 305 C527 309 539 307 547 300"/>
 </g>
 <path id="baseline" d="M342 504 H682" fill="none" stroke="#0B2B49" stroke-width="2.55" stroke-linecap="round"/>
 </svg>
