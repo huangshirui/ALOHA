@@ -6,7 +6,7 @@
 export type HealthKind = 'concern' | 'metric' | 'observation' | 'event' | 'document' | 'assessment' | 'regimen'
 export type HealthStatus = 'active' | 'inactive'
 export type MetricValueType = 'number' | 'text' | 'boolean'
-export type ObservationStatus = 'preliminary' | 'final' | 'corrected' | 'entered_in_error'
+export type AssessmentStatus = 'preliminary' | 'final' | 'corrected' | 'entered_in_error'
 export type RegimenStatus = 'active' | 'paused' | 'completed' | 'stopped'
 
 export interface SharedRecord {
@@ -37,13 +37,10 @@ export interface Observation extends SharedRecord {
   valueText: string
   valueBoolean: boolean | null
   unit: string
-  interpretation: string
   referenceLow?:number|null
   referenceHigh?:number|null
   referenceSource?:string
-  status: ObservationStatus
   sourceDocumentId: string
-  sourceNote: string
   notes: string
 }
 export interface HealthEvent extends SharedRecord {
@@ -69,7 +66,7 @@ export interface Assessment extends SharedRecord {
   title: string
   content: string
   assessedDate: string
-  status: ObservationStatus
+  status: AssessmentStatus
   sourceNote: string
   notes: string
   basisIds: string[] // UI-only based_on relation indexes
@@ -108,17 +105,13 @@ export const documentTypes = [
 export const regimenTypes = [
   ['medication','用药'],['rehabilitation','康复'],['therapy','治疗'],['device','辅助设备'],['wellness','生活方式'],['other','其他'],
 ] as const
-export const observationStatuses = [
+export const assessmentStatuses = [
   ['preliminary','待核实'],['final','已确认'],['corrected','已更正'],['entered_in_error','无效记录'],
 ] as const
 export const regimenStatuses = [
   ['active','进行中'],['paused','已暂停'],['completed','已完成'],['stopped','已停止'],
 ] as const
 export const valueTypes = [['number','数值'],['text','文本'],['boolean','是 / 否']] as const
-export const interpretationTypes = [
-  ['','不标记'],['low','偏低'],['normal','正常'],['high','偏高'],['borderline','临界'],
-  ['abnormal','异常'],['critical','危急'],['positive','阳性'],['negative','阴性'],['indeterminate','不确定'],['unknown','未知'],
-] as const
 
 export function labelFrom(options: ReadonlyArray<readonly [string,string]>, value: string) {
   return options.find(([key]) => key === value)?.[1] ?? value
@@ -167,7 +160,7 @@ export function makeEmpty(kind: HealthKind, date: string): Record<string, unknow
   switch (kind) {
     case 'concern': return { name:'',summary:'',status:'active',onsetDate:'',resolvedDate:'',notes:'',concernIds:[] }
     case 'metric': return { name:'',valueType:'number',defaultUnit:'',referenceLow:'',referenceHigh:'',referenceSource:'' }
-    case 'observation': return { metricId:'',observedDate:date,value:'',unit:'',interpretation:'',referenceLow:'',referenceHigh:'',referenceSource:'',status:'final',sourceDocumentId:'',sourceNote:'',notes:'',concernIds:[] }
+    case 'observation': return { metricId:'',observedDate:date,value:'',unit:'',referenceLow:'',referenceHigh:'',referenceSource:'',sourceDocumentId:'',notes:'',concernIds:[] }
     case 'event': return { eventType:'visit',summary:'',date,timeStart:'',timeEnd:'',location:'',description:'',status:'active',concernIds:[] }
     case 'document': return { title:'',documentType:'lab_report',issuedDate:date,issuerName:'',eventId:'',fileName:'',notes:'',concernIds:[] }
     case 'assessment': return { title:'',content:'',assessedDate:date,status:'final',sourceNote:'',notes:'',basisIds:[],concernIds:[] }
@@ -188,11 +181,11 @@ export function seedDemo(): DemoData {
       { id:'m-4',name:'今日不适',valueType:'boolean',defaultUnit:'' },
     ],
     observations: [
-      { id:'o-1',metricId:'m-2',observedDate:'2026-08-11',valueNumber:123,valueText:'',valueBoolean:null,unit:'mmHg',interpretation:'',status:'final',sourceDocumentId:'',sourceNote:'手动记录',notes:'',concernIds:['c-1'] },
-      { id:'o-2',metricId:'m-2',observedDate:'2026-09-12',valueNumber:119,valueText:'',valueBoolean:null,unit:'mmHg',interpretation:'',status:'final',sourceDocumentId:'',sourceNote:'手动记录',notes:'',concernIds:['c-1'] },
-      { id:'o-3',metricId:'m-2',observedDate:'2026-10-18',valueNumber:117,valueText:'',valueBoolean:null,unit:'mmHg',interpretation:'',status:'final',sourceDocumentId:'',sourceNote:'手动记录',notes:'',concernIds:['c-1'] },
-      { id:'o-4',metricId:'m-1',observedDate:'2026-09-14',valueNumber:67.8,valueText:'',valueBoolean:null,unit:'kg',interpretation:'',status:'final',sourceDocumentId:'',sourceNote:'',notes:'',concernIds:[] },
-      { id:'o-5',metricId:'m-1',observedDate:'2026-10-20',valueNumber:67.2,valueText:'',valueBoolean:null,unit:'kg',interpretation:'',status:'final',sourceDocumentId:'',sourceNote:'',notes:'',concernIds:[] },
+      { id:'o-1',metricId:'m-2',observedDate:'2026-08-11',valueNumber:123,valueText:'',valueBoolean:null,unit:'mmHg',sourceDocumentId:'',notes:'',concernIds:['c-1'] },
+      { id:'o-2',metricId:'m-2',observedDate:'2026-09-12',valueNumber:119,valueText:'',valueBoolean:null,unit:'mmHg',sourceDocumentId:'',notes:'',concernIds:['c-1'] },
+      { id:'o-3',metricId:'m-2',observedDate:'2026-10-18',valueNumber:117,valueText:'',valueBoolean:null,unit:'mmHg',sourceDocumentId:'',notes:'',concernIds:['c-1'] },
+      { id:'o-4',metricId:'m-1',observedDate:'2026-09-14',valueNumber:67.8,valueText:'',valueBoolean:null,unit:'kg',sourceDocumentId:'',notes:'',concernIds:[] },
+      { id:'o-5',metricId:'m-1',observedDate:'2026-10-20',valueNumber:67.2,valueText:'',valueBoolean:null,unit:'kg',sourceDocumentId:'',notes:'',concernIds:[] },
     ],
     events: [
       { id:'e-1',eventType:'examination',summary:'年度检查',date:'2026-10-16',timeStart:'',timeEnd:'',location:'演示健康中心',description:'留存检查资料，回顾整体情况。',status:'active',concernIds:['c-1'] },
