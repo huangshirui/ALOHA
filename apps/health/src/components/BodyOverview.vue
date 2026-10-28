@@ -206,13 +206,7 @@ function confirmPlacement(){
 .body-map-figure.is-current {display:flex;}
 .body-figure-label {display:none;align-items:center;justify-content:center;gap:.55rem;margin:0 0 .35rem;color:var(--health-muted);font-size:var(--health-type-caption);}
 .body-figure-label small {color:var(--health-brand-strong);font-size:inherit;}
-@container bodyfigure (min-width:32rem) {
-  .body-view-switch {display:none;}
-  .body-map-pair {grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem;}
-  .body-map-figure {display:flex;}
-  .body-figure-label {display:flex;}
-  .body-silhouette {width:min(100%,10.5rem);}
-}
+
 .body-explorer-aside {display:grid;gap:var(--health-page-gap);}
 .body-view-switch {display:flex;align-items:center;gap:.3rem;margin:0 0 .5rem;}
 .body-view-switch button {display:flex;align-items:center;gap:.4rem;min-height:2.5rem;padding:.5rem .9rem;background:transparent;border:1px solid var(--health-border);border-radius:var(--health-radius-pill);font-size:var(--health-type-label);color:var(--health-muted);font-weight:650;}
@@ -266,6 +260,13 @@ function confirmPlacement(){
 .body-region-empty {margin:.8rem 0 0;color:var(--health-muted);font-size:var(--health-type-body);line-height:1.6;}
 @container (max-width:51rem){.body-explorer{grid-template-columns:minmax(0,1fr)}.body-map-canvas{min-height:21rem}.body-silhouette{width:min(100%,14rem)}}
 @media(max-width:47.999rem){.body-explorer{grid-template-columns:minmax(0,1fr)}.body-map-canvas{min-height:19rem}.body-silhouette{width:min(100%,13.5rem)}}
+@container bodyfigure (min-width:32rem) {
+  .body-view-switch {display:none;}
+  .body-map-pair {grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem;}
+  .body-map-figure {display:flex;}
+  .body-figure-label {display:flex;}
+  .body-silhouette {width:min(100%,10.5rem);}
+}
 @media(prefers-reduced-motion:no-preference){
   .body-hotspot-dot {transition:box-shadow var(--health-motion) ease;}
   .body-region-marker.selected .body-hotspot-dot {animation:health-attention-breathe 3s ease-in-out infinite;}
