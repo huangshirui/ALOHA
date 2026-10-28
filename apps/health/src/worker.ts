@@ -34,9 +34,9 @@ type Route = { path: string; modelKey?: string; spaceId?: string; recordId?: str
 function routeFor(url: URL, method: string): Route | null {
   const p = url.pathname
   if (p === '/health/api/v1/spaces' && method === 'GET') return { path: '/api/v1/me/spaces' }
-  const people = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/people$/.exec(p)
-  if (people && method === 'GET')
-    return { spaceId: people[1], path: `/api/v1/spaces/${people[1]}/people` }
+  const ownPerson = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/own-person$/.exec(p)
+  if (ownPerson && method === 'GET')
+    return { spaceId: ownPerson[1], path: '@own-person' }
   const record = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/models\/([a-z_]+)\/records(?:\/([A-Za-z0-9_-]+))?$/.exec(p)
   if (!record || !spacePattern.test(record[1]!) || !modelKeys.has(record[2]!)) return null
   const [, spaceId, modelKey, recordId] = record
@@ -64,7 +64,7 @@ async function exchange(
     headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       accessAssertion: assertion,
-      requestedScopes: ['spaces:read', 'resources:read', 'resources:write'],
+      requestedScopes: ['profile:read', 'spaces:read', 'resources:read', 'resources:write'],
     }),
   })
   if (!response.ok) return json(
@@ -95,6 +95,28 @@ async function getRecord(
   const result = await response.json().catch(() => null)
   if (!object(result) || !object(result.data)) return json('invalid_core_response', 502)
   return result.data
+}
+// Resolve the currently authenticated user's linked Space Person from Core.
+// Do not allow the Health UI to select another person's health subject.
+async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string):Promise<Response> {
+  const headers={Authorization:`Bearer ${bearer}`,Accept:'application/json'}
+  const [profile,members]=await Promise.all([
+    send(fetchImpl,core+'/api/v1/me',{method:'GET',headers}),
+    send(fetchImpl,core+'/api/v1/spaces/'+spaceId+'/members',{method:'GET',headers}),
+  ])
+  if(!profile.ok) return proxyResponse(profile)
+  if(!members.ok) return proxyResponse(members)
+  const profileData:unknown=await profile.json().catch(()=>null)
+  const membersData:unknown=await members.json().catch(()=>null)
+  const principal=object(profileData)&&object(profileData.data)&&object(profileData.data.principal)
+    ?profileData.data.principal:null
+  const list=object(membersData)&&Array.isArray(membersData.data)?membersData.data:null
+  if(!principal || principal.type!=='user' || typeof principal.id!=='string' || !list)
+    return json('invalid_identity_response',502)
+  const member=list.find((m:unknown)=>object(m)&&m.userId===principal.id)
+  if(!object(member)||typeof member.personId!=='string'||!/^per_[A-Za-z0-9_-]+$/.test(member.personId))
+    return json('own_person_not_linked',409)
+  return Response.json({data:{personId:member.personId}},{headers:{'Cache-Control':'no-store'}})
 }
 const filled = (v: unknown) => v !== null && v !== undefined && v !== ''
 function validBounds(v: JsonObject): boolean {
@@ -156,6 +178,7 @@ export async function handleHealthApi(
     return json('access_assertion_required', 401)
   const bearer = await exchange(fetchImpl, identity, credential, assertion)
   if (bearer instanceof Response) return bearer
+  if(route.path==='@own-person') return ownPerson(fetchImpl,core,bearer,route.spaceId!)
   let body: string | undefined
   let parsed: JsonObject | undefined
   if (request.method === 'POST' || request.method === 'PATCH' || request.method === 'DELETE') {
