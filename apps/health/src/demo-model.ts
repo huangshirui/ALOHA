@@ -11,6 +11,7 @@ export type RegimenStatus = 'active' | 'paused' | 'completed' | 'stopped'
 
 export interface SharedRecord {
   id: string
+  version?: number // LifeSpace optimistic concurrency; absent for synthetic examples
   concernIds: string[] // UI-only semantic relation indexes, not LifeSpace model fields
 }
 export interface Concern extends SharedRecord {
@@ -23,6 +24,7 @@ export interface Concern extends SharedRecord {
 }
 export interface Metric {
   id: string
+  version?: number
   name: string
   valueType: MetricValueType
   defaultUnit: string
@@ -60,6 +62,7 @@ export interface HealthDocument extends SharedRecord {
   issuerName: string
   eventId: string
   fileName: string // demo filename only; canonical artifactRef is a platform File reference
+  artifactRef?: unknown // real File reference is never synthesized from a filename
   notes: string
 }
 export interface Assessment extends SharedRecord {
