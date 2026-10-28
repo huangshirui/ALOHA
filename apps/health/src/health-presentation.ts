@@ -53,7 +53,8 @@ export function parsePresentationPatch(value:unknown,concernId:string):Presentat
     if(value.placement===null) patch.placement=null
     else {
       const placement=value.placement
-      if(!isObject(placement)||!keys(placement,['view','assetId','point'])||
+      if(!isObject(placement)||!keys(placement,['view','assetId','point','concernId'])||
+        (placement.concernId!==undefined && placement.concernId!==concernId)||
         !isObject(placement.point)||!keys(placement.point,['x','y']))
         throw new Error('人体定位格式不正确')
       const view=placement.view
