@@ -18,7 +18,7 @@
 - `LIFESPACE_APPLICATION_CREDENTIAL` — 同一个 ALOHA LifeSpace Application 颁发的 Health BFF 专用 `lsa_*` Secret。独立凭证不代表新增 Application。
 - Health 路由外部须由 Cloudflare Access 保护，且所用 Access audience 已登记给同一个 ALOHA Application。
 
-LifeSpace Console 配置该 Application 的七模型 read/write Access；用户须具备 Space Membership/Grant 和 `spaces:read/resources:read/resources:write` Scope。应用侧仅声明这批预期 Scope，不会越过 Identity/ Core 当前授权。
+LifeSpace Console 配置该 Application 的七模型 read/write Access；用户须具备 Space Membership/Grant 和 `profile:read/spaces:read/resources:read/resources:write` Scope。应用侧仅声明这批预期 Scope，不会越过 Identity/ Core 当前授权。
 
 ## 验收
 
@@ -26,7 +26,7 @@ LifeSpace Console 配置该 Application 的七模型 read/write Access；用户�
 2. Cross-origin 写入、白名单外模型、缺失 version → 403/404/400。
 3. Staging 用户调用 `/health/api/v1/spaces`，仅显示自己有权访问的 Space；不得猜选家庭 Space 为个人空间。
 4. 依赖模型发布后，合成 Metric/Observation 测量 CRUD，更新版本冲突 409、跨用户/跨 Space 禁止 403，观测类型不符 422。
-5. 第一批资料上传/复杂语义关联/Recurrence 需进一步接 LifeSpace 专用 API，不允许把虚构文件名作为稳定 `fil_*` 写入。
+5. 第一批资料上传/复杂语义关联/Task 完成需进一步接 LifeSpace 专用 API，不允许把虚构文件名作为稳定 `fil_*` 写入。
 
 当前实现状态：仅在独立 ALOHA 功能分支，未部署或通过在线端到端验收。真实文件上传/File 引用的创建、Semantic Relation 关系维护、Task 完成、人体位置及关注度持久化尚未接入；Live 模式不能把这些演示操作当作真实数据写入。HealthEvent 的有时刻记录暂按浏览器本地时区转换为绝对 Instant，需在实测中核对用户所在地与 Space 时区不同的情况。
 
