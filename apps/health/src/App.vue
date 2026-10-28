@@ -471,7 +471,7 @@ function detailName(kind: HealthKind,record:any) {
                 <p class="body-copy">{{ current.summary || '你可以添加相关指标，逐步建立健康记录。' }}</p>
                 <div class="detail-stat"><b>{{ concernRelated.observations.length }}</b><span>条相关观测</span><span class="stat-separator"></span><b>{{ concernRelated.documents.length }}</b><span>份相关资料</span></div>
                 <dl class="detail-fields">
-                  <div><dt>关注度</dt><dd class="concern-attention-value">
+                  <div class="concern-attention-row"><dt>关注度</dt><dd class="concern-attention-value">
                     <span class="concern-attention-dot" :style="{'--body-dot-color':attentionColor(attentionByConcern[current.id]??'unset')}" aria-hidden="true"/>
                     <select :value="attentionByConcern[current.id]??'unset'" class="concern-attention-select"
                       :aria-label="'设置'+current.name+'的关注度'" @change="onAttentionChange(current.id,$event)">
@@ -480,7 +480,20 @@ function detailName(kind: HealthKind,record:any) {
                   </dd></div>
                   <div><dt>开始关注</dt><dd>{{ displayDate(current.onsetDate) }}</dd></div><div v-if="current.resolvedDate"><dt>结束日期</dt><dd>{{ displayDate(current.resolvedDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 <div class="mini-label">相关指标</div>
-                <button v-for="o in concernRelated.observations.slice().sort((a,b)=>b.observedDate.localeCompare(a.observedDate)).slice(0,3)" :key="o.id" class="row-link" type="button" @click="show('observation',o.id)"><span class="list-icon"><Activity :size="18"/></span><span class="row-main"><b>{{ observationTitle(o) }}</b><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
+                <button v-for="o in concernRelated.observations.slice().sort((a,b)=>b.observedDate.localeCompare(a.observedDate)).slice(0,3)" :key="o.id" class="row-link" type="button" @click="show('observation',o.id)">
+                  <span class="list-icon"><Activity :size="18"/></span>
+                  <span class="row-main">
+                    <span class="concern-observation-title">
+                      <b>{{ nameOfMetric(o.metricId) }} ·</b>
+                      <span class="metric-reading-inline">
+                        <b>{{ observationValue(o,demo.metrics.find(m=>m.id===o.metricId)) }}</b>
+                        <ReferenceIndicator :comparison="referenceFor(o,demo.metrics.find(m=>m.id===o.metricId))?.comparison"/>
+                      </span>
+                    </span>
+                    <small>{{ displayDate(o.observedDate) }}</small>
+                  </span>
+                  <ChevronRight :size="16"/>
+                </button>
                 <p v-if="concernRelated.observations.length===0" class="empty-inline">还没有关联的测量记录。</p>
                 <button class="soft-button" type="button" @click="openEditor('observation','',current.id)"><Plus :size="16"/> 添加测量</button>
               </section>
