@@ -8,7 +8,8 @@ import {
   Stethoscope, Trash2, TrendingDown, Upload, Utensils, X, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import { useDemoAgentSession } from './agent-demo'
-import { createHealthRecord, deleteHealthRecord, listAuthorizedSpaces, listHealthRecords,
+import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
+  listAuthorizedSpaces, listConcernPresentation, listHealthRecords, patchConcernPresentation,
   getOwnSpacePerson, updateHealthRecord, type HealthRecord } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
 import AlohaHub from './components/AlohaHub.vue'
@@ -128,41 +129,60 @@ const nameOfMetric = (id: string) => demo.metrics.find(x => x.id === id)?.name ?
 const nameOfDocument = (id: string) => demo.documents.find(x => x.id === id)?.title ?? '未找到资料'
 const nameOfConcern = (id: string) => demo.concerns.find(x => x.id === id)?.name ?? '健康问题'
 const getList = (kind: HealthKind): any[] => demo[kindCollection[kind]] as any[]
+let liveLoadSequence=0
 function clearLiveRecords() {
   for(const kind of healthKinds) getList(kind).splice(0)
+  // Never retain another Space/Person's coordinates or attention when switching.
+  bodyBindings.value=[]
+  attentionByConcern.value={}
+  mapSelectedConcern.value=null
   selected.value=null
   routeStack.value=[]
 }
 async function loadLiveRecords() {
   if(!selectedSpaceId.value || !subjectPersonId.value) return
+  const requestId=++liveLoadSequence
+  const spaceId=selectedSpaceId.value,personId=subjectPersonId.value
   liveStatus.value='loading'; liveMessage.value='正在读取健康档案…'
   try {
-    const records=await Promise.all(healthKinds.map(async kind => {
-      const collected: HealthRecord[]=[]
-      let cursor: string|null=null
-      for(let pageIndex=0;pageIndex<20;pageIndex++) {
-        const params=new URLSearchParams({limit:'100'})
-        if(cursor) params.set('cursor',cursor)
-        const page=await listHealthRecords<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],params)
-        collected.push(...page.items)
-        cursor=page.nextCursor
-        if(!cursor) return {kind,items:collected}
-      }
-      throw new Error('记录超过本次读取上限，请缩小查询范围')
-    }))
+    const [records,presentation]=await Promise.all([
+      Promise.all(healthKinds.map(async kind => {
+        const collected: HealthRecord[]=[]
+        let cursor: string|null=null
+        for(let pageIndex=0;pageIndex<20;pageIndex++) {
+          const params=new URLSearchParams({limit:'100'})
+          if(cursor) params.set('cursor',cursor)
+          const page=await listHealthRecords<HealthRecord>(spaceId,healthModelKey[kind],params)
+          collected.push(...page.items)
+          cursor=page.nextCursor
+          if(!cursor) return {kind,items:collected}
+        }
+        throw new Error('记录超过本次读取上限，请缩小查询范围')
+      })),
+      listConcernPresentation(spaceId),
+    ])
+    if(requestId!==liveLoadSequence || spaceId!==selectedSpaceId.value || personId!==subjectPersonId.value)return
     clearLiveRecords()
     for(const {kind,items} of records) {
-      const visible=kind==='metric'?items:items.filter(r=>r.subjectPersonId===subjectPersonId.value)
+      const visible=kind==='metric'?items:items.filter(r=>r.subjectPersonId===personId)
       getList(kind).push(...visible.map(r=>decodeHealthRecord(kind,r)))
     }
+    const ids=new Set(demo.concerns.map(concern=>concern.id))
+    attentionByConcern.value=Object.fromEntries(presentation.items
+      .filter(p=>ids.has(p.concernId)).map(p=>[p.concernId,p.attention]))
+    bodyBindings.value=presentation.items
+      .filter(p=>ids.has(p.concernId)&&p.placement!==null)
+      .map(p=>p.placement!)
     liveStatus.value='ready'; liveMessage.value='已连接 LifeSpace'
   } catch(e) {
+    if(requestId!==liveLoadSequence)return
     clearLiveRecords()
     liveStatus.value='error'
     liveMessage.value=e instanceof Error?e.message:'健康档案读取失败'
   }
 }
 async function chooseLiveSpace(spaceId:string) {
+  ++liveLoadSequence
   clearLiveRecords()
   subjectPersonId.value=''
   if(!liveSpaces.value.some(s=>s.id===spaceId)) {
@@ -173,9 +193,11 @@ async function chooseLiveSpace(spaceId:string) {
   liveStatus.value='loading';liveMessage.value='正在核对当前用户的档案人员…'
   try {
     const self=await getOwnSpacePerson(spaceId)
+    if(selectedSpaceId.value!==spaceId)return
     subjectPersonId.value=self.personId
     await loadLiveRecords()
   } catch(e) {
+    if(selectedSpaceId.value!==spaceId)return
     liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法确定当前用户的档案人员'
   }
 }
@@ -290,15 +312,38 @@ function runBodyPrimary() {
   const action=bodyCreateAction.value
   if(action.mode==='direct') startCreate(action.action)
 }
-function onAttentionChange(id:string,event:Event) {
-  const value=(event.target as HTMLSelectElement).value
-  attentionByConcern.value={...attentionByConcern.value,[id]:parseConcernAttention(value)}
-}
-function assignConcernPoint(id:string,view:BodyView,point:BodyPoint) {
+async function onAttentionChange(id:string,event:Event) {
+  const input=event.target as HTMLSelectElement
+  const previous=attentionByConcern.value[id]??'unset'
+  const attention=parseConcernAttention(input.value)
+  const spaceId=selectedSpaceId.value
   try {
-    bodyBindings.value=setConcernPoint(bodyBindings.value,id,view,point)
-    notice.value=liveMode?'已标记位置（仅本次页面，尚未同步至 LifeSpace）。':'已为关注事项标记位置（仅本次演示）。'
-  } catch { notice.value='请点选人体轮廓内的位置。' }
+    if(liveMode) {
+      if(!spaceId || liveStatus.value!=='ready')throw new Error('尚未连接健康档案')
+      await patchConcernPresentation(spaceId,id,{attention})
+      if(selectedSpaceId.value!==spaceId)return
+    }
+    attentionByConcern.value={...attentionByConcern.value,[id]:attention}
+    notice.value=liveMode?'关注度已同步。':'关注度已更新（仅本次演示）。'
+  } catch(e) {
+    input.value=previous
+    notice.value=e instanceof Error?e.message:'关注度同步失败'
+  }
+}
+async function assignConcernPoint(id:string,view:BodyView,point:BodyPoint) {
+  let next:BodyMapBinding[]
+  try { next=setConcernPoint(bodyBindings.value,id,view,point) }
+  catch { notice.value='请点选人体轮廓内的位置。';return }
+  const spaceId=selectedSpaceId.value
+  try {
+    if(liveMode) {
+      if(!spaceId || liveStatus.value!=='ready')throw new Error('尚未连接健康档案')
+      await patchConcernPresentation(spaceId,id,{placement:next.find(p=>p.concernId===id)!})
+      if(selectedSpaceId.value!==spaceId)return
+    }
+    bodyBindings.value=next
+    notice.value=liveMode?'人体位置已同步。':'已为关注事项标记位置（仅本次演示）。'
+  } catch(e) {notice.value=e instanceof Error?e.message:'人体位置同步失败'}
 }
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   const record=id ? getList(kind).find(r=>r.id===id) : null
@@ -372,10 +417,20 @@ async function formSave() {
       const mapped=decodeHealthRecord(kind,saved)
       if(previous) rows.splice(rows.indexOf(previous),1,mapped)
       else rows.unshift(mapped)
-      if(kind==='concern') attentionByConcern.value={...attentionByConcern.value,
-        [saved.id]:parseConcernAttention(String(v.attention??'unset'))}
+      let presentationError=''
+      if(kind==='concern') {
+        const attention=parseConcernAttention(String(v.attention??'unset'))
+        try {
+          await patchConcernPresentation(selectedSpaceId.value,saved.id,{attention})
+          attentionByConcern.value={...attentionByConcern.value,[saved.id]:attention}
+        } catch(e) {
+          presentationError=e instanceof Error?e.message:'关注度同步失败'
+        }
+      }
       sheet.value='';formError.value='';search.value=''
-      notice.value='已保存至 LifeSpace。身体定位和关注度仅保留当前页面状态。'
+      notice.value=presentationError
+        ? '健康记录已保存，但关注度未同步：'+presentationError
+        : '已保存至 LifeSpace。'
       if(selected.value?.kind!==kind || selected.value.id!==saved.id) show(kind,saved.id)
     } catch(e) {formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
     return
@@ -426,6 +481,11 @@ async function removeCurrent() {
   }
   if(kind==='observation')demo.assessments.forEach(a=>{a.basisIds=a.basisIds.filter(x=>x!==id)})
   if(kind==='event')demo.documents.forEach(d=>{if(d.eventId===id)d.eventId=''})
+  let presentationCleanupFailed=false
+  if(liveMode && kind==='concern') {
+    try { await deleteConcernPresentation(selectedSpaceId.value,id) }
+    catch { presentationCleanupFailed=true }
+  }
   if(kind==='concern') {
     if(mapSelectedConcern.value===id) mapSelectedConcern.value=null
     const next={...attentionByConcern.value};delete next[id];attentionByConcern.value=next
@@ -433,7 +493,9 @@ async function removeCurrent() {
     for(const collection of ['observations','events','documents','assessments','regimens'] as const)
       for(const record of demo[collection]) record.concernIds=record.concernIds.filter(x=>x!==id)
   }
-  notice.value=liveMode?'已从 LifeSpace 删除。':'已从演示页面移除。'
+  notice.value=liveMode
+    ? presentationCleanupFailed?'健康记录已删除，展示设置清理失败（不会再显示旧定位）。':'已从 LifeSpace 删除。'
+    :'已从演示页面移除。'
   back()
 }
 function togglePlan(id: string) {
