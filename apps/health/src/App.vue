@@ -12,7 +12,7 @@ import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import BodyOverview from './components/BodyOverview.vue'
-import { seedBodyBindings, setConcernPoint, setConcernRegion, type BodyMapBinding, type BodyPoint, type BodyRegionId } from './body-map'
+import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
 import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
 import {
   buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
@@ -21,7 +21,7 @@ import {
   type HealthKind, type Metric, type Observation, type Regimen,
 } from './demo-model'
 
-type Tab = 'home' | 'body' | 'food' | 'movement'
+type Tab = 'home' | 'body' | 'food' | 'movement' | 'more'
 type BodyTab = 'overview' | 'concerns' | 'metrics' | 'timeline' | 'documents' | 'regimens'
 type Sheet = '' | 'edit' | 'import'
 type RecordView = { kind: HealthKind; id: string }
@@ -41,6 +41,7 @@ const navItems = [
   { id: 'body' as Tab, title: '身体', icon: HeartPulse },
   { id: 'food' as Tab, title: '饮食', icon: Utensils },
   { id: 'movement' as Tab, title: '运动', icon: Activity },
+  { id: 'more' as Tab, title: '更多', icon: LayoutGrid },
 ]
 const bodyTabs = [
   { id: 'overview' as BodyTab, title: '概览' },
@@ -62,7 +63,6 @@ const kindIcon = { concern: Heart, metric: Activity, observation: ClipboardCheck
 const demo = reactive(seedDemo())
 const activeTab = ref<Tab>('home')
 const bodyTab = ref<BodyTab>('overview')
-const selectedBodyRegion = ref<BodyRegionId>('chest')
 const bodyBindings = ref<BodyMapBinding[]>(seedBodyBindings())
 const selected = ref<RecordView | null>(null)
 const routeStack = ref<HealthLocation[]>([])
@@ -171,16 +171,11 @@ function runBodyPrimary() {
   const action=bodyCreateAction.value
   if(action.mode==='direct') startCreate(action.action)
 }
-function assignConcernRegion(id:string,region:BodyRegionId|'') {
-  bodyBindings.value=setConcernRegion(bodyBindings.value,id,region)
-  if(region) selectedBodyRegion.value=region
-  notice.value=region?'已为这项健康问题标记部位（仅本次演示）。':'已取消部位标记（仅本次演示）。'
-}
-function assignConcernPoint(id:string,point:BodyPoint) {
-  bodyBindings.value=setConcernPoint(bodyBindings.value,id,point)
-  const placed=bodyBindings.value.find(binding=>binding.concernId===id)
-  if(placed) selectedBodyRegion.value=placed.regionId
-  notice.value='已标记健康问题的位置（仅本次演示）。'
+function assignConcernPoint(id:string,view:BodyView,point:BodyPoint) {
+  try {
+    bodyBindings.value=setConcernPoint(bodyBindings.value,id,view,point)
+    notice.value='已为关注事项标记位置（仅本次演示）。'
+  } catch { notice.value='请点选人体轮廓内的位置。' }
 }
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   const record=id ? getList(kind).find(r=>r.id===id) : null
@@ -329,9 +324,9 @@ function detailName(kind: HealthKind,record:any) {
   <div :class="['aloha-surface', 'health-shell', { 'agent-open': agentOpen, 'sidebar-collapsed': sidebarCollapsed, 'compact-density': uiDensity==='compact' }]" data-aloha-surface="health" @keydown.esc="handleEscape">
     <aside class="desktop-sidebar" aria-label="主导航">
       <AlohaHub :apps="alohaApps" current-app="health" :compact="sidebarCollapsed" :density="uiDensity"
-        preview @select-app="handleAppSelection" @update:density="uiDensity=$event"/>
+        preview entry-only @open-more="navigate('more')"/>
       <nav class="sidebar-nav" aria-label="Health 页面导航">
-        <button v-for="item in navItems" :key="item.id" :class="['nav-link',{selected:activeTab===item.id}]"
+        <button v-for="item in navItems.filter(item=>item.id!=='more')" :key="item.id" :class="['nav-link',{selected:activeTab===item.id}]"
           type="button" :title="sidebarCollapsed ? item.title : undefined"
           :aria-label="item.title" @click="navigate(item.id)">
           <component :is="item.icon" :size="20" :stroke-width="1.9"/>
@@ -512,10 +507,7 @@ function detailName(kind: HealthKind,record:any) {
               <BodyOverview
                 :concerns="demo.concerns"
                 :bindings="bodyBindings"
-                :selected-region="selectedBodyRegion"
-                @select-region="selectedBodyRegion=$event"
                 @open-concern="show('concern',$event)"
-                @assign="assignConcernRegion"
                 @place-point="assignConcernPoint"
               />
             </div>
@@ -537,13 +529,20 @@ function detailName(kind: HealthKind,record:any) {
           </template>
         </section>
 
-        <section v-else class="future-page">
+        <section v-else-if="activeTab==='food'||activeTab==='movement'" class="future-page">
           <HealthPageHeader :title="activeTab==='food'?'饮食管理':'运动管理'"
               subtitle="逐步连接日常习惯与身体变化"
               :agent-open="agentOpen"
             
             @ask="openAgent"/>
           <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('overview')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
+        <section v-else class="more-view">
+          <HealthPageHeader title="更多" subtitle="应用、账号与设置"
+            :agent-open="agentOpen" @ask="openAgent"/>
+          <AlohaHub page :apps="alohaApps" current-app="health" preview
+            :density="uiDensity" @select-app="handleAppSelection"
+            @update:density="uiDensity=$event"/>
+        </section>
       </main>
     </div>
 
@@ -581,8 +580,7 @@ function detailName(kind: HealthKind,record:any) {
       <button v-for="item in navItems" :key="item.id" :class="{active:activeTab===item.id}" type="button" @click="navigate(item.id)">
         <component :is="item.icon" :size="22" :stroke-width="1.8"/><span>{{ item.title }}</span>
       </button>
-      <AlohaHub :apps="alohaApps" current-app="health" compact bottom-nav preview
-        :density="uiDensity" @select-app="handleAppSelection" @update:density="uiDensity=$event"/>
+
     </nav>
 
     <div v-if="sheet" class="modal-backdrop" @click.self="closeSheet">
