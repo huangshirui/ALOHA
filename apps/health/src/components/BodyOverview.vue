@@ -22,7 +22,6 @@ const selected = computed(()=>bodyRegions.find(region=>region.id===props.selecte
 const inRegion = computed(()=>concernsForRegion(props.concerns,props.bindings,props.selectedRegion))
 const unassigned = computed(()=>unmappedConcerns(props.concerns,props.bindings))
 const activeConcerns = computed(()=>props.concerns.filter(c=>c.status==='active'))
-const mappedRegions = computed(()=>bodyRegions.filter(region=>concernsForRegion(activeConcerns.value,props.bindings,region.id).length>0).length)
 const hotspots = computed(()=>concernHotspots(props.concerns,props.bindings))
 const locatingConcernId=ref<string|null>(null)
 const pendingPoint=ref<BodyPoint|null>(null)
@@ -84,11 +83,7 @@ function onRegionChange(id:string,event:Event) {
 
 <template>
   <div ref="explorerEl" class="body-explorer">
-    <section class="ui-card body-figure-card" aria-labelledby="body-map-heading">
-      <div class="body-card-heading">
-        <h2 id="body-map-heading">身体图</h2>
-        <span v-if="mappedRegions" class="body-map-total">{{ mappedRegions }} 处标记</span>
-      </div>
+    <section class="ui-card body-figure-card" aria-label="身体健康位置图">
       <div v-if="locatingConcernId" class="body-position-instruction" role="status">
         <span>为「{{ locatingConcernName }}」标记位置。点选人体上的位置，再确认。</span>
         <div class="body-position-actions">
@@ -124,31 +119,31 @@ function onRegionChange(id:string,event:Event) {
             aria-label="待确认的健康问题位置"></span>
         </div>
       </div>
-      <p class="body-map-note"><Info :size="14"/> 小点表示关注位置。桌面悬停、手机点按后会高亮；不代表医学诊断。</p>
+      <p class="body-map-note"><Info :size="14"/> 标记仅供查找，不代表医学判断。</p>
     </section>
 
     <aside class="body-explorer-aside" aria-label="身体图关联的健康问题">
       <section ref="regionCardEl" class="ui-card body-region-card">
         <div class="body-region-card-heading">
-          <div><span class="eyebrow">当前部位</span><h2>{{ selected.label }}</h2><p>{{ selected.hint }}</p></div>
-          <span class="status-chip">{{ inRegion.filter(c=>c.status==='active').length }} 项关注中</span>
+          <h2>{{ selected.label }}</h2>
         </div>
-        <button v-for="concern in inRegion" :key="concern.id" type="button" class="row-link"
-          @click="emit('openConcern',concern.id)">
-          <span class="list-icon"><HeartPulse :size="18"/></span>
-          <span class="row-main"><b>{{ concern.name }}</b><small>{{ concern.summary }}</small></span>
-          <ChevronRight :size="17" class="subtle-icon"/>
-        </button>
-        <div v-for="concern in inRegion" :key="'point-'+concern.id" class="body-position-row">
-          <span>{{ concern.name }}</span>
-          <button type="button" class="inline-link" @click="startPositioning(concern.id)">调整标记位置</button>
+        <div v-for="concern in inRegion" :key="concern.id" class="body-concern-item">
+          <button type="button" class="body-concern-open" @click="emit('openConcern',concern.id)">
+            <span class="list-icon"><HeartPulse :size="18"/></span>
+            <span class="row-main"><b>{{ concern.name }}</b><small>{{ concern.summary }}</small></span>
+            <ChevronRight :size="17" class="subtle-icon"/>
+          </button>
+          <button type="button" class="body-concern-pin"
+            :aria-label="'调整'+concern.name+'的身体标记位置'"
+            :title="'调整'+concern.name+'的标记位置'" @click="startPositioning(concern.id)">
+            <MapPin :size="17"/>
+          </button>
         </div>
         <p v-if="!inRegion.length" class="body-region-empty">这个部位还没有关联健康问题。你可以查看其他部位，或为已有的健康问题指定部位。</p>
       </section>
       <section class="ui-card body-region-summary">
         <div class="card-heading">
-          <div><span class="eyebrow">快速定位</span><h2>其他关注部位</h2></div>
-          <span class="body-map-total">{{ activeConcerns.length }} 项关注中</span>
+          <h2>其他关注部位</h2>
         </div>
         <button v-for="region in otherRegions" :key="region.id" type="button"
           class="body-region-shortcut" @click="selectHotspot(region.id)">
@@ -159,7 +154,7 @@ function onRegionChange(id:string,event:Event) {
         <p v-if="!otherRegions.length" class="body-region-empty">其余部位暂未关联需要持续关注的健康问题。</p>
       </section>
       <section v-if="unassigned.length" class="ui-card body-unmapped-card">
-        <div class="card-heading"><div><span class="eyebrow">待整理</span><h2>尚未标记部位</h2></div><CircleDot :size="18" class="subtle-icon"/></div>
+        <div class="card-heading"><h2>未标记的问题</h2><CircleDot :size="18" class="subtle-icon"/></div>
         <div v-for="concern in unassigned" :key="concern.id" class="body-unmapped-item">
           <button type="button" class="inline-link body-unmapped-link" @click="emit('openConcern',concern.id)">{{ concern.name }} <ChevronRight :size="15"/></button>
           <label>
@@ -195,14 +190,32 @@ function onRegionChange(id:string,event:Event) {
 .body-card-heading p,.body-region-card-heading p { margin:0;color:var(--health-muted);font-size:var(--health-type-caption);line-height:1.55; }
 .body-map-total { display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap;font-size:var(--health-type-caption);color:var(--health-brand-strong);background:var(--health-brand-subtle);border-radius:var(--health-radius-pill);padding:.3rem .6rem; }
 .body-map-canvas {
+  position:relative;
+  isolation:isolate;
   display:grid;
   place-items:center;
+  overflow:hidden;
   margin:var(--aloha-space-3) 0;
   min-height:26rem;
   border-radius:var(--health-radius-control);
   background:var(--health-surface);
 }
-.body-silhouette { position:relative;width:min(100%,15rem);aspect-ratio:244 / 475;flex:none; }
+/* Trial: softly faded drafting-paper grid, kept behind the original SVG line art.
+   Delete this single block if the pattern feels distracting in Preview. */
+.body-map-canvas::before {
+  content:'';
+  position:absolute;
+  inset:5% 5%;
+  z-index:0;
+  pointer-events:none;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--health-ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--health-ink) 7%, transparent) 1px, transparent 1px);
+  background-size:36px 36px;
+  mask-image:radial-gradient(ellipse at center, black 43%, transparent 85%);
+  -webkit-mask-image:radial-gradient(ellipse at center, black 43%, transparent 85%);
+}
+.body-silhouette { position:relative;z-index:1;width:min(100%,15rem);aspect-ratio:244 / 475;flex:none; }
 .body-artwork { display:block;width:100%;height:100%;object-fit:contain;pointer-events:none;user-select:none; }
 /* A 42px invisible touch target protects the tiny 8px visual dot. */
 .body-region-marker {
@@ -255,9 +268,12 @@ function onRegionChange(id:string,event:Event) {
 .body-position-error { width:100%;margin:0;color:var(--health-danger);font-size:var(--health-type-caption); }
 .body-position-actions { display:flex;align-items:center;gap:.4rem; }
 .body-position-actions button { min-height:2.3rem; }
-.body-position-row { display:flex;align-items:center;justify-content:space-between;gap:.4rem;margin:.3rem 0;padding:.2rem 0; }
-.body-position-row span { color:var(--health-muted);font-size:var(--health-type-caption); }
-.body-position-row .inline-link { font-size:var(--health-type-caption); }
+.body-concern-item { display:flex;align-items:center;gap:.2rem;border-bottom:1px solid var(--health-border-soft); }
+.body-concern-item:last-of-type { border-bottom:0; }
+.body-concern-open { display:flex;align-items:center;flex:1;min-width:0;gap:.6rem;text-align:left;padding:.65rem 0;background:transparent;border:0;color:var(--health-ink); }
+.body-concern-open:hover .row-main b { color:var(--health-brand-strong); }
+.body-concern-pin { display:grid;place-items:center;flex:none;width:2.75rem;height:2.75rem;border-radius:var(--health-radius-control);border:0;background:transparent;color:var(--health-muted); }
+.body-concern-pin:hover,.body-concern-pin:focus-visible { color:var(--health-brand-strong);background:var(--health-brand-subtle); }
 .body-map-note { display:flex;align-items:flex-start;gap:.35rem;margin:.65rem 0 0;color:var(--health-muted);font-size:var(--health-type-caption);line-height:1.5; }
 .body-map-note svg { flex:none;margin-top:.12rem; }
 .body-explorer-aside { display:grid;gap:var(--health-page-gap); }
