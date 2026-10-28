@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   ArrowLeft, ArrowUpRight, Bell, Check, ChevronDown, CircleHelp, Heart,
   LayoutGrid, LockKeyhole, Settings2, ShieldCheck, Sparkles, UserRound, Wallet, Box,
@@ -11,6 +11,7 @@ interface AlohaAppLink {
   name: string
   description: string
   href?: string
+  iconUrl?: string
 }
 type HubSection = 'apps' | 'account' | 'settings' | 'privacy' | 'help'
 type Density = 'comfortable' | 'compact'
@@ -37,8 +38,8 @@ const emit = defineEmits<{
 const opened = ref(false)
 const section = ref<HubSection>(props.initialSection)
 watch(() => props.initialSection, value => { section.value = value })
-// Reuse the installed Health PWA icon so the tab, sidebar and app switcher agree.
-const healthIconUrl = `${import.meta.env.BASE_URL}app-icon.svg`
+// An app owns its identity asset; the Hub only renders the supplied catalog.
+const currentIconUrl = computed(() => props.apps.find(app => app.id===props.currentApp)?.iconUrl)
 function showMenu() {
   if(props.entryOnly){ emit('openMore');return }
   section.value = 'apps'
@@ -73,7 +74,7 @@ function selectApp(app: AlohaAppLink) {
       :aria-expanded="entryOnly ? undefined : opened" :aria-haspopup="entryOnly ? undefined : 'dialog'" :aria-label="entryOnly?'打开更多页面':'ALOHA 公共菜单'"
       title="打开 ALOHA 应用中心" @click="showMenu">
       <span class="aloha-hub-logo">
-        <img v-if="currentApp==='health'" :src="healthIconUrl" alt="" aria-hidden="true"/>
+        <img v-if="currentIconUrl" :src="currentIconUrl" alt="" aria-hidden="true"/>
         <component v-else :is="appGlyph(currentApp)" :size="compact ? 19 : 22" aria-hidden="true"/>
       </span>
         <span v-if="!compact" class="aloha-hub-wordmark"><strong>ALOHA</strong><small>{{ currentApp.toUpperCase() }}</small></span>
@@ -96,7 +97,7 @@ function selectApp(app: AlohaAppLink) {
               <template v-for="app in apps" :key="app.id">
                 <a v-if="app.href && app.id!==currentApp" class="aloha-hub-app" :href="app.href" @click="close">
                   <span class="aloha-hub-app-icon" :class="'app-icon-'+app.id">
-                    <img v-if="app.id==='health'" :src="healthIconUrl" alt="" aria-hidden="true"/>
+                    <img v-if="app.iconUrl" :src="app.iconUrl" alt="" aria-hidden="true"/>
                     <component v-else :is="appGlyph(app.id)" :size="23" aria-hidden="true"/>
                   </span>
                   <span class="aloha-hub-app-copy"><b>{{ app.name }}</b><small>{{ app.description }}</small></span>
@@ -105,7 +106,7 @@ function selectApp(app: AlohaAppLink) {
                 <button v-else type="button" class="aloha-hub-app" :class="{ selected:app.id===currentApp }"
                   :disabled="app.id!==currentApp" @click="selectApp(app)">
                   <span class="aloha-hub-app-icon" :class="'app-icon-'+app.id">
-                    <img v-if="app.id==='health'" :src="healthIconUrl" alt="" aria-hidden="true"/>
+                    <img v-if="app.iconUrl" :src="app.iconUrl" alt="" aria-hidden="true"/>
                     <component v-else :is="appGlyph(app.id)" :size="23" aria-hidden="true"/>
                   </span>
                   <span class="aloha-hub-app-copy"><b>{{ app.name }}</b><small>{{ app.description }}</small></span>
@@ -179,7 +180,7 @@ function selectApp(app: AlohaAppLink) {
 .aloha-hub-icon { display:grid;place-items:center;flex:none;width:2rem;height:2rem;border:0;border-radius:var(--aloha-radius-sm);background:transparent;color:var(--aloha-color-text-muted); }
 .aloha-hub-icon:hover { background:var(--aloha-accent-soft); }
 .aloha-hub-panel-body { padding:.8rem 1rem 1rem; }
-.aloha-hub-group-caption { font-size:var(--health-type-label);color:var(--aloha-color-text-muted);padding:.3rem .2rem .65rem;font-weight:680; }
+.aloha-hub-group-caption { font-size:var(--aloha-type-label);color:var(--aloha-color-text-muted);padding:.3rem .2rem .65rem;font-weight:680; }
 .aloha-hub-app-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem; }
 .aloha-hub-app { display:flex;flex-direction:column;align-items:center;gap:.45rem;min-width:0;padding:.7rem .2rem .6rem;border:1px solid transparent;border-radius:var(--aloha-radius-md);background:transparent;color:var(--aloha-color-text);text-decoration:none;text-align:center; }
 .aloha-hub-app.selected { background:var(--aloha-accent-soft);border-color:color-mix(in srgb,var(--aloha-accent) 15%,transparent); }
@@ -191,13 +192,13 @@ function selectApp(app: AlohaAppLink) {
 .aloha-hub-app-icon.app-icon-finance { color:white;background:linear-gradient(135deg,#ffc85a,#e89616); }
 .aloha-hub-app-icon.app-icon-things { color:white;background:linear-gradient(135deg,#8170ed,#5541c6); }
 .aloha-hub-app-copy { display:flex;flex-direction:column;gap:.12rem;min-width:0;width:100%; }
-.aloha-hub-app-copy b { font-size:var(--health-type-label);font-weight:650;white-space:nowrap; }
+.aloha-hub-app-copy b { font-size:var(--aloha-type-label);font-weight:650;white-space:nowrap; }
 .aloha-hub-app-copy small { display:none; }
 .aloha-hub-app-state { display:inline-flex;align-items:center;justify-content:center;gap:.2rem;min-height:1rem;color:var(--aloha-color-text-muted);font-size:.64rem;white-space:nowrap; }
 .aloha-hub-app.selected .aloha-hub-app-state { color:var(--aloha-accent-strong); }
 .aloha-hub-services { border-top:1px solid var(--aloha-color-border);margin-top:.85rem;padding-top:.8rem; }
 .aloha-hub-service-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.2rem; }
-.aloha-hub-link { display:flex;align-items:center;gap:.55rem;min-height:2.8rem;width:100%;padding:.55rem .45rem;border:0;border-radius:var(--aloha-radius-sm);background:transparent;color:var(--aloha-color-text);text-align:left;font-size:var(--health-type-label); }
+.aloha-hub-link { display:flex;align-items:center;gap:.55rem;min-height:2.8rem;width:100%;padding:.55rem .45rem;border:0;border-radius:var(--aloha-radius-sm);background:transparent;color:var(--aloha-color-text);text-align:left;font-size:var(--aloha-type-label); }
 .aloha-hub-link:hover { background:var(--aloha-accent-soft); }
 .aloha-hub-link svg:last-child { margin-left:auto;color:var(--aloha-color-text-muted);transform:rotate(-90deg); }
 .aloha-hub-note { margin:.45rem .4rem 1rem;color:var(--aloha-color-text-muted);font-size:.74rem;line-height:1.65; }
@@ -211,8 +212,8 @@ function selectApp(app: AlohaAppLink) {
 .aloha-hub-segmented { display:flex;gap:.2rem;padding:.16rem;border:1px solid var(--aloha-color-border);border-radius:var(--aloha-radius-pill); }
 .aloha-hub-segmented button { border:0;border-radius:var(--aloha-radius-pill);padding:.37rem .58rem;background:transparent;color:var(--aloha-color-text-muted);font-size:.73rem; }
 .aloha-hub-segmented button.active { background:var(--aloha-accent-soft);color:var(--aloha-accent-strong);font-weight:700; }
-.aloha-hub-back { display:flex;align-items:center;gap:.4rem;border:0;background:transparent;padding:.55rem .2rem;color:var(--aloha-accent-strong);font-size:var(--health-type-label); }
-.aloha-hub-footer-note { margin:1rem .2rem .1rem;font-size:var(--health-type-caption);color:var(--aloha-color-text-muted); }
+.aloha-hub-back { display:flex;align-items:center;gap:.4rem;border:0;background:transparent;padding:.55rem .2rem;color:var(--aloha-accent-strong);font-size:var(--aloha-type-label); }
+.aloha-hub-footer-note { margin:1rem .2rem .1rem;font-size:var(--aloha-type-caption);color:var(--aloha-color-text-muted); }
 .page-hub { width:100%;max-width:65rem; }
 .page-hub .aloha-hub-popup { position:static;width:100%;max-height:none;overflow:visible;box-shadow:none;border:0;border-radius:0;background:transparent; }
 .page-hub .aloha-hub-panel-body { padding:0; }
@@ -221,7 +222,7 @@ function selectApp(app: AlohaAppLink) {
 .page-hub .aloha-hub-app.selected { background:var(--aloha-accent-soft);border-color:var(--aloha-accent); }
 .page-hub .aloha-hub-app-icon { width:2.8rem;height:2.8rem; }
 .page-hub .aloha-hub-app-copy small { display:none; }
-.page-hub .aloha-hub-app-copy b { font-size:var(--health-type-body); }
+.page-hub .aloha-hub-app-copy b { font-size:var(--aloha-type-body); }
 .page-hub .aloha-hub-services { margin-top:1.4rem;padding-top:1.3rem; }
 .page-hub .aloha-hub-service-grid { display:block;background:var(--aloha-color-surface);border:1px solid var(--aloha-color-border);border-radius:var(--aloha-radius-md);overflow:hidden; }
 .page-hub .aloha-hub-link { min-height:3.3rem;padding:.85rem 1rem;border-radius:0; }
