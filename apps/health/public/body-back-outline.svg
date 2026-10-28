@@ -3,7 +3,10 @@
 <desc id="desc">Original companion back-view illustration: preserves the front outline proportions, adds posterior ears, shoulder-blade contours and restrained gluteal crease lines. No third-party reference image is copied.</desc>
 <g id="body" fill="none" stroke="#0B2B49" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round">
 <!-- head -->
-<path id="head" d="M512 55.5 C498 55.5 487.5 65 487.5 83.5 C487.5 101.5 497 122.5 511.5 122.5 C526 122.5 536.5 101.5 536.5 83.5 C536.5 66 526.5 55.5 512 55.5 Z"/>
+<!-- Posterior skull ends at the nape: no closed, front-facing chin line. -->
+<path id="head" d="M497 115.6 C490.1 106.8 487.5 96.5 487.5 83.5
+  C487.5 65 498 55.5 512 55.5 C526 55.5 536.5 66 536.5 83.5
+  C536.5 96.5 533.9 106.8 526 115.6"/>
 <!-- left neck, shoulder and outer arm, hand -->
 <path id="left-outer" d="M497 115.6 C498 124.2 495.3 130.4 486 134 C475 138.3 461 142.4 455 150 C447 159 448.1 174 448.4 185 C448.5 196 446.7 207 445.4 218 C442.7 230 437.9 241 436.8 253 C434.8 263 435.4 277 432 285.5 C429.4 290.1 422 294.5 419 300 C417.3 302.7 417.7 306.9 421 308.1 C425 309.4 430.9 303.3 436 297.7"/>
 <!-- left hand outer tip, palm and side to torso -->
