@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, ClipboardCheck, ClipboardList, Clock3, FileHeart,
@@ -8,6 +8,9 @@ import {
   Stethoscope, Trash2, TrendingDown, Upload, Utensils, X, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-vue-next'
 import { useDemoAgentSession } from './agent-demo'
+import { createHealthRecord, deleteHealthRecord, listAuthorizedSpaces, listHealthRecords,
+  listSpacePeople, updateHealthRecord, type HealthRecord } from './health-api'
+import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
 import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
@@ -69,7 +72,17 @@ const kindCollection: Record<HealthKind, keyof ReturnType<typeof seedDemo>> = {
   document: 'documents', assessment: 'assessments', regimen: 'regimens',
 }
 const kindIcon = { concern: Heart, metric: Activity, observation: ClipboardCheck, event: CalendarDays, document: FileText, assessment: BadgeCheck, regimen: ListChecks }
-const demo = reactive(seedDemo())
+// Demo remains an explicitly opt-in development mode; live has no synthetic fallback.
+const liveMode = import.meta.env.VITE_HEALTH_DATA_MODE === 'live'
+const demo = reactive(liveMode ? emptyHealthData() : seedDemo())
+type SpaceChoice = {id:string,name:string,role:string,timezone?:string}
+type PersonChoice = {id:string,displayName:string}
+const liveSpaces = ref<SpaceChoice[]>([])
+const livePeople = ref<PersonChoice[]>([])
+const selectedSpaceId = ref('')
+const subjectPersonId = ref('')
+const liveStatus = ref<'idle'|'loading'|'select'|'ready'|'error'>('idle')
+const liveMessage = ref('')
 // The Home slot is reserved for a future cross-domain overview; land on Body for now.
 const activeTab = ref<Tab>('body')
 const bodyTab = ref<BodyTab>('focus')
@@ -117,6 +130,80 @@ const nameOfMetric = (id: string) => demo.metrics.find(x => x.id === id)?.name ?
 const nameOfDocument = (id: string) => demo.documents.find(x => x.id === id)?.title ?? '未找到资料'
 const nameOfConcern = (id: string) => demo.concerns.find(x => x.id === id)?.name ?? '健康问题'
 const getList = (kind: HealthKind): any[] => demo[kindCollection[kind]] as any[]
+function clearLiveRecords() {
+  for(const kind of healthKinds) getList(kind).splice(0)
+  selected.value=null
+  routeStack.value=[]
+}
+async function loadLiveRecords() {
+  if(!selectedSpaceId.value || !subjectPersonId.value) return
+  liveStatus.value='loading'; liveMessage.value='正在读取健康档案…'
+  try {
+    const records=await Promise.all(healthKinds.map(async kind => {
+      const collected: HealthRecord[]=[]
+      let cursor: string|null=null
+      for(let pageIndex=0;pageIndex<20;pageIndex++) {
+        const params=new URLSearchParams({limit:'100'})
+        if(cursor) params.set('cursor',cursor)
+        const page=await listHealthRecords<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],params)
+        collected.push(...page.items)
+        cursor=page.nextCursor
+        if(!cursor) return {kind,items:collected}
+      }
+      throw new Error('记录超过本次读取上限，请缩小查询范围')
+    }))
+    clearLiveRecords()
+    for(const {kind,items} of records) {
+      const visible=kind==='metric'?items:items.filter(r=>r.subjectPersonId===subjectPersonId.value)
+      getList(kind).push(...visible.map(r=>decodeHealthRecord(kind,r)))
+    }
+    liveStatus.value='ready'; liveMessage.value='已连接 LifeSpace'
+  } catch(e) {
+    clearLiveRecords()
+    liveStatus.value='error'
+    liveMessage.value=e instanceof Error?e.message:'健康档案读取失败'
+  }
+}
+async function chooseLivePerson(personId:string) {
+  if(!livePeople.value.some(p=>p.id===personId)) {
+    subjectPersonId.value='';clearLiveRecords();liveStatus.value='select';return
+  }
+  subjectPersonId.value=personId
+  localStorage.setItem('aloha.health.person.'+selectedSpaceId.value,personId)
+  await loadLiveRecords()
+}
+async function chooseLiveSpace(spaceId:string) {
+  clearLiveRecords()
+  livePeople.value=[];subjectPersonId.value=''
+  if(!liveSpaces.value.some(s=>s.id===spaceId)) {
+    selectedSpaceId.value='';liveStatus.value='select';return
+  }
+  selectedSpaceId.value=spaceId
+  localStorage.setItem('aloha.health.space',spaceId)
+  liveStatus.value='loading';liveMessage.value='正在加载人员…'
+  try {
+    const people=await listSpacePeople(spaceId)
+    livePeople.value=people.items
+    if(people.nextCursor) throw new Error('人员列表过多，需要增加分页选择')
+    const stored=localStorage.getItem('aloha.health.person.'+spaceId)
+    if(stored && livePeople.value.some(p=>p.id===stored)) await chooseLivePerson(stored)
+    else {liveStatus.value='select';liveMessage.value='请确认档案对应的人员'}
+  } catch(e) {
+    liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'人员读取失败'
+  }
+}
+async function initializeLive() {
+  liveStatus.value='loading'; liveMessage.value='正在验证访问权限…'
+  try {
+    liveSpaces.value=await listAuthorizedSpaces()
+    const stored=localStorage.getItem('aloha.health.space')
+    if(stored && liveSpaces.value.some(s=>s.id===stored)) await chooseLiveSpace(stored)
+    else {liveStatus.value='select';liveMessage.value='请选择用于健康档案的个人空间'}
+  } catch(e) {
+    liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法连接 LifeSpace'
+  }
+}
+onMounted(() => {if(liveMode) void initializeLive()})
 const current = computed<any | null>(() => selected.value ? getList(selected.value.kind).find(item=>item.id===selected.value?.id) ?? null : null)
 const selectedConcern = computed(() => selected.value?.kind === 'concern' ? selected.value.id : '')
 const related = (record: {concernIds?:string[]},id:string) => (record.concernIds ?? []).includes(id)
@@ -206,6 +293,9 @@ function back() {
   else window.scrollTo({top:0,behavior:'smooth'})
 }
 function startCreate(kind: HealthKind) {
+  if(liveMode && (!selectedSpaceId.value || !subjectPersonId.value || liveStatus.value!=='ready')) {
+    notice.value='请先连接 Space 并选择档案人员。';return
+  }
   if(kind==='document') openImport(selected.value?.kind==='concern' ? selected.value.id : '')
   else openEditor(kind,'', selected.value?.kind==='concern' ? selected.value.id : '')
 }
@@ -238,7 +328,7 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
-function formSave() {
+async function formSave() {
   formError.value=''
   const v=draft.value, kind=editKind.value
   const mandatory: Record<HealthKind,string[]> = {
@@ -275,6 +365,34 @@ function formSave() {
   }
   // Every remaining relation is an explicit demo UI association; it never deletes source facts.
   if(!payload.concernIds && kind!=='metric') payload.concernIds=[]
+  if(liveMode) {
+    if(!selectedSpaceId.value || !subjectPersonId.value || liveStatus.value!=='ready') {
+      formError.value='尚未连接到有效的健康档案';return
+    }
+    if((payload.concernIds?.length??0)>0 || (payload.basisIds?.length??0)>0) {
+      formError.value='关联记录需要通过 LifeSpace Semantic Relation 保存，该功能尚未接入。请先单独保存记录。'
+      return
+    }
+    try {
+      const fields=encodeHealthFields(kind,payload,subjectPersonId.value)
+      const rows=getList(kind)
+      const previous=editId.value ? rows.find(r=>r.id===editId.value) : null
+      if(previous) delete fields.subjectPersonId // immutable model ownership field
+      const saved=previous
+        ? await updateHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],
+            previous.id,previous.version,fields)
+        : await createHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],fields)
+      const mapped=decodeHealthRecord(kind,saved)
+      if(previous) rows.splice(rows.indexOf(previous),1,mapped)
+      else rows.unshift(mapped)
+      if(kind==='concern') attentionByConcern.value={...attentionByConcern.value,
+        [saved.id]:parseConcernAttention(String(v.attention??'unset'))}
+      sheet.value='';formError.value='';search.value=''
+      notice.value='已保存至 LifeSpace。身体定位和关注度仅保留当前页面状态。'
+      if(selected.value?.kind!==kind || selected.value.id!==saved.id) show(kind,saved.id)
+    } catch(e) {formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
+    return
+  }
   const rows=getList(kind)
   const savedId=editId.value || 'demo-'+(++nextRecordId)
   if(editId.value) {
@@ -290,11 +408,18 @@ function formSave() {
   if(selected.value?.kind===kind && selected.value.id===savedId) return
   show(kind,savedId)
 }
-function removeCurrent() {
+async function removeCurrent() {
   if(!selected.value||!current.value) return
-  if(!window.confirm('要从本次演示中删除这条记录吗？')) return
   const kind=selected.value.kind,id=selected.value.id
   if(kind==='metric' && demo.observations.some(o=>o.metricId===id)) {notice.value='该指标已有测量记录，请先保留指标与历史数据。';return}
+  if(!window.confirm(liveMode?'确定从 LifeSpace 删除这条健康记录吗？此操作会记录变更历史。':'要从本次演示中删除这条记录吗？')) return
+  if(liveMode) {
+    try {
+      if(!selectedSpaceId.value || !Number.isInteger(current.value.version))
+        throw new Error('缺少记录版本，无法安全删除')
+      await deleteHealthRecord(selectedSpaceId.value,healthModelKey[kind],id,current.value.version)
+    } catch(e) {notice.value=e instanceof Error?e.message:'删除失败';return}
+  }
   const rows=getList(kind)
   const i=rows.findIndex(r=>r.id===id)
   if(i>=0) rows.splice(i,1)
@@ -313,10 +438,11 @@ function removeCurrent() {
     for(const collection of ['observations','events','documents','assessments','regimens'] as const)
       for(const record of demo[collection]) record.concernIds=record.concernIds.filter(x=>x!==id)
   }
-  notice.value='已从演示页面移除。'
+  notice.value=liveMode?'已从 LifeSpace 删除。':'已从演示页面移除。'
   back()
 }
 function togglePlan(id: string) {
+  if(liveMode){notice.value='真实任务完成状态需要由 LifeSpace Task/Recurrence 管理，尚未接入。';return}
   completedPlanIds.value=completedPlanIds.value.includes(id) ? completedPlanIds.value.filter(x=>x!==id) : [...completedPlanIds.value,id]
 }
 function closeSheet() { sheet.value='';formError.value='' }
@@ -327,6 +453,7 @@ function pickFile(e: Event) {
   else uploadedName.value=file?.name ?? ''
 }
 function openImport(concernId='') {
+  if(liveMode){notice.value='真实资料上传须先获取 LifeSpace File 引用，当前尚未接入。';return}
   sheet.value='import';uploadStage.value=1;uploadedName.value='';uploadTitle.value='';uploadType.value='lab_report';uploadConcernId.value=concernId;uploadIncludeResult.value=false
 }
 function importNext() {
@@ -396,7 +523,7 @@ function detailName(kind: HealthKind,record:any) {
         </button>
       </nav>
       <div class="sidebar-bottom">
-        <div v-if="!sidebarCollapsed" class="sidebar-note"><Info :size="16"/><span>体验版本<br>所有数据均为虚构示例</span></div>
+        <div v-if="!sidebarCollapsed" class="sidebar-note"><Info :size="16"/><span v-if="liveMode">LifeSpace 数据模式<br>权限由平台校验</span><span v-else>体验版本<br>所有数据均为虚构示例</span></div>
         <button type="button" class="sidebar-collapse" :title="sidebarCollapsed ? '展开导航' : '收起导航'"
           :aria-label="sidebarCollapsed ? '展开导航' : '收起导航'" :aria-expanded="!sidebarCollapsed"
           @click="sidebarCollapsed=!sidebarCollapsed">
@@ -408,6 +535,23 @@ function detailName(kind: HealthKind,record:any) {
     </aside>
     <div class="page-frame">
       <main class="content">
+        <div v-if="liveMode" class="health-live-bar" aria-label="Health 档案来源">
+          <span class="health-live-label"><ShieldCheck :size="16"/> LifeSpace 档案</span>
+          <label class="health-live-select">空间
+            <select :value="selectedSpaceId" @change="chooseLiveSpace(($event.target as HTMLSelectElement).value)">
+              <option value="">选择个人空间</option>
+              <option v-for="space in liveSpaces" :key="space.id" :value="space.id">{{ space.name }}</option>
+            </select>
+          </label>
+          <label v-if="selectedSpaceId" class="health-live-select">人员
+            <select :value="subjectPersonId" @change="chooseLivePerson(($event.target as HTMLSelectElement).value)">
+              <option value="">选择本人档案</option>
+              <option v-for="person in livePeople" :key="person.id" :value="person.id">{{ person.displayName }}</option>
+            </select>
+          </label>
+          <span :class="['health-live-status',{'health-live-error':liveStatus==='error'}]" role="status">{{ liveMessage }}</span>
+          <button type="button" class="quiet-button" @click="subjectPersonId?loadLiveRecords():initializeLive()">刷新</button>
+        </div>
         <section v-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
             :agent-open="agentOpen"
@@ -464,8 +608,8 @@ function detailName(kind: HealthKind,record:any) {
                 <button type="button" class="quiet-button detail-edit-button" aria-label="修改记录" title="修改记录" @click="openEditor(selected.kind,current.id)">
                   <Pencil :size="16"/><span class="detail-edit-label">修改</span>
                 </button>
-                <button type="button" class="icon-button destructive" title="删除演示记录"
-                  aria-label="删除演示记录" @click="removeCurrent"><Trash2 :size="18"/></button>
+                <button type="button" class="icon-button destructive" :title="liveMode?'删除健康记录':'删除演示记录'"
+                  :aria-label="liveMode?'删除健康记录':'删除演示记录'" @click="removeCurrent"><Trash2 :size="18"/></button>
               </template>
             </HealthPageHeader>
             <div v-if="selected.kind==='concern'" class="detail-columns">
@@ -559,7 +703,7 @@ function detailName(kind: HealthKind,record:any) {
                     <div v-else-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.reason==='unit_mismatch'"><dt>范围比较</dt><dd>单位不同，暂不比较</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 </template>
                 <template v-else-if="selected.kind==='event'"><p class="body-copy">{{ current.description || '没有补充说明' }}</p><dl class="detail-fields"><div><dt>事件类型</dt><dd>{{ eventName(current) }}</dd></div><div><dt>发生日期</dt><dd>{{ displayDate(current.date) }}</dd></div><div v-if="current.timeStart"><dt>发生时段</dt><dd>{{ current.timeStart }}—{{ current.timeEnd }}</dd></div><div><dt>地点</dt><dd>{{ current.location||'未填写' }}</dd></div></dl></template>
-                <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><small>体验版仅保存文件名，不包含实际文件</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><small>{{ liveMode?'文件引用由 LifeSpace 管理':'体验版仅保存文件名，不包含实际文件' }}</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
                 <template v-else-if="selected.kind==='assessment'"><p class="body-copy">{{ current.content }}</p><dl class="detail-fields"><div><dt>评估日期</dt><dd>{{ displayDate(current.assessedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'未填写' }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
                 <template v-else-if="selected.kind==='regimen'"><p class="body-copy">{{ current.instructions }}</p><dl class="detail-fields"><div><dt>方案类型</dt><dd>{{ labelFrom(regimenTypes,current.regimenType) }}</dd></div><div><dt>安排</dt><dd>{{ current.recurrence==='daily'?'每日':current.recurrence==='weekly'?'每周':'不重复' }}</dd></div><div><dt>首次执行</dt><dd>{{ displayDate(current.firstDueDate) }}</dd></div><div><dt>开始日期</dt><dd>{{ displayDate(current.startDate) }}</dd></div><div><dt>结束日期</dt><dd>{{ displayDate(current.endDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
                 <div class="relation-tags" v-if="current.concernIds?.length"><span class="mini-label">相关健康问题</span><button v-for="cid in current.concernIds" :key="cid" type="button" class="relation-pill" @click="show('concern',cid)"><Link2 :size="13"/>{{ nameOfConcern(cid) }}</button></div>
@@ -649,7 +793,7 @@ function detailName(kind: HealthKind,record:any) {
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
                 <div v-if="(bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length)" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
               </div>
-              <p v-if="bodyTab==='documents'" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
+              <p v-if="bodyTab==='documents'" class="below-hint"><ShieldCheck :size="16"/> {{ liveMode?'真实文件上传尚未接入；不能用文件名代替 LifeSpace File。':'上传演示只模拟整理过程，不会读取或发送文件内容。' }}</p>
             </template>
           </template>
         </section>
