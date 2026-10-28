@@ -3,6 +3,8 @@
 .health-shell { min-height: 100dvh; background: radial-gradient(ellipse at 95% -5%,var(--health-brand-subtle),transparent 42%),var(--health-canvas); color:var(--health-ink); padding-bottom:calc(5.2rem + env(safe-area-inset-bottom)); }
 .health-shell button { cursor:pointer; }
 .health-shell button:disabled { cursor:not-allowed; opacity:.48; }
+/* Pending applications are unavailable, but their brand and labels remain readable. */
+.health-shell .aloha-hub-app:disabled { cursor:default;opacity:1; }
 .health-shell h1,.health-shell h2,.health-shell h3,.health-shell p { margin-top:0; }
 .health-shell h1 { font-size:clamp(1.8rem,4vw,2.55rem); letter-spacing:-.055em; line-height:1.2; margin-bottom:.6rem; font-weight:720; }
 .health-shell h2 { font-size:1.1rem; letter-spacing:-.025em; margin-bottom:0; }
