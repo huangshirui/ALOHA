@@ -246,6 +246,7 @@ function removeCurrent() {
   if(kind==='observation')demo.assessments.forEach(a=>{a.basisIds=a.basisIds.filter(x=>x!==id)})
   if(kind==='event')demo.documents.forEach(d=>{if(d.eventId===id)d.eventId=''})
   if(kind==='concern') {
+    if(mapSelectedConcern.value===id) mapSelectedConcern.value=null
     bodyBindings.value=bodyBindings.value.filter(binding=>binding.concernId!==id)
     for(const collection of ['observations','events','documents','assessments','regimens'] as const)
       for(const record of demo[collection]) record.concernIds=record.concernIds.filter(x=>x!==id)
