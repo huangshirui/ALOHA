@@ -219,3 +219,23 @@
   color:var(--health-danger);
   line-height:1;
 }
+
+
+/* Live Health source: explicit Space/Person selection, never inferred from names. */
+.health-live-bar {
+  display:flex;flex-wrap:wrap;align-items:center;gap:.55rem .9rem;
+  padding:.7rem .9rem;margin:0 0 1rem;
+  background:var(--health-surface, #fff);border:1px solid var(--health-border, #dce5df);
+  border-radius:.7rem;font-size:.82rem;
+}
+.health-live-label {display:inline-flex;align-items:center;gap:.4rem;font-weight:650;white-space:nowrap}
+.health-live-select {display:inline-flex;align-items:center;gap:.35rem;min-width:0}
+.health-live-select select {min-width:8rem;max-width:15rem;padding:.35rem .65rem;border:1px solid var(--health-border, #dce5df);border-radius:.4rem;background:transparent;color:inherit}
+.health-live-status {flex:1;min-width:9rem;opacity:.75}
+.health-live-error {color:var(--health-danger, #b42318);opacity:1}
+@media (max-width: 640px) {
+  .health-live-bar {align-items:flex-start}
+  .health-live-status {flex-basis:100%;order:5}
+  .health-live-select {flex:1}
+  .health-live-select select {min-width:0;width:100%}
+}
