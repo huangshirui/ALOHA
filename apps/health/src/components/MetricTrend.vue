@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { X } from 'lucide-vue-next'
-import { buildTrendChart, type MetricGranularity, type NumericObservation, type TrendPoint } from '../metric-trend'
+import { buildTrendChart, selectedTrendPoint, type MetricGranularity, type NumericObservation } from '../metric-trend'
 
 const props=defineProps<{
  observations:NumericObservation[]
@@ -17,7 +17,7 @@ const modes=[
 ]
 const chart=computed(()=>buildTrendChart(props.observations,mode.value))
 const activeKey=ref('')
-const active=computed<TrendPoint|null>(()=>activeKey.value ? (chart.value.points.find(p=>p.key===activeKey.value)??null) : null)
+const active=computed(()=>selectedTrendPoint(chart.value.points,activeKey.value))
 function choosePoint(key:string){activeKey.value=activeKey.value===key?'':key}
 function formatValue(v:number){return Number(v.toFixed(2)).toLocaleString('zh-CN',{maximumFractionDigits:2})}
 const periodLabel=computed(()=>mode.value==='day'?'当日':mode.value==='month'?'当月':'当年')
