@@ -14,6 +14,7 @@ import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import BodyOverview from './components/BodyOverview.vue'
 import HealthTimeline from './components/HealthTimeline.vue'
 import MetricTrend from './components/MetricTrend.vue'
+import ReferenceIndicator from './components/ReferenceIndicator.vue'
 import type { TimelineFilter } from './health-timeline'
 import { compareReference,formatReferenceRange,parseReferenceDraft,validateReferenceDraft } from './health-reference'
 import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
@@ -110,7 +111,6 @@ const related = (record: {concernIds?:string[]},id:string) => (record.concernIds
 const activeConcerns = computed(() => demo.concerns.filter(c=>c.status==='active'))
 const latestFor = (metricId:string) => [...demo.observations].filter(o=>o.metricId===metricId && o.status !== 'entered_in_error').sort((a,b)=>b.observedDate.localeCompare(a.observedDate))[0]
 const referenceFor=(observation:Observation,metric?:Metric)=>metric?compareReference(metric,observation):null
-const referenceLabel=(observation:Observation,metric?:Metric)=>referenceFor(observation,metric)?.comparison?.label??''
 const metricRangeLabel=(metric:Metric)=>formatReferenceRange(metric,metric.defaultUnit)
 const observationTitle = (o: Observation) => nameOfMetric(o.metricId) + ' · ' + observationValue(o,demo.metrics.find(m=>m.id===o.metricId))
 const eventName = (e: {eventType:string}) => labelFrom(eventTypes,e.eventType)
@@ -484,10 +484,9 @@ function detailName(kind: HealthKind,record:any) {
               <section class="ui-card detail-primary">
                 <div class="metric-summary">
                   <div class="metric-hero"><strong>{{ latestFor(current.id) ? observationValue(latestFor(current.id)!,current) : '暂无记录' }}</strong><span>{{ latestFor(current.id) ? '最新记录 · '+displayDate(latestFor(current.id)!.observedDate) : '还没有观测记录' }}</span>
-                    <span v-if="latestFor(current.id) && referenceFor(latestFor(current.id)!,current)?.comparison"
-                      class="reference-comparison" :class="'reference-'+referenceFor(latestFor(current.id)!,current)?.comparison?.position">
-                      {{ referenceLabel(latestFor(current.id)!,current) }}
-                    </span>
+                    <ReferenceIndicator v-if="latestFor(current.id)"
+                      :comparison="referenceFor(latestFor(current.id)!,current)?.comparison"
+                    />
                   </div>
                   <button class="primary-button metric-add-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
                 </div>
@@ -505,8 +504,7 @@ function detailName(kind: HealthKind,record:any) {
                 <p v-else class="helper-copy">该指标记录的是{{ current.valueType==='text'?'文字':'是或否' }}，可在右侧查看历史记录，不适合用数值趋势图展示。</p>
               </section>
               <section class="ui-card metric-history"><div class="card-heading"><h2>历史记录</h2><span class="quiet-caption">{{ demo.observations.filter(o=>o.metricId===current.id).length }} 条</span></div>
-                <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><b>{{ observationValue(o,current) }}</b><small>{{ displayDate(o.observedDate) }} · {{ labelFrom(observationStatuses,o.status) }}</small><span v-if="referenceLabel(o,current)" class="reference-comparison reference-inline"
-                    :class="'reference-'+referenceFor(o,current)?.comparison?.position">{{ referenceLabel(o,current) }}</span></span><ChevronRight :size="16"/></button>
+                <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><b>{{ observationValue(o,current) }}</b><small>{{ displayDate(o.observedDate) }} · {{ labelFrom(observationStatuses,o.status) }}</small><ReferenceIndicator :comparison="referenceFor(o,current)?.comparison"/></span><ChevronRight :size="16"/></button>
                 <p v-if="!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
               </section>
             </div>
@@ -515,10 +513,7 @@ function detailName(kind: HealthKind,record:any) {
                 <div class="card-heading"><h2>记录详情</h2><span v-if="selected.kind==='observation'||selected.kind==='assessment'" class="status-chip">{{ labelFrom(observationStatuses,current.status) }}</span><span v-else-if="selected.kind==='regimen'" class="status-chip">{{ labelFrom(regimenStatuses,current.status) }}</span></div>
                 <template v-if="selected.kind==='observation'">
                   <div class="metric-hero"><strong>{{ valuePreview }}</strong><span>{{ nameOfMetric(current.metricId) }}</span>
-                    <span v-if="referenceLabel(current,demo.metrics.find(m=>m.id===current.metricId))" class="reference-comparison"
-                      :class="'reference-'+referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.comparison?.position">
-                      {{ referenceLabel(current,demo.metrics.find(m=>m.id===current.metricId)) }}
-                    </span>
+                    <ReferenceIndicator :comparison="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.comparison"/>
                   </div>
                   <dl class="detail-fields"><div><dt>记录日期</dt><dd>{{ displayDate(current.observedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'手动记录' }}</dd></div><div v-if="current.interpretation"><dt>原记录标记</dt><dd>{{ labelFrom(interpretationTypes,current.interpretation) }}</dd></div><div v-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.comparison"><dt>本次比较依据</dt><dd>{{ formatReferenceRange(referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.range,referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.unit) }} · {{ referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.sourceNote }}{{ referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.source==='observation'?'（本次报告）':'（指标默认）' }}</dd></div>
                     <div v-else-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.reason==='unit_mismatch'"><dt>范围比较</dt><dd>单位不同，暂不比较</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
@@ -591,10 +586,8 @@ function detailName(kind: HealthKind,record:any) {
               </div>
               <div class="list-panel">
                 <template v-if="bodyTab==='metrics'"><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong>
-                    <small v-if="latestFor(m.id) && referenceLabel(latestFor(m.id)!,m)"
-                      class="reference-comparison" :class="'reference-'+referenceFor(latestFor(m.id)!,m)?.comparison?.position">
-                      {{ referenceLabel(latestFor(m.id)!,m) }}
-                    </small>
+                    <ReferenceIndicator v-if="latestFor(m.id)"
+                      :comparison="referenceFor(latestFor(m.id)!,m)?.comparison"/>
                   </span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='timeline'">
                   <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
