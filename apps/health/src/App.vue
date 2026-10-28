@@ -29,6 +29,8 @@ import {
 } from './demo-model'
 
 type Tab = 'home' | 'body' | 'food' | 'movement' | 'more'
+type HubSection = 'apps' | 'account' | 'settings' | 'privacy' | 'help'
+const hubTitles:Record<HubSection,string>={apps:'更多',account:'账号与安全',settings:'通用设置',privacy:'隐私与授权',help:'帮助与反馈'}
 type BodyTab = 'focus' | 'metrics' | 'timeline' | 'documents' | 'regimens'
 type Sheet = '' | 'edit' | 'import'
 type RecordView = { kind: HealthKind; id: string }
@@ -40,8 +42,13 @@ const alohaApps = [
 ]
 const sidebarCollapsed = ref(false)
 const uiDensity = ref<'comfortable'|'compact'>('comfortable')
+const hubSection = ref<HubSection>('apps')
 function handleAppSelection(id:string) {
   if (id!=='health') notice.value='此应用尚未接入本次体验。'
+}
+function openHubSetting(section:Exclude<HubSection,'apps'>) {
+  navigate('more')
+  hubSection.value=section
 }
 const navItems = [
   { id: 'home' as Tab, title: '首页', icon: Home },
@@ -176,6 +183,7 @@ function location(): HealthLocation {
 function navigate(tab: Tab) {
   routeStack.value=[]
   activeTab.value=tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
+  if(tab==='more') hubSection.value='apps'
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body');bodyTab.value=tab }
@@ -382,7 +390,7 @@ function detailName(kind: HealthKind,record:any) {
   <div :class="['aloha-surface', 'health-shell', { 'agent-open': agentOpen, 'sidebar-collapsed': sidebarCollapsed, 'compact-density': uiDensity==='compact' }]" data-aloha-surface="health" @keydown.esc="handleEscape">
     <aside class="desktop-sidebar" aria-label="主导航">
       <AlohaHub :apps="alohaApps" current-app="health" :compact="sidebarCollapsed" :density="uiDensity"
-        preview entry-only @open-more="navigate('more')"/>
+        preview @open-setting="openHubSetting"/>
       <nav class="sidebar-nav" aria-label="Health 页面导航">
         <button v-for="item in navItems.filter(item=>item.id!=='more')" :key="item.id" :class="['nav-link',{selected:activeTab===item.id}]"
           type="button" :title="sidebarCollapsed ? item.title : undefined"
@@ -658,11 +666,11 @@ function detailName(kind: HealthKind,record:any) {
             @ask="openAgent"/>
           <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('focus')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
         <section v-else class="more-view">
-          <HealthPageHeader title="更多" subtitle="应用、账号与设置"
+          <HealthPageHeader :title="hubTitles[hubSection]" :subtitle="hubSection==='apps'?'应用、账号与设置':'ALOHA 公共设置 · 体验版'"
             :agent-open="agentOpen" @ask="openAgent"/>
           <AlohaHub page :apps="alohaApps" current-app="health" preview
-            :density="uiDensity" @select-app="handleAppSelection"
-            @update:density="uiDensity=$event"/>
+            :initial-section="hubSection" :density="uiDensity" @select-app="handleAppSelection"
+            @update:section="hubSection=$event" @update:density="uiDensity=$event"/>
         </section>
       </main>
     </div>
