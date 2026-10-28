@@ -26,6 +26,36 @@ Each PWA keeps its own install name, path, icon and accent while remaining visua
 
 The accent differentiates surfaces; neutral colors, typography rhythm, spacing, radii, elevation and interaction feedback remain shared.
 
+**App identity vs UI accent / 应用身份与界面主题色分离：** App icon assets represent a PWA's brand independently of its interactive accent. In ALOHA Health, the red/pink heart app icon is reused unchanged in the browser tab, install icon, Health sidebar/Hub logo and the Health entry in the ALOHA app switcher; navigation, selected states, buttons and functional diagrams continue using Health green. Cross-app switcher entries retain the corresponding app's brand hue (Assistant blue, Finance amber, Things violet) rather than being recolored with the current PWA's accent. This is a presentation rule, not a change to PWA scopes or platform identity.
+
+## ALOHA Hub / 跨 PWA 公共应用中心
+
+- **Responsibility / 职责**: ALOHA Hub is the small shared entrance to personal account, other first-party apps and public help/privacy destinations. It is not a Health settings/identity implementation. The eventual common ALOHA page will own account, security, privacy, grants, help and related full-page experiences, not a copy in each domain PWA.
+- **Structure / 顺序**: no redundant popup header or grouping titles. Display a generic avatar and account row first; other apps (excluding the currently open app) second, as icon + name only, maximum four columns; privacy/authorization and help links last. No "current app", "not connected", or status labels. Unavailable applications are grey and not clickable.
+- **Navigation / 新标签**: confirmed destinations always open in a **new tab** with `target="_blank"` and `rel="noopener noreferrer"`. The Hub accepts optional URLs for account, privacy, help and apps; when the common ALOHA page or another PWA route is not yet verified, show disabled, noninteractive entries rather than inventing an in-Health settings page or sending users to a speculative path. The account label/avatar can be supplied by a trusted future identity integration; the prototype uses a generic icon and "账号" without claiming a logged-in user.
+- **Modes / 适配**: Desktop uses an anchored, dismissible Popover from the sidebar ALOHA logo, preserving current workspace and Agent. Mobile continues using the bottom 「更多」 tab as a page with a two-column app grid and compact account/footer sections. The same contents and link contract drive both modes; neither mode hosts public settings detail pages.
+- **Ownership / 复用**: the first working preview remains at `apps/health/src/components/AlohaHub.vue` in Draft PR #36, consuming `--aloha-*` tokens without domain business logic. Promote this stable contract to `packages/ui` when a second real ALOHA PWA consumes it; share verified catalog/routing sources then, without forcing PWAs into a single deployment. The ALOHA public pages are a future independently owned surface, not a Health feature.
+- **Verification / 验收**: cover removal of current app, disabled unconnected destinations, new-tab security attributes, Mobile grid and Desktop collapsed/expanded sidebar, outside click/Escape, popover placement and AI side panel. CI alone does not establish visual correctness.
+## Typography hierarchy / 字体层级
+
+ALOHA's four PWAs share the same framework-agnostic type scale from `packages/design-tokens/tokens.css`. This is the **only** cross-surface typography source; individual pages must not invent a new display-title scale.
+
+| Shared role | Token | Default | Typical use |
+| --- | --- | --- | --- |
+| Caption / 辅助说明 | `--aloha-type-caption` | 12px | secondary description, date and note |
+| Label / 控件文字 | `--aloha-type-label` | 13px | navigation, form label, button |
+| Body / 正文 | `--aloha-type-body` | 14px | list items, record content |
+| Emphasis / 强调 | `--aloha-type-emphasis` | 16px | short emphasis |
+| Section title / 模块标题 | `--aloha-type-section` | 17px | card and panel title |
+| Page title / 页面标题 | `--aloha-type-page` | 22px | one per screen, including detail screens |
+| Metric / 关键数字 | `--aloha-type-metric` | 28px | a few prominent numeric readings |
+
+Use `--aloha-leading-tight` for headings and `--aloha-leading-body` for body text. The default type sizes are not a requirement to shrink critical touch targets; hit areas still use `--aloha-control-*`. Keep contrast and text wrapping accessible, especially on installed Mobile.
+
+**Page hierarchy rule:** Each primary screen has one title and one contextual action row; navigation tabs and search appear immediately below it. A long decorative headline or full-paragraph summary must not push the primary list/action down. Supporting description can be a short single-line caption (truncate safely on small screens), or moved into the contextual information section. Common components and semantic tokens define structure; individual screen CSS handles content layout only.
+
+**Shared vs local rule:** Shared type sizes and accessibility are universal tokens; a PWA can alias them for roles or compose its own `PageHeader`, lists and cards. Do not promote a domain page component into `@aloha/ui` until two real PWA consumers exist, per `packages/ui/AGENTS.md`.
+
 ## Responsive baseline
 
 Every first-party PWA must be intentionally designed for all three layout classes:

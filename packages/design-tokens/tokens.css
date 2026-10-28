@@ -16,6 +16,18 @@
   --aloha-accent-strong: #183b8f;
   --aloha-accent-soft: #edf3ff;
 
+  /* One neutral typography scale for every ALOHA PWA. Surface-specific
+     hierarchy is composed from these roles, never arbitrary heading sizes. */
+  --aloha-type-caption: 0.75rem;
+  --aloha-type-label: 0.8125rem;
+  --aloha-type-body: 0.875rem;
+  --aloha-type-emphasis: 1rem;
+  --aloha-type-section: 1.0625rem;
+  --aloha-type-page: 1.375rem;
+  --aloha-type-metric: 1.75rem;
+  --aloha-leading-tight: 1.3;
+  --aloha-leading-body: 1.55;
+
   --aloha-space-1: 0.25rem;
   --aloha-space-2: 0.5rem;
   --aloha-space-3: 0.75rem;

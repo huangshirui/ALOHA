@@ -8,12 +8,14 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "test": "vitest run src"
   },
   "dependencies": {
     "@aloha/design-tokens": "*",
     "@aloha/ui": "*",
-    "vue": "^3.5.42"
+    "vue": "^3.5.42",
+    "lucide-vue-next": "^0.468.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
