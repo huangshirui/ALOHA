@@ -112,9 +112,9 @@ const docName = (d: {documentType:string}) => labelFrom(documentTypes,d.document
 const assessmentCount = computed(() => demo.assessments.length)
 const docCount = computed(() => demo.documents.length)
 const timeline = computed(() => [
-  ...demo.observations.map(o=>({ id:o.id,kind:'observation' as HealthKind,date:o.observedDate,title:observationTitle(o),meta:'测量记录' })),
-  ...demo.events.map(e=>({ id:e.id,kind:'event' as HealthKind,date:e.date,title:e.summary,meta:eventName(e) })),
-  ...demo.assessments.map(a=>({ id:a.id,kind:'assessment' as HealthKind,date:a.assessedDate,title:a.title,meta:'评估记录' })),
+  ...demo.observations.map(o=>({ id:o.id,kind:'observation' as const,date:o.observedDate,title:observationTitle(o),meta:'测量记录' })),
+  ...demo.events.map(e=>({ id:e.id,kind:'event' as const,date:e.date,title:e.summary,meta:eventName(e) })),
+  ...demo.assessments.map(a=>({ id:a.id,kind:'assessment' as const,date:a.assessedDate,title:a.title,meta:'评估记录' })),
 ].sort((a,b)=>b.date.localeCompare(a.date)))
 const filteredMetrics = computed(()=>demo.metrics.filter(m=>m.name.includes(search.value)))
 const filteredDocuments = computed(()=>demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
