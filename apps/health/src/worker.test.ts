@@ -76,6 +76,36 @@ describe('Health trusted BFF', () => {
     expect(r.status).toBe(422)
     expect(f).toHaveBeenCalledTimes(2)
   })
+  it('resolves only the authenticated user\'s linked Person, not another member', async () => {
+    const selfUrl='https://health.example.com/health/api/v1/spaces/spc_test/own-person'
+    const f=vi.fn(async (input:RequestInfo|URL, _init?:RequestInit) => {
+      const path=new URL(String(input)).pathname
+      if(path==='/internal/v1/access/tokens') return success({accessToken:'jwt_server_only'})
+      if(path==='/api/v1/me') return success({principal:{id:'usr_me',type:'user'}})
+      if(path.endsWith('/members')) return success([
+        {userId:'usr_other',personId:'per_other'},
+        {userId:'usr_me',personId:'per_me'},
+      ])
+      return Response.json({error:'not_found'},{status:404})
+    })
+    const response=await handleHealthApi(make(selfUrl),env,f)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({data:{personId:'per_me'}})
+    expect(String((f.mock.calls[0]?.[1] as RequestInit).body)).toContain('profile:read')
+    expect((await handleHealthApi(make(selfUrl.replace('own-person','people')),env,f)).status).toBe(404)
+  })
+  it('fails closed when the current user has no linked Person in the Space', async () => {
+    const selfUrl='https://health.example.com/health/api/v1/spaces/spc_test/own-person'
+    const f=vi.fn(async (input:RequestInfo|URL,_init?:RequestInit) => {
+      const path=new URL(String(input)).pathname
+      if(path==='/internal/v1/access/tokens') return success({accessToken:'jwt_server_only'})
+      if(path==='/api/v1/me') return success({principal:{id:'usr_me',type:'user'}})
+      if(path.endsWith('/members')) return success([{userId:'usr_other',personId:'per_other'}])
+      return Response.json({error:'not_found'},{status:404})
+    })
+    const response=await handleHealthApi(make(selfUrl),env,f)
+    expect(response.status).toBe(409)
+  })
   it('does not collapse identity denial to a success', async () => {
     const f=vi.fn(async () => Response.json({error:'forbidden'},{status:403}))
     const r=await handleHealthApi(make(url),env,f)
