@@ -467,14 +467,16 @@ function detailName(kind: HealthKind,record:any) {
 
             <div v-else-if="selected.kind==='metric'" class="detail-columns metric-detail-layout">
               <section class="ui-card detail-primary">
-                <div class="card-heading"><h2>变化趋势</h2></div>
-                <div class="metric-hero"><strong>{{ latestFor(current.id) ? observationValue(latestFor(current.id)!,current) : '暂无记录' }}</strong><span>{{ latestFor(current.id) ? '最新记录 · '+displayDate(latestFor(current.id)!.observedDate) : '还没有观测记录' }}</span></div>
+                <div class="metric-summary">
+                  <div class="metric-hero"><strong>{{ latestFor(current.id) ? observationValue(latestFor(current.id)!,current) : '暂无记录' }}</strong><span>{{ latestFor(current.id) ? '最新记录 · '+displayDate(latestFor(current.id)!.observedDate) : '还没有观测记录' }}</span></div>
+                  <button class="primary-button metric-add-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
+                </div>
+                <div class="card-heading metric-chart-heading"><h2>变化趋势</h2></div>
                 <MetricTrend v-if="current.valueType==='number'"
                   :metric-name="current.name" :unit="current.defaultUnit"
                   :observations="demo.observations.filter(o=>o.metricId===current.id)"
                   @open-observation="show('observation',$event)"/>
                 <p v-else class="helper-copy">该指标记录的是{{ current.valueType==='text'?'文字':'是或否' }}，可在右侧查看历史记录，不适合用数值趋势图展示。</p>
-                <button class="primary-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
               </section>
               <section class="ui-card metric-history"><div class="card-heading"><h2>历史记录</h2><span class="quiet-caption">{{ demo.observations.filter(o=>o.metricId===current.id).length }} 条</span></div>
                 <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><b>{{ observationValue(o,current) }}</b><small>{{ displayDate(o.observedDate) }} · {{ labelFrom(observationStatuses,o.status) }}</small></span><ChevronRight :size="16"/></button>
