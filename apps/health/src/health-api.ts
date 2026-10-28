@@ -35,7 +35,10 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 // Personal Space selection is an explicit one-time product decision, NOT a trust claim.
 // Core still verifies every requested Space against the authenticated LifeSpace user.
 export const listAuthorizedSpaces = () =>
-  api<Array<{id:string,name:string,role:string}>>('/spaces')
+  api<Array<{id:string,name:string,role:string,timezone?:string}>>('/spaces')
+export const listSpacePeople = (spaceId:string) =>
+  api<{items:Array<{id:string,displayName:string}>,nextCursor:string|null}>(
+    `/spaces/${encodeURIComponent(spaceId)}/people`)
 const recordsPath = (spaceId:string, model:HealthModelKey) =>
   `/spaces/${encodeURIComponent(spaceId)}/models/${model}/records`
 export const listHealthRecords = <T extends HealthRecord>(
