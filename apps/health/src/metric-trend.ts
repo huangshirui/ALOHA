@@ -9,6 +9,10 @@ export interface TrendPoint {
  key:string; label:string; value:number; count:number; recordIds:string[]
 }
 export interface ChartPoint extends TrendPoint {x:number;y:number}
+/** No automatic selection: the hero already gives the latest value. */
+export function selectedTrendPoint<T extends {key:string}>(points:ReadonlyArray<T>,key:string):T|null {
+ return key ? (points.find(p=>p.key===key)??null) : null
+}
 export interface TrendChart {
  points:ChartPoint[]
  path:string
