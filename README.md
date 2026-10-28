@@ -9,7 +9,7 @@ Assistant is the Agent interaction surface; Health, Finance and Things provide s
 | Surface | Install name | Target path | Current state |
 | --- | --- | --- | --- |
 | ALOHA Assistant | `Assistant` | `/assistant/` | Existing product surface. Workspace is separated, but production remains on the transitional root/Gateway deployment until the required LifeSpace upgrade is complete. |
-| ALOHA Health | `Health` | `/health/` | Development scaffold ready; independently buildable and preview-deployable. Domain/data contracts intentionally TBD. |
+| ALOHA Health | `Health` | `/health/` | Interactive prototype merged; trusted LifeSpace BFF and app-owned D1 projection in Draft PR #37, not production-deployed. |
 | ALOHA Finance | `Finance` | `/finance/` | Development scaffold ready; independently buildable and preview-deployable. Domain/data contracts intentionally TBD. |
 | ALOHA Things | `Things` | `/things/` | Development scaffold ready; independently buildable and preview-deployable. Domain/data contracts intentionally TBD. |
 
@@ -83,7 +83,7 @@ Health, Finance and Things may proceed independently from their prepared PWA sca
 ```text
 apps/
   assistant/               # ALOHA Assistant PWA
-  health/                  # ALOHA Health scaffold + preview Worker
+  health/                  # ALOHA Health PWA, trusted BFF draft + optional D1 projection
   finance/                 # ALOHA Finance scaffold + preview Worker
   things/                  # ALOHA Things scaffold + preview Worker
 
