@@ -54,3 +54,19 @@ export const updateHealthRecord = <T extends HealthRecord>(
 ) => api<T>(recordsPath(spaceId,model)+'/'+encodeURIComponent(id),{method:'PATCH',body:JSON.stringify({...fields,version})})
 export const deleteHealthRecord = (spaceId:string,model:HealthModelKey,id:string,version:number) =>
   api<void>(recordsPath(spaceId,model)+'/'+encodeURIComponent(id),{method:'DELETE',body:JSON.stringify({version})})
+
+/** ALOHA-owned UI projection, not canonical LifeSpace model fields. */
+import type { ConcernPresentation } from './health-presentation'
+const presentationPath = (spaceId:string) =>
+  `/spaces/${encodeURIComponent(spaceId)}/presentation/concerns`
+export const listConcernPresentation = (spaceId:string) =>
+  api<{items:ConcernPresentation[]}>(presentationPath(spaceId))
+export const patchConcernPresentation = (
+  spaceId:string,concernId:string,patch:{
+    attention?:ConcernPresentation['attention']
+    placement?:ConcernPresentation['placement']
+  },
+) => api<ConcernPresentation>(presentationPath(spaceId)+'/'+encodeURIComponent(concernId),
+  {method:'PATCH',body:JSON.stringify(patch)})
+export const deleteConcernPresentation = (spaceId:string,concernId:string) =>
+  api<void>(presentationPath(spaceId)+'/'+encodeURIComponent(concernId),{method:'DELETE',body:'{}'})
