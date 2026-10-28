@@ -7,6 +7,31 @@ export const TREND_CHART_LEFT=64
 export const TREND_CHART_RIGHT_PADDING=22
 export const TREND_CHART_Y_LABEL_X=54
 export const TREND_CHART_X_LABEL_Y=305
+export interface ReferenceMarkers {
+  referenceLow?:number|null
+  referenceHigh?:number|null
+}
+export interface ReferenceLine {
+  side:'low'|'high'
+  value:number
+  y:number
+  label:string
+}
+/** Reference limits are visual guides, not extra observation points. */
+export function projectReferenceLines(
+  domain:{min:number;max:number}|null,bounds:ReferenceMarkers,height=TREND_CHART_HEIGHT,
+):ReferenceLine[] {
+  if(!domain || domain.max<=domain.min)return []
+  const low=bounds.referenceLow,high=bounds.referenceHigh
+  const finite=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v)
+  if(finite(low)&&finite(high)&&low>high)return []
+  const bottom=height-46,top=26
+  const yFor=(v:number)=>Number((bottom-(v-domain.min)/(domain.max-domain.min)*(bottom-top)).toFixed(2))
+  const result:ReferenceLine[]=[]
+  if(finite(low))result.push({side:'low',value:low,y:yFor(low),label:finite(high)&&low===high?'参考值':'下限'})
+  if(finite(high)&&(!finite(low)||low!==high))result.push({side:'high',value:high,y:yFor(high),label:'上限'})
+  return result
+}
 export interface NumericObservation {
  id:string;observedDate:string;valueNumber:number|null;status:string
 }
@@ -74,11 +99,17 @@ export function smoothPath(points:ReadonlyArray<{x:number;y:number}>):string {
  }
  return path
 }
-export function buildTrendChart(raw:ReadonlyArray<NumericObservation>,g:MetricGranularity,width=680,height=TREND_CHART_HEIGHT):TrendChart{
+export function buildTrendChart(raw:ReadonlyArray<NumericObservation>,g:MetricGranularity,width=680,height=TREND_CHART_HEIGHT,reference?:ReferenceMarkers):TrendChart{
  const aggregate=aggregateTrend(raw,g)
  if(!aggregate.length)return {points:[],path:'',ticks:[],yTicks:[],domain:null}
  const left=TREND_CHART_LEFT,right=width-TREND_CHART_RIGHT_PADDING,top=26,bottom=height-46
- const values=aggregate.map(p=>p.value)
+ const observed=aggregate.map(p=>p.value)
+ const low=reference?.referenceLow,high=reference?.referenceHigh
+ const valid=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v)
+ // Extend the axis to display real configured thresholds. These values are
+ // scale guides only, never treated as HealthObservation or chart points.
+ const bounds=valid(low)&&valid(high)&&low>high?[]:[low,high].filter(valid)
+ const values=[...observed,...bounds]
  const vmin=Math.min(...values),vmax=Math.max(...values)
  const padding=(vmax-vmin||Math.max(1,Math.abs(vmax)*.06))*.15
  const min=vmin-padding,max=vmax+padding
