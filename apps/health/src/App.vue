@@ -36,7 +36,7 @@ type Sheet = '' | 'edit' | 'import'
 type RecordView = { kind: HealthKind; id: string }
 const alohaApps = [
   { id:'assistant', name:'Assistant', description:'个人 AI 助手' },
-  { id:'health', name:'Health', description:'健康记录与管理' },
+  { id:'health', name:'Health', description:'健康记录与管理', iconUrl:`${import.meta.env.BASE_URL}app-icon.svg` },
   { id:'finance', name:'Finance', description:'财务与资产' },
   { id:'things', name:'Things', description:'物品与空间' },
 ]
