@@ -2,6 +2,15 @@ name: Deploy Health PWA Preview
 
 on:
   workflow_dispatch:
+    inputs:
+      data_mode:
+        description: "Health data mode (live requires Staging LifeSpace models, Access and D1)"
+        type: choice
+        required: true
+        default: demo
+        options:
+          - demo
+          - live
 
 permissions:
   contents: read
@@ -36,7 +45,38 @@ jobs:
         run: npm run typecheck -w @aloha/health
 
       - name: Build Health
+        env:
+          VITE_HEALTH_DATA_MODE: ${{ inputs.data_mode }}
         run: npm run build:health
+
+      # The database ID is deployment-only configuration, never committed into public source.
+      - name: Bind Health presentation D1 for Staging live mode
+        if: inputs.data_mode == 'live'
+        env:
+          HEALTH_PRESENTATION_D1_ID: ${{ secrets.ALOHA_HEALTH_PRESENTATION_STAGING_D1_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HEALTH_PRESENTATION_D1_ID" || { echo "Missing Staging Health D1 ID"; exit 1; }
+          node <<'NODE'
+          const fs = require('node:fs')
+          const path = 'apps/health/wrangler.jsonc'
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'))
+          config.d1_databases = [{
+            binding: 'PRESENTATION_DB',
+            database_name: 'aloha-health-presentation-staging',
+            database_id: process.env.HEALTH_PRESENTATION_D1_ID,
+            migrations_dir: 'migrations'
+          }]
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n')
+          NODE
+
+      - name: Apply Health presentation D1 migration (Staging only)
+        if: inputs.data_mode == 'live'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler d1 migrations apply PRESENTATION_DB --remote --config apps/health/wrangler.jsonc
 
       - name: Deploy Health Worker preview
         uses: cloudflare/wrangler-action@v3
