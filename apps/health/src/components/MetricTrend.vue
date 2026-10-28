@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { X } from 'lucide-vue-next'
 import { buildTrendChart, type MetricGranularity, type NumericObservation, type TrendPoint } from '../metric-trend'
 
 const props=defineProps<{
@@ -39,7 +40,7 @@ const chartDescription=computed(()=>{
    </div>
    <template v-if="chart.points.length">
      <div class="metric-trend-plot">
-       <svg viewBox="0 0 680 224" role="img" :aria-label="chartDescription">
+       <svg viewBox="0 0 680 224" role="group" :aria-label="chartDescription">
          <g class="metric-trend-grid">
            <line v-for="tick in chart.yTicks" :key="'g'+tick.y" :x1="52" :x2="660" :y1="tick.y" :y2="tick.y"/>
          </g>
@@ -67,7 +68,7 @@ const chartDescription=computed(()=>{
        </div>
        <button v-if="active.count===1" type="button" class="metric-trend-source"
          @click="emit('openObservation',active.recordIds[0]!)">查看这条记录</button>
-       <button type="button" class="metric-trend-clear" aria-label="取消选中图表观测点" @click="activeKey=''">×</button>
+       <button type="button" class="metric-trend-clear" aria-label="取消选中图表观测点" @click="activeKey=''"><X :size="16"/></button>
      </div>
      <p class="metric-trend-note">曲线连接已有记录，没有测量的日期不补值。</p>
    </template>
