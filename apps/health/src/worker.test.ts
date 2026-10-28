@@ -112,4 +112,68 @@ describe('Health trusted BFF', () => {
     expect(r.status).toBe(403)
     expect(f).toHaveBeenCalledTimes(1)
   })
+
+  it('requires D1 for Health presentation, without affecting normal Core CRUD',async()=>{
+    const f=fetcher()
+    const p='https://health.example.com/health/api/v1/spaces/spc_test/presentation/concerns'
+    expect((await handleHealthApi(make(p),env,f)).status).toBe(503)
+    expect((await handleHealthApi(make(url),env,f)).status).toBe(200)
+  })
+  it('serves only authenticated own-Person presentation after Core model read authorization',async()=>{
+    const p='https://health.example.com/health/api/v1/spaces/spc_test/presentation/concerns'
+    const all=vi.fn(async()=>({results:[{
+      concern_id:'rec_test',attention:'watch',view:null,asset_id:null,x:null,y:null,
+    }]}))
+    const db={prepare:vi.fn(()=>({bind:()=>({all,first:async()=>null,run:async()=>({success:true})})}))}
+    const f=vi.fn(async(input:RequestInfo|URL,_init?:RequestInit)=>{
+      const path=new URL(String(input)).pathname
+      if(path==='/internal/v1/access/tokens')return success({accessToken:'server_token'})
+      if(path==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(path.endsWith('/members'))return success([
+        {userId:'usr_other',personId:'per_other'},
+        {userId:'usr_self',personId:'per_self'},
+      ])
+      if(path.endsWith('/models/health_concern/records'))return success({items:[],nextCursor:null})
+      return Response.json({error:'unexpected'},{status:404})
+    })
+    const result=await handleHealthApi(make(p),{...env,PRESENTATION_DB:db as any},f)
+    expect(result.status).toBe(200)
+    expect((await result.json()).data.items).toMatchObject([{concernId:'rec_test',attention:'watch'}])
+    expect(db.prepare).toHaveBeenCalledTimes(1)
+    const second=f.mock.calls.find(call=>new URL(String(call[0])).pathname.endsWith('/records'))
+    expect(second).toBeDefined()
+    expect(String(second![0])).toContain('limit=1')
+  })
+  it('rejects editing another Person concern even when current Space membership exists',async()=>{
+    const p='https://health.example.com/health/api/v1/spaces/spc_test/presentation/concerns/rec_other'
+    const db={prepare:vi.fn()}
+    const f=vi.fn(async(input:RequestInfo|URL,_init?:RequestInit)=>{
+      const path=new URL(String(input)).pathname
+      if(path==='/internal/v1/access/tokens')return success({accessToken:'server_token'})
+      if(path==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(path.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(path.endsWith('/rec_other'))return success({id:'rec_other',subjectPersonId:'per_other'})
+      return Response.json({error:'unexpected'},{status:404})
+    })
+    const result=await handleHealthApi(make(p,'PATCH',{attention:'watch'}),{...env,PRESENTATION_DB:db as any},f)
+    expect(result.status).toBe(403)
+    expect(db.prepare).not.toHaveBeenCalled()
+    expect((await handleHealthApi(make(p,'PATCH',{attention:'watch'},
+      {Origin:'https://evil.example'}),{...env,PRESENTATION_DB:db as any},f)).status).toBe(403)
+  })
+  it('does not bypass a denied Core model read when listing app presentation data',async()=>{
+    const p='https://health.example.com/health/api/v1/spaces/spc_test/presentation/concerns'
+    const db={prepare:vi.fn()}
+    const f=vi.fn(async(input:RequestInfo|URL,_init?:RequestInit)=>{
+      const path=new URL(String(input)).pathname
+      if(path==='/internal/v1/access/tokens')return success({accessToken:'server_token'})
+      if(path==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(path.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      return Response.json({error:'model_forbidden'},{status:403})
+    })
+    const result=await handleHealthApi(make(p),{...env,PRESENTATION_DB:db as any},f)
+    expect(result.status).toBe(403)
+    expect(db.prepare).not.toHaveBeenCalled()
+  })
+
 })
