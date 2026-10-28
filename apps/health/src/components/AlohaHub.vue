@@ -13,7 +13,6 @@ interface AlohaAppLink {
   href?: string
 }
 type HubSection = 'apps' | 'account' | 'settings' | 'privacy' | 'help'
-export type { HubSection }
 type Density = 'comfortable' | 'compact'
 
 const props = withDefaults(defineProps<{
