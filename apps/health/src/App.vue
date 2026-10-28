@@ -29,27 +29,23 @@ import {
 } from './demo-model'
 
 type Tab = 'home' | 'body' | 'food' | 'movement' | 'more'
-type HubSection = 'apps' | 'account' | 'settings' | 'privacy' | 'help'
-const hubTitles:Record<HubSection,string>={apps:'更多',account:'账号与安全',settings:'通用设置',privacy:'隐私与授权',help:'帮助与反馈'}
 type BodyTab = 'focus' | 'metrics' | 'timeline' | 'documents' | 'regimens'
 type Sheet = '' | 'edit' | 'import'
 type RecordView = { kind: HealthKind; id: string }
+// External destinations are enabled only after the ALOHA public pages and other PWAs exist.
+// VITE_* URLs are public routing configuration, not account or authorization data.
 const alohaApps = [
-  { id:'assistant', name:'Assistant', description:'个人 AI 助手' },
-  { id:'health', name:'Health', description:'健康记录与管理', iconUrl:`${import.meta.env.BASE_URL}app-icon.svg` },
-  { id:'finance', name:'Finance', description:'财务与资产' },
-  { id:'things', name:'Things', description:'物品与空间' },
+  { id:'assistant', name:'Assistant', href:import.meta.env.VITE_ALOHA_ASSISTANT_URL || undefined },
+  { id:'health', name:'Health', iconUrl:`${import.meta.env.BASE_URL}app-icon.svg` },
+  { id:'finance', name:'Finance', href:import.meta.env.VITE_ALOHA_FINANCE_URL || undefined },
+  { id:'things', name:'Things', href:import.meta.env.VITE_ALOHA_THINGS_URL || undefined },
 ]
+const alohaPublicLinks = {
+  accountUrl:import.meta.env.VITE_ALOHA_ACCOUNT_URL || undefined,
+  privacyUrl:import.meta.env.VITE_ALOHA_PRIVACY_URL || undefined,
+  helpUrl:import.meta.env.VITE_ALOHA_HELP_URL || undefined,
+}
 const sidebarCollapsed = ref(false)
-const uiDensity = ref<'comfortable'|'compact'>('comfortable')
-const hubSection = ref<HubSection>('apps')
-function handleAppSelection(id:string) {
-  if (id!=='health') notice.value='此应用尚未接入本次体验。'
-}
-function openHubSetting(section:Exclude<HubSection,'apps'>) {
-  navigate('more')
-  hubSection.value=section
-}
 const navItems = [
   { id: 'home' as Tab, title: '首页', icon: Home },
   { id: 'body' as Tab, title: '身体', icon: HeartPulse },
@@ -183,7 +179,6 @@ function location(): HealthLocation {
 function navigate(tab: Tab) {
   routeStack.value=[]
   activeTab.value=tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
-  if(tab==='more') hubSection.value='apps'
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body');bodyTab.value=tab }
@@ -387,10 +382,10 @@ function detailName(kind: HealthKind,record:any) {
 </script>
 
 <template>
-  <div :class="['aloha-surface', 'health-shell', { 'agent-open': agentOpen, 'sidebar-collapsed': sidebarCollapsed, 'compact-density': uiDensity==='compact' }]" data-aloha-surface="health" @keydown.esc="handleEscape">
+  <div :class="['aloha-surface', 'health-shell', { 'agent-open': agentOpen, 'sidebar-collapsed': sidebarCollapsed }]" data-aloha-surface="health" @keydown.esc="handleEscape">
     <aside class="desktop-sidebar" aria-label="主导航">
-      <AlohaHub :apps="alohaApps" current-app="health" :compact="sidebarCollapsed" :density="uiDensity"
-        preview @open-setting="openHubSetting"/>
+      <AlohaHub :apps="alohaApps" current-app="health" :compact="sidebarCollapsed"
+        v-bind="alohaPublicLinks"/>
       <nav class="sidebar-nav" aria-label="Health 页面导航">
         <button v-for="item in navItems.filter(item=>item.id!=='more')" :key="item.id" :class="['nav-link',{selected:activeTab===item.id}]"
           type="button" :title="sidebarCollapsed ? item.title : undefined"
@@ -666,11 +661,7 @@ function detailName(kind: HealthKind,record:any) {
             @ask="openAgent"/>
           <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('focus')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
         <section v-else class="more-view">
-          <HealthPageHeader :title="hubTitles[hubSection]" :subtitle="hubSection==='apps'?'应用、账号与设置':'ALOHA 公共设置 · 体验版'"
-            :agent-open="agentOpen" @ask="openAgent"/>
-          <AlohaHub page :apps="alohaApps" current-app="health" preview
-            :initial-section="hubSection" :density="uiDensity" @select-app="handleAppSelection"
-            @update:section="hubSection=$event" @update:density="uiDensity=$event"/>
+          <AlohaHub page :apps="alohaApps" current-app="health" v-bind="alohaPublicLinks"/>
         </section>
       </main>
     </div>
