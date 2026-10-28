@@ -1,28 +1,30 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
+import { attentionColor, attentionLabel, type ConcernAttention } from '../concern-attention'
 import { ChevronRight, HeartPulse, Info, MapPin, Search } from 'lucide-vue-next'
 import {
-  countForView, isPointOnBody, normalizedPoint, visibleHotspots, BODY_MAP_ASSET_ID,
+  countForView, isPointOnBody, normalizedPoint, visibleHotspots, BODY_MAP_ASSET_IDS,
   type BodyMapBinding, type BodyMapConcern, type BodyPoint, type BodyView,
 } from '../body-map'
 
-const props=defineProps<{concerns:BodyMapConcern[];bindings:BodyMapBinding[];view:BodyView;selectedConcernId:string|null}>()
+const props=defineProps<{concerns:BodyMapConcern[];bindings:BodyMapBinding[];view:BodyView;selectedConcernId:string|null;attentionByConcern:Record<string,ConcernAttention>}>()
 const emit=defineEmits<{
   openConcern:[id:string]
   'update:view':[view:BodyView]
   'update:selectedConcernId':[id:string|null]
   placePoint:[id:string,view:BodyView,point:BodyPoint]
 }>()
-const imageSrc=import.meta.env.BASE_URL+'body-front-outline.svg'
+const imageSrc=(side:BodyView)=>import.meta.env.BASE_URL+'body-'+side+'-outline.svg'
 const sides:BodyView[]=['front','back']
 const search=ref('')
 const locatingConcern=ref<string|null>(null)
 const pendingPoint=ref<BodyPoint|null>(null)
 const positionError=ref('')
-const figureEl=ref<HTMLElement|null>(null)
+const figureRefs:Partial<Record<BodyView,HTMLElement>>={}
+function setFigureRef(side:BodyView,el:unknown){ if(el) figureRefs[side]=el as HTMLElement }
 const explorerEl=ref<HTMLElement|null>(null)
 const recordsCardEl=ref<HTMLElement|null>(null)
-const spots=computed(()=>visibleHotspots(props.concerns,props.bindings,props.view))
+const spotsFor=(side:BodyView)=>visibleHotspots(props.concerns,props.bindings,side)
 const filteredConcerns=computed(()=>{
   const term=search.value.trim().toLowerCase()
   return props.concerns
@@ -30,7 +32,7 @@ const filteredConcerns=computed(()=>{
     .sort((a,b)=>Number(b.id===props.selectedConcernId)-Number(a.id===props.selectedConcernId))
 })
 function locationLabel(id:string){
-  const binding=props.bindings.find(b=>b.concernId===id && b.assetId===BODY_MAP_ASSET_ID)
+  const binding=props.bindings.find(b=>b.concernId===id && b.assetId===BODY_MAP_ASSET_IDS[b.view])
   return binding ? (binding.view==='front'?'正面':'背面') : '未定位'
 }
 const counts=computed(()=>({
@@ -44,8 +46,9 @@ function switchView(next:BodyView) {
   pendingPoint.value=null
   positionError.value=''
 }
-async function selectDot(id:string){
+async function selectDot(id:string,side:BodyView){
   search.value=''
+  emit('update:view',side)
   emit('update:selectedConcernId',id)
   await nextTick()
   // A docked AI panel can cause stacking at Desktop sizes too.
@@ -60,11 +63,11 @@ async function beginPlacement(id:string){
   const existing=props.bindings.find(b=>b.concernId===id)
   if(existing) emit('update:view',existing.view)
   await nextTick()
-  figureEl.value?.scrollIntoView({block:'center',behavior:'smooth'})
+  figureRefs[existing?.view??props.view]?.scrollIntoView({block:'center',behavior:'smooth'})
 }
-function pickPoint(event:MouseEvent){
+function pickPoint(event:MouseEvent,side:BodyView){
   if(!locatingConcern.value)return
-  const bounds=figureEl.value?.getBoundingClientRect()
+  const bounds=figureRefs[side]?.getBoundingClientRect()
   if(!bounds)return
   const x=(event.clientX-bounds.left)/bounds.width
   const y=(event.clientY-bounds.top)/bounds.height
@@ -75,6 +78,7 @@ function pickPoint(event:MouseEvent){
     return
   }
   positionError.value=''
+  emit('update:view',side)
   pendingPoint.value=normalizedPoint(x,y)
 }
 function cancelPlacement(){
