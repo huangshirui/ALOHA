@@ -137,9 +137,9 @@
 .future-card { display:flex; flex-direction:column; align-items:flex-start; gap:.7rem; max-width:39rem; padding:2rem; border:1px solid var(--health-border); background:var(--health-surface); border-radius:var(--health-radius-card); color:var(--health-brand-strong); }
 .future-card h2 { color:var(--health-ink); margin-top:.6rem; }
 .future-card p { font-size:.83rem; color:var(--health-muted); line-height:1.8; }
-.bottom-nav { position:fixed; z-index:12; bottom:0; left:0; right:0; height:calc(4.7rem + env(safe-area-inset-bottom)); padding:.35rem .4rem max(.4rem,env(safe-area-inset-bottom)); display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-top:1px solid var(--health-border); background:var(--health-header-bg); backdrop-filter:blur(18px); }
-.bottom-nav button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.22rem; background:transparent; color:var(--health-muted); border:0; border-radius:var(--health-radius-control); font-size:.69rem; }
-.bottom-nav button.active { background:var(--health-brand-subtle); color:var(--health-brand-strong); font-weight:710; }
+.bottom-nav { position:fixed; z-index:12; bottom:0; left:0; right:0; height:calc(4.7rem + env(safe-area-inset-bottom)); padding:.35rem .4rem max(.4rem,env(safe-area-inset-bottom)); display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); border-top:1px solid var(--health-border); background:var(--health-header-bg); backdrop-filter:blur(18px); }
+.bottom-nav > button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.22rem; background:transparent; color:var(--health-muted); border:0; border-radius:var(--health-radius-control); font-size:.69rem; }
+.bottom-nav > button.active { background:var(--health-brand-subtle); color:var(--health-brand-strong); font-weight:710; }
 /* shared pattern for dialogs and edit journeys */
 .modal-backdrop { position:fixed; inset:0; z-index:30; display:flex; align-items:flex-end; justify-content:center; background:color-mix(in srgb,var(--health-ink) 53%,transparent); }
 .drawer { position:relative; width:100%; max-height:92dvh; overflow-y:auto; padding:1rem var(--health-space-5) calc(1.8rem + env(safe-area-inset-bottom)); background:var(--health-surface); border-radius:1.3rem 1.3rem 0 0; box-shadow:var(--health-shadow-float); }
@@ -513,4 +513,16 @@
    Wide-screen split panes remain square and aligned with the viewport edge. */
 @media (max-width:59.999rem) {
   .agent-dock { border-radius:1.3rem 1.3rem 0 0;overflow:hidden; }
+}
+
+/* Secondary actions collapse to icons on Mobile; essential create buttons keep
+   their text. The tooltip and accessible name remain explicit in the markup. */
+@media (max-width:47.999rem) {
+  .health-shell .detail-edit-button {
+    width:2.45rem;
+    min-width:2.45rem;
+    padding:0;
+    gap:0;
+  }
+  .health-shell .detail-edit-button .detail-edit-label { display:none; }
 }
