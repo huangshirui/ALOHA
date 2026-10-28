@@ -22,7 +22,7 @@ import ReferenceIndicator from './components/ReferenceIndicator.vue'
 import {matchMetricReferenceFilter, metricReferenceState, type MetricReferenceFilter} from './metric-reference-filter'
 import type { TimelineFilter } from './health-timeline'
 import { compareReference,formatReferenceRange,parseReferenceDraft,validateReferenceDraft } from './health-reference'
-import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
+import { removeConcernPoint, seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
 import { concernAttentionOptions, attentionColor, parseConcernAttention, type ConcernAttention } from './concern-attention'
 import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
 import {
@@ -344,6 +344,18 @@ async function assignConcernPoint(id:string,view:BodyView,point:BodyPoint) {
     bodyBindings.value=next
     notice.value=liveMode?'人体位置已同步。':'已为关注事项标记位置（仅本次演示）。'
   } catch(e) {notice.value=e instanceof Error?e.message:'人体位置同步失败'}
+}
+async function clearConcernPoint(id:string) {
+  const spaceId=selectedSpaceId.value
+  try {
+    if(liveMode) {
+      if(!spaceId || liveStatus.value!=='ready')throw new Error('尚未连接健康档案')
+      await patchConcernPresentation(spaceId,id,{placement:null})
+      if(selectedSpaceId.value!==spaceId)return
+    }
+    bodyBindings.value=removeConcernPoint(bodyBindings.value,id)
+    notice.value=liveMode?'人体定位已移除并同步。':'人体定位已移除（仅本次演示）。'
+  } catch(e) {notice.value=e instanceof Error?e.message:'移除定位失败'}
 }
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   const record=id ? getList(kind).find(r=>r.id===id) : null
@@ -812,6 +824,7 @@ function detailName(kind: HealthKind,record:any) {
                 @update:selected-concern-id="mapSelectedConcern=$event"
                 @open-concern="show('concern',$event)"
                 @place-point="assignConcernPoint"
+                @remove-point="clearConcernPoint"
               />
             </div>
             <template v-else>
