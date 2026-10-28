@@ -21,10 +21,9 @@ const props = withDefaults(defineProps<{
   compact?: boolean
   density?: Density
   preview?: boolean
-  bottomNav?: boolean
   page?: boolean
   entryOnly?: boolean
-}>(), { compact:false, density:'comfortable', preview:false, bottomNav:false, page:false, entryOnly:false })
+}>(), { compact:false, density:'comfortable', preview:false, page:false, entryOnly:false })
 
 const emit = defineEmits<{
   selectApp: [id: string]
@@ -55,16 +54,14 @@ function selectApp(app: AlohaAppLink) {
 </script>
 
 <template>
-  <div class="aloha-hub" :class="{ 'bottom-nav-hub': bottomNav, 'page-hub': page }">
+  <div class="aloha-hub" :class="{ 'page-hub': page }">
     <button v-if="!page" type="button" class="aloha-hub-trigger" :class="{ compact }"
-      :aria-expanded="opened" aria-haspopup="dialog" :aria-label="bottomNav?'应用、账号与设置':'ALOHA 公共菜单'"
+      :aria-expanded="entryOnly ? undefined : opened" :aria-haspopup="entryOnly ? undefined : 'dialog'" :aria-label="entryOnly?'打开更多页面':'ALOHA 公共菜单'"
       title="应用、账号与设置" @click="showMenu">
-      <template v-if="bottomNav"><LayoutGrid :size="22" :stroke-width="1.8"/><span class="aloha-hub-bottom-label">应用</span></template>
-      <template v-else>
-        <span class="aloha-hub-logo"><Heart :size="compact ? 19 : 22" fill="currentColor"/></span>
+      <span class="aloha-hub-logo"><Heart :size="compact ? 19 : 22" fill="currentColor"/></span>
         <span v-if="!compact" class="aloha-hub-wordmark"><strong>ALOHA</strong><small>{{ currentApp.toUpperCase() }}</small></span>
-        <ChevronDown v-if="!compact" :size="17" class="aloha-hub-chevron"/>
-      </template>
+      <ChevronDown v-if="!compact && !entryOnly" :size="17" class="aloha-hub-chevron"/>
+      <ArrowUpRight v-else-if="entryOnly && !compact" :size="17" class="aloha-hub-chevron"/>
     </button>
     <template v-if="opened || page">
       <button v-if="!page" class="aloha-hub-dismiss" aria-label="关闭公共菜单" type="button" @click="close"></button>
@@ -139,10 +136,6 @@ function selectApp(app: AlohaAppLink) {
 .page-hub .aloha-hub-group-caption { font-size:var(--health-type-label); }
 .page-hub .aloha-hub-app-copy b { font-size:var(--health-type-body); }
 .page-hub .aloha-hub-app-copy small { font-size:var(--health-type-caption); }
-.aloha-hub.bottom-nav-hub { display:flex;align-self:stretch;width:100%;min-width:0; }
-.bottom-nav-hub .aloha-hub-trigger { display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.22rem;height:100%;padding:0 .2rem;color:var(--health-muted);border-radius:var(--health-radius-control); }
-.bottom-nav-hub .aloha-hub-trigger:hover,.bottom-nav-hub .aloha-hub-trigger[aria-expanded="true"] { color:var(--health-brand-strong);background:var(--health-brand-subtle); }
-.aloha-hub-bottom-label { font-size:.69rem;line-height:1.2; }
 .aloha-hub-trigger { display:flex;align-items:center;gap:.65rem;width:100%;padding:.15rem .65rem;border:0;background:transparent;color:var(--aloha-color-text);text-align:left; }
 .aloha-hub-trigger.compact { justify-content:center; padding:.1rem; }
 .aloha-hub-logo { display:grid;place-items:center;flex:none;width:2.75rem;height:2.75rem;border-radius:var(--aloha-radius-md);background:var(--aloha-accent);color:white; }
@@ -152,7 +145,6 @@ function selectApp(app: AlohaAppLink) {
 .aloha-hub-chevron { color:var(--aloha-color-text-muted); }
 .aloha-hub-dismiss { position:fixed;inset:0;background:transparent;border:0;z-index:1;cursor:default; }
 .aloha-hub-popup { position:absolute;top:calc(100% + .8rem);left:0;z-index:2;width:min(21rem,calc(100vw - 1.5rem));max-height:min(80dvh,48rem);overflow-y:auto;background:var(--aloha-color-surface);border:1px solid var(--aloha-color-border);box-shadow:var(--aloha-shadow-floating);border-radius:var(--aloha-radius-lg); }
-.bottom-nav-hub .aloha-hub-popup { top:auto;bottom:calc(100% + .65rem);right:0;left:auto;max-height:min(70dvh,35rem); }
 .aloha-hub-topline { display:flex;align-items:center;gap:.6rem;padding:1rem;border-bottom:1px solid var(--aloha-color-border); }
 .aloha-hub-topline>div { flex:1;display:flex;flex-direction:column;gap:.2rem; }
 .aloha-hub-topline strong { font-size:1rem; }
