@@ -15,6 +15,11 @@
   --health-brand-strong: var(--aloha-accent-strong);
   --health-brand-subtle: var(--aloha-accent-soft);
   --health-danger: var(--aloha-color-danger);
+  /* User-set attention (关注度), not clinical severity. Only dots and text labels. */
+  --health-attention-unset: #8796a5;
+  --health-attention-routine: var(--health-brand);
+  --health-attention-watch: #b88a43;
+  --health-attention-priority: #ba6466;
 
   --health-radius-sm: var(--aloha-radius-sm);
   --health-radius-card: var(--aloha-radius-lg);
