@@ -188,6 +188,7 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   const record=id ? getList(kind).find(r=>r.id===id) : null
   if (id && !record) return
   const d=record ? structuredClone({...record}) : makeEmpty(kind,today)
+  if(kind==='concern') d.attention=attentionByConcern.value[id]??'unset'
   if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
   if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
@@ -214,6 +215,8 @@ function formSave() {
   if(kind==='metric' && editId.value && demo.metrics.find(m=>m.id===editId.value)?.valueType!==v.valueType && demo.observations.some(o=>o.metricId===editId.value)) formError.value='已经有历史记录的指标不能改动记录方式'
   if(formError.value) return
   const payload:any={...v}
+  // This is an ALOHA presentation preference, never a canonical HealthConcern field.
+  if(kind==='concern') delete payload.attention
   if(kind==='observation') {
     const metric=demo.metrics.find(m=>m.id===v.metricId)!
     Object.assign(payload,buildObservationValue(metric,String(v.value)))
@@ -228,6 +231,7 @@ function formSave() {
     const index=rows.findIndex(r=>r.id===editId.value)
     if(index>=0) rows.splice(index,1,{...rows[index],...payload})
   } else rows.unshift({...payload,id:savedId})
+  if(kind==='concern') attentionByConcern.value={...attentionByConcern.value,[savedId]:parseConcernAttention(String(v.attention??'unset'))}
   sheet.value=''
   formError.value=''
   notice.value='已保存。当前为演示数据，刷新页面后将恢复。'
@@ -615,6 +619,10 @@ function detailName(kind: HealthKind,record:any) {
             <label><span class="field-label">关注事项名称 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.name" maxlength="160" required placeholder="例如：睡眠调整"/></label>
             <label>情况说明<textarea v-model="draft.summary" rows="3" placeholder="为什么想持续关注这件事？"/></label>
             <label>当前状态<select v-model="draft.status"><option value="active">持续关注</option><option value="inactive">已结束</option></select></label>
+            <label>关注度<select v-model="draft.attention">
+              <option v-for="option in concernAttentionOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+            </select></label>
+            <p class="helper-copy">关注度由你设置，只用于整理先后顺序，不代表医学严重程度。</p>
             <div class="form-two"><label>开始日期<input v-model="draft.onsetDate" type="date"/></label><label>结束日期<input v-model="draft.resolvedDate" type="date"/></label></div>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
