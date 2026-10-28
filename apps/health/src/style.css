@@ -529,6 +529,7 @@
 
 /* Focus / 关注度 is a user preference, not an inferred clinical severity.
    Apply color only to dots and short labels, never whole cards. */
+.detail-fields > .concern-attention-row {align-items:center;}
 .concern-attention-value {display:inline-flex;align-items:center;gap:.5rem;min-width:0;}
 .concern-attention-dot {display:inline-block;width:.55rem;height:.55rem;flex:none;border-radius:50%;background:var(--body-dot-color,var(--health-attention-unset));}
 .concern-attention-select {
@@ -575,6 +576,8 @@
 .metric-list-result {justify-content:flex-end;flex:none;min-width:0;}
 .metric-list-result .list-value,.metric-value-row strong,.metric-reading-inline b {white-space:nowrap;}
 .metric-value-row,.metric-reading-inline {max-width:100%;}
+/* The metric name may wrap on mobile, but its value, unit and status arrow stay together. */
+.concern-observation-title {display:flex;align-items:center;flex-wrap:wrap;gap:.3rem;min-width:0;}
 
 /* Search and reference status refine the same metric list. */
 .metric-reference-filters {
