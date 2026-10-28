@@ -22,8 +22,8 @@ import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint,
 import { concernAttentionOptions, attentionColor, parseConcernAttention, type ConcernAttention } from './concern-attention'
 import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
 import {
-  buildObservationValue, documentTypes, eventTypes, interpretationTypes, labelFrom, makeEmpty,
-  observationStatuses, observationValue, regimenStatuses, regimenTypes, seedDemo,
+  buildObservationValue, documentTypes, eventTypes, labelFrom, makeEmpty,
+  assessmentStatuses, observationValue, regimenStatuses, regimenTypes, seedDemo,
   validateConcern, validateObservation, validateRegimen, validateEventTime, valueTypes,
   type HealthKind, type Metric, type Observation, type Regimen,
 } from './demo-model'
@@ -117,7 +117,7 @@ const current = computed<any | null>(() => selected.value ? getList(selected.val
 const selectedConcern = computed(() => selected.value?.kind === 'concern' ? selected.value.id : '')
 const related = (record: {concernIds?:string[]},id:string) => (record.concernIds ?? []).includes(id)
 const activeConcerns = computed(() => demo.concerns.filter(c=>c.status==='active'))
-const latestFor = (metricId:string) => [...demo.observations].filter(o=>o.metricId===metricId && o.status !== 'entered_in_error').sort((a,b)=>b.observedDate.localeCompare(a.observedDate))[0]
+const latestFor = (metricId:string) => [...demo.observations].filter(o=>o.metricId===metricId).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))[0]
 const referenceFor=(observation:Observation,metric?:Metric)=>metric?compareReference(metric,observation):null
 const metricRangeLabel=(metric:Metric)=>formatReferenceRange(metric,metric.defaultUnit)
 const observationTitle = (o: Observation) => nameOfMetric(o.metricId) + ' · ' + observationValue(o,demo.metrics.find(m=>m.id===o.metricId))
@@ -164,7 +164,7 @@ const valuePreview = computed(() => {
   return observationValue(current.value,demo.metrics.find(m=>m.id===current.value.metricId))
 })
 function chartPoints(metricId: string) {
-  const points = demo.observations.filter(o=>o.metricId===metricId && o.valueNumber!==null && o.status!=='entered_in_error').sort((a,b)=>a.observedDate.localeCompare(b.observedDate))
+  const points = demo.observations.filter(o=>o.metricId===metricId && o.valueNumber!==null).sort((a,b)=>a.observedDate.localeCompare(b.observedDate))
   if(points.length < 2) return ''
   const values = points.map(p=>p.valueNumber!)
   const lo=Math.min(...values)-2, hi=Math.max(...values)+2
@@ -338,8 +338,7 @@ function importNext() {
     demo.observations.unshift({
       id:'demo-'+(++nextRecordId),metricId:'m-2',observedDate:today,
       valueNumber:118,valueText:'',valueBoolean:null,unit:'mmHg',
-      interpretation:'',status:'preliminary',sourceDocumentId:id,
-      sourceNote:'模拟提取结果，不来自真实文件',notes:'请核对后再保存真实数据',
+      sourceDocumentId:id,notes:'虚构演示结果，未读取真实文件',
       concernIds:uploadConcernId.value?[uploadConcernId.value]:[],
     })
   }
@@ -540,19 +539,19 @@ function detailName(kind: HealthKind,record:any) {
                 <p v-else class="helper-copy">该指标记录的是{{ current.valueType==='text'?'文字':'是或否' }}，可在右侧查看历史记录，不适合用数值趋势图展示。</p>
               </section>
               <section class="ui-card metric-history"><div class="card-heading"><h2>历史记录</h2><span class="quiet-caption">{{ demo.observations.filter(o=>o.metricId===current.id).length }} 条</span></div>
-                <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><span class="metric-reading-inline"><b>{{ observationValue(o,current) }}</b><ReferenceIndicator :comparison="referenceFor(o,current)?.comparison"/></span><small>{{ displayDate(o.observedDate) }} · {{ labelFrom(observationStatuses,o.status) }}</small></span><ChevronRight :size="16"/></button>
+                <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><span class="metric-reading-inline"><b>{{ observationValue(o,current) }}</b><ReferenceIndicator :comparison="referenceFor(o,current)?.comparison"/></span><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
                 <p v-if="!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
               </section>
             </div>
             <div v-else class="detail-columns">
               <section class="ui-card detail-primary">
-                <div class="card-heading"><h2>记录详情</h2><span v-if="selected.kind==='observation'||selected.kind==='assessment'" class="status-chip">{{ labelFrom(observationStatuses,current.status) }}</span><span v-else-if="selected.kind==='regimen'" class="status-chip">{{ labelFrom(regimenStatuses,current.status) }}</span></div>
+                <div class="card-heading"><h2>记录详情</h2><span v-if="selected.kind==='assessment'" class="status-chip">{{ labelFrom(assessmentStatuses,current.status) }}</span><span v-else-if="selected.kind==='regimen'" class="status-chip">{{ labelFrom(regimenStatuses,current.status) }}</span></div>
                 <template v-if="selected.kind==='observation'">
                   <div class="metric-hero"><span class="metric-value-row"><strong>{{ valuePreview }}</strong>
                       <ReferenceIndicator :comparison="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.comparison"/></span>
                     <span>{{ nameOfMetric(current.metricId) }}</span>
                   </div>
-                  <dl class="detail-fields"><div><dt>记录日期</dt><dd>{{ displayDate(current.observedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'手动记录' }}</dd></div><div v-if="current.interpretation"><dt>原记录标记</dt><dd>{{ labelFrom(interpretationTypes,current.interpretation) }}</dd></div><div v-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.comparison"><dt>本次比较依据</dt><dd>{{ formatReferenceRange(referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.range,referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.unit) }} · {{ referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.sourceNote }}{{ referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.source==='observation'?'（本次报告）':'（指标默认）' }}</dd></div>
+                  <dl class="detail-fields"><div><dt>记录日期</dt><dd>{{ displayDate(current.observedDate) }}</dd></div><div v-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.comparison"><dt>本次比较依据</dt><dd>{{ formatReferenceRange(referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.range,referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.unit) }} · {{ referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.sourceNote }}{{ referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))!.comparison!.source==='observation'?'（本次报告）':'（指标默认）' }}</dd></div>
                     <div v-else-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.reason==='unit_mismatch'"><dt>范围比较</dt><dd>单位不同，暂不比较</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 </template>
                 <template v-else-if="selected.kind==='event'"><p class="body-copy">{{ current.description || '没有补充说明' }}</p><dl class="detail-fields"><div><dt>事件类型</dt><dd>{{ eventName(current) }}</dd></div><div><dt>发生日期</dt><dd>{{ displayDate(current.date) }}</dd></div><div v-if="current.timeStart"><dt>发生时段</dt><dd>{{ current.timeStart }}—{{ current.timeEnd }}</dd></div><div><dt>地点</dt><dd>{{ current.location||'未填写' }}</dd></div></dl></template>
@@ -566,7 +565,7 @@ function detailName(kind: HealthKind,record:any) {
                   <button v-for="o in demo.observations.filter(o=>o.sourceDocumentId===current.id)" :key="o.id"
                     class="row-link" type="button" @click="show('observation',o.id)">
                     <span class="list-icon"><ClipboardCheck :size="18"/></span>
-                    <span class="row-main"><b>{{ observationTitle(o) }}</b><small>{{ labelFrom(observationStatuses,o.status) }} · {{ displayDate(o.observedDate) }}</small></span>
+                    <span class="row-main"><b>{{ observationTitle(o) }}</b><small>{{ displayDate(o.observedDate) }}</small></span>
                     <ChevronRight :size="17"/>
                   </button>
                   <button v-if="current.eventId" class="row-link" type="button" @click="show('event',current.eventId)">
@@ -753,9 +752,7 @@ function detailName(kind: HealthKind,record:any) {
               <label>范围来源<input v-model="draft.referenceSource" placeholder="例如：本次化验报告"/></label>
             </fieldset>
             <label><span class="field-label">测量日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.observedDate" type="date" required/></label>
-            <div class="form-two"><label>记录状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label><label>原报告标记<select v-model="draft.interpretation"><option v-for="[value,name] in interpretationTypes" :key="value" :value="value">{{ name }}</option></select></label></div>
             <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
-            <label>来源说明<input v-model="draft.sourceNote" placeholder="例如：家用设备"/></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='event'">
@@ -780,7 +777,7 @@ function detailName(kind: HealthKind,record:any) {
           <template v-else-if="editKind==='assessment'">
             <label><span class="field-label">评估标题 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.title" required placeholder="例如：本次检查结果回顾"/></label>
             <label><span class="field-label">评估内容 <span class="required-mark" aria-hidden="true">*</span></span><textarea v-model="draft.content" rows="4" required placeholder="记录医生意见或经确认的总结，不要混作原始数据"/></label>
-            <div class="form-two"><label><span class="field-label">评估日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.assessedDate" required type="date"/></label><label>状态<select v-model="draft.status"><option v-for="[value,name] in observationStatuses" :key="value" :value="value">{{ name }}</option></select></label></div>
+            <div class="form-two"><label><span class="field-label">评估日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.assessedDate" required type="date"/></label><label>状态<select v-model="draft.status"><option v-for="[value,name] in assessmentStatuses" :key="value" :value="value">{{ name }}</option></select></label></div>
             <fieldset class="check-group"><legend>依据哪些记录？</legend><label v-for="d in demo.documents" :key="d.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="d.id"/>{{ d.title }}</label><label v-for="o in demo.observations.slice(0,5)" :key="o.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="o.id"/>{{ observationTitle(o) }}</label></fieldset>
             <label>来源说明<input v-model="draft.sourceNote" placeholder="例如：医生意见、个人整理"/></label>
             <label>补充备注<textarea v-model="draft.notes" rows="2"/></label>
@@ -816,11 +813,11 @@ function detailName(kind: HealthKind,record:any) {
           </template>
           <template v-else-if="uploadStage===2">
             <div class="flow-copy"><h3>查看可能整理出的内容</h3><p>以下是一条独立生成的<strong>虚构示例</strong>，与所选文件内容无关。正式版本将在识别后要求你核对。</p></div>
-            <div class="extract-card"><div class="extract-head"><ClipboardCheck :size="19"/><b>示例：一次血压测量</b></div><strong>118 <small>mmHg</small></strong><p>测量日期：今天 · 尚未确认</p><label class="checkbox-line"><input v-model="uploadIncludeResult" type="checkbox"/> 同时添加这条演示结果</label></div>
+            <div class="extract-card"><div class="extract-head"><ClipboardCheck :size="19"/><b>示例：一次血压测量</b></div><strong>118 <small>mmHg</small></strong><p>测量日期：今天 · 请先核对这条虚构演示值</p><label class="checkbox-line"><input v-model="uploadIncludeResult" type="checkbox"/> 确认后添加这条演示结果</label></div>
             <p class="helper-copy">未勾选时，只创建一份资料记录；不会凭空添加身体测量。</p>
           </template>
           <template v-else>
-            <div class="flow-copy"><h3>确认本次整理</h3><p>你可以回到上一步修改，确认后将只向当前体验页添加临时演示记录。</p></div>
+            <div class="flow-copy"><h3>确认本次整理</h3><p>你可以回到上一步核对。确认后才将勾选的示例测量添加为正式观测；所有演示数据仅存在于当前页面。</p></div>
             <div class="summary-block"><p><CheckCircle2 :size="17"/> 资料：{{ uploadTitle }}</p><p><CheckCircle2 :size="17"/> 已选文件名：{{ uploadedName }}</p><p><CheckCircle2 :size="17"/> 示例测量：{{ uploadIncludeResult?'同时添加':'不添加' }}</p></div>
           </template>
           <p v-if="formError" class="form-error"><Info :size="16"/>{{ formError }}</p>
