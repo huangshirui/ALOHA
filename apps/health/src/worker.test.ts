@@ -19,7 +19,7 @@ const make = (path: string, method='GET', body?: unknown, extra?: Record<string,
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   })
 const success = (data: unknown) => Response.json({ data })
-const fetcher = () => vi.fn(async (input: RequestInfo | URL) => {
+const fetcher = () => vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
   const path = new URL(String(input)).pathname
   if (path === '/internal/v1/access/tokens') return success({ accessToken:'jwt_server_only' })
   if (path.endsWith('/records')) return success({ items:[],nextCursor:null })
