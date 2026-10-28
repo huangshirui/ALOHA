@@ -2,13 +2,12 @@
 
 > 仅供体验和评审。所有启动数据均为虚构示例；新增内容只保存在当前页面内存中，刷新即恢复。不接入 LifeSpace、真实 AI 或任何健康数据接口。
 
-## 2026-10-28 · ALOHA Hub：Desktop 浮层 + Mobile「更多」整页
+## 2026-10-28 · ALOHA Hub 精简：账号 → 其他应用 → 隐私／帮助
 
-- **Desktop**：点击左上角 ALOHA 品牌入口，在当前页面上方展开紧凑 Popover（4 个应用的品牌图标和当前/待接入状态 + 账号、安全、设置、隐私、帮助入口）；外部点击/Escape 可关闭，不跳转离开健康工作区，也不重置右侧 Agent。选择公共设置进入「更多」内的独立设置详情；不再通过品牌入口先跳到整页应用列表。侧栏收起时也应正常定位面板。
-- **Mobile**：保留底部「更多」Tab。移除大白色外框和重复 ALOHA 标题；2×2 应用卡片下面是单列公共入口。选择设置进入对应详情，可以返回应用和设置总览。移动底部导航与 Agent 停靠不更改。
-- **统一契约**：Health 当前作为首个 UX 实际消费者，通过 AlohaHub 的 app catalog（含应用自有图标 URL）、当前应用 ID、页面模式以及设置事件接口供公共 Hub 渲染。各个 PWA 将来复用同一个 UX 标准；第二个真实消费者出现时再升级到共享 UI Package。未接入的应用状态保持可读，不能伪造跳转或登录/授权。
-- **测试**：手工核查 Desktop 浮层定位/收起导航/键盘退出/AI 工作区，以及 Mobile 两列卡片、设置返回、可读性。仅模拟原型，不更改授权、路由、PWA 部署或 LifeSpace 模型；CI 不等于最终视觉验收。
-
+- **结构**：取消 Hub 内 Header、分组标题、当前应用与接入状态文字。顶部是通用头像和「账号」；中间只列出其它 ALOHA 应用，单项只有品牌图标和应用名，一行最多四个；未接入应用整体置灰且不可点击。底部仅保留「隐私与授权」「帮助」。
+- **导航和所有权**：账号、隐私、帮助和已接入的应用均从 Hub **新 Tab 打开**，不使用 Health 内部路由。删除 Health 原型之前加入的「账号与安全」「通用设置」「隐私与授权」「帮助与反馈」详情页，不保留假登录或假授权；这些完整页面未来由独立的 ALOHA 公共页面统一承担。当前没有已验证的公共目标地址，Health 通过 `VITE_ALOHA_ACCOUNT_URL`、`VITE_ALOHA_PRIVACY_URL`、`VITE_ALOHA_HELP_URL` 预留外部链接，未配置时使用不具备点击行为的占位入口，不生成假页面或假跳转。其它应用的可用地址分别通过 `VITE_ALOHA_ASSISTANT_URL`、`VITE_ALOHA_FINANCE_URL`、`VITE_ALOHA_THINGS_URL` 配置；仅验证并接入后才填入。
+- **Desktop / Mobile**：Desktop 从左上角 ALOHA Logo 展开无标题 Popover，点击空白区域或 Escape 关闭；Mobile 保留底部「更多」Tab，呈现账号、2×2 应用网格、隐私/帮助单列，不再展示标题或公共详情页。两端共用相同的数据和链接规则，保留 Health Agent 工作状态。
+- **共享范围和验收**：先在 Health Draft PR #36 验证，下一真实 PWA 接入时上移标准 Hub；不增加 LifeSpace schema 或公共页的假实现。测试涵盖排除当前应用、未配置时不可跳转、已配置的外链新开 Tab；仍需 Desktop/Mobile 视觉测试和 CI。
 ## 2026-10-28 · HealthObservation UX 与来源字段收敛
 
 - 观测记录移除 `status`、`interpretation`、`sourceNote`，不仅隐藏输入框，还移除原型的数据类型、初始数据、详情/历史状态文案、参考范围过滤与校验中依赖的状态判断。手工新增立即成为正式观测；误录可直接编辑或删除。原型本身不提供真实持久化或 Change History；未来由 LifeSpace Change / Operation Attribution 承担真实记录变更归因。
