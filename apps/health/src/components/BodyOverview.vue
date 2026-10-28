@@ -200,6 +200,19 @@ function confirmPlacement(){
 :global(.body-overview) { container-type:inline-size; }
 .body-explorer {display:grid;grid-template-columns:minmax(0,1.05fr) minmax(19rem,.95fr);gap:var(--health-page-gap);align-items:start;}
 .body-figure-card,.body-explorer-aside {min-width:0;}
+.body-figure-card {container:bodyfigure / inline-size;}
+.body-map-pair {display:grid;grid-template-columns:minmax(0,1fr);width:100%;}
+.body-map-figure {display:none;flex-direction:column;align-items:center;min-width:0;}
+.body-map-figure.is-current {display:flex;}
+.body-figure-label {display:none;align-items:center;justify-content:center;gap:.55rem;margin:0 0 .35rem;color:var(--health-muted);font-size:var(--health-type-caption);}
+.body-figure-label small {color:var(--health-brand-strong);font-size:inherit;}
+@container bodyfigure (min-width:32rem) {
+  .body-view-switch {display:none;}
+  .body-map-pair {grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem;}
+  .body-map-figure {display:flex;}
+  .body-figure-label {display:flex;}
+  .body-silhouette {width:min(100%,10.5rem);}
+}
 .body-explorer-aside {display:grid;gap:var(--health-page-gap);}
 .body-view-switch {display:flex;align-items:center;gap:.3rem;margin:0 0 .5rem;}
 .body-view-switch button {display:flex;align-items:center;gap:.4rem;min-height:2.5rem;padding:.5rem .9rem;background:transparent;border:1px solid var(--health-border);border-radius:var(--health-radius-pill);font-size:var(--health-type-label);color:var(--health-muted);font-weight:650;}
@@ -213,10 +226,17 @@ function confirmPlacement(){
 .body-interior,.body-artwork {position:absolute;inset:0;display:block;width:100%;height:100%;pointer-events:none;user-select:none;}
 .body-artwork {object-fit:contain;}
 .body-region-marker {position:absolute;z-index:2;display:grid;place-items:center;width:2.75rem;height:2.75rem;border:0;background:transparent;border-radius:50%;transform:translate(-50%,-50%);padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent;}
-.body-hotspot-dot {display:block;width:.5rem;height:.5rem;border-radius:50%;background:var(--health-brand);border:1px solid var(--health-surface);box-shadow:0 0 0 2px var(--health-surface);pointer-events:none;}
-.body-region-marker:focus-visible .body-hotspot-dot {box-shadow:0 0 0 3px color-mix(in srgb,var(--health-brand) 23%,transparent),0 0 0 8px color-mix(in srgb,var(--health-brand) 8%,transparent);}
-@media(hover:hover) and (pointer:fine) {.body-region-marker:hover .body-hotspot-dot {box-shadow:0 0 0 3px color-mix(in srgb,var(--health-brand) 23%,transparent),0 0 0 8px color-mix(in srgb,var(--health-brand) 8%,transparent);}}
-.body-region-marker.selected .body-hotspot-dot {box-shadow:0 0 0 3px color-mix(in srgb,var(--health-brand) 24%,transparent),0 0 0 7px color-mix(in srgb,var(--health-brand) 8%,transparent);}
+.body-hotspot-dot {
+  display:block;width:.625rem;height:.625rem;border-radius:50%;
+  background:var(--body-dot-color,var(--health-attention-unset));
+  border:1px solid var(--health-surface);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--body-dot-color) 13%,transparent),
+             0 0 0 8px color-mix(in srgb,var(--body-dot-color) 5%,transparent);
+  pointer-events:none;
+}
+.body-region-marker:focus-visible .body-hotspot-dot {box-shadow:0 0 0 4px color-mix(in srgb,var(--body-dot-color) 24%,transparent),0 0 0 9px color-mix(in srgb,var(--body-dot-color) 9%,transparent);}
+@media(hover:hover) and (pointer:fine) {.body-region-marker:hover .body-hotspot-dot {box-shadow:0 0 0 4px color-mix(in srgb,var(--body-dot-color) 23%,transparent),0 0 0 10px color-mix(in srgb,var(--body-dot-color) 8%,transparent);}}
+.body-region-marker.selected .body-hotspot-dot {box-shadow:0 0 0 4px color-mix(in srgb,var(--body-dot-color) 30%,transparent),0 0 0 9px color-mix(in srgb,var(--body-dot-color) 11%,transparent);}
 .body-region-marker:focus-visible {outline:2px solid var(--health-brand);outline-offset:1px;}
 .body-map-position-layer {position:absolute;inset:0;z-index:4;width:100%;height:100%;border:0;background:color-mix(in srgb,var(--health-brand-subtle) 11%,transparent);cursor:crosshair;display:grid;place-items:end center;padding:var(--aloha-space-2);}
 .body-map-position-layer span {background:var(--health-surface);color:var(--health-brand-strong);padding:.3rem .6rem;border-radius:var(--health-radius-pill);font-size:var(--health-type-caption);pointer-events:none;}
@@ -236,13 +256,24 @@ function confirmPlacement(){
 .body-region-card-heading h2,.card-heading h2 {margin:0;font-size:var(--health-type-section);font-weight:680;}
 .body-concern-item {display:flex;align-items:center;gap:.2rem;border-bottom:1px solid var(--health-border-soft);}
 .body-concern-item:last-child {border-bottom:0;}
-.body-concern-item.selected {background:var(--health-brand-subtle);border-radius:var(--health-radius-control);}
+.body-concern-item.selected {background:transparent;box-shadow:inset 3px 0 0 var(--health-brand);border-radius:var(--health-radius-control);}
 .body-concern-open {display:flex;align-items:center;gap:.6rem;flex:1;min-width:0;border:0;text-align:left;background:transparent;color:var(--health-ink);padding:.65rem .2rem;}
 .body-concern-open:hover .row-main b {color:var(--health-brand-strong);}
+.body-attention-label {display:inline-flex;align-items:center;gap:.35rem;margin-top:.18rem;font-size:var(--health-type-caption);color:var(--health-muted);}
+.body-attention-label i {display:inline-block;flex:none;width:.45rem;height:.45rem;border-radius:50%;background:var(--body-dot-color);}
 .body-concern-pin {display:grid;place-items:center;flex:none;width:2.75rem;height:2.75rem;border:0;border-radius:var(--health-radius-control);color:var(--health-muted);background:transparent;}
 .body-concern-pin:hover,.body-concern-pin:focus-visible {color:var(--health-brand-strong);background:var(--health-brand-subtle);}
 .body-region-empty {margin:.8rem 0 0;color:var(--health-muted);font-size:var(--health-type-body);line-height:1.6;}
 @container (max-width:51rem){.body-explorer{grid-template-columns:minmax(0,1fr)}.body-map-canvas{min-height:21rem}.body-silhouette{width:min(100%,14rem)}}
 @media(max-width:47.999rem){.body-explorer{grid-template-columns:minmax(0,1fr)}.body-map-canvas{min-height:19rem}.body-silhouette{width:min(100%,13.5rem)}}
-@media(prefers-reduced-motion:no-preference){.body-hotspot-dot{transition:box-shadow var(--health-motion) ease}}
+@media(prefers-reduced-motion:no-preference){
+  .body-hotspot-dot {transition:box-shadow var(--health-motion) ease;}
+  .body-region-marker.selected .body-hotspot-dot {animation:health-attention-breathe 3s ease-in-out infinite;}
+}
+@keyframes health-attention-breathe {
+  0%,100% {box-shadow:0 0 0 4px color-mix(in srgb,var(--body-dot-color) 30%,transparent),
+                      0 0 0 9px color-mix(in srgb,var(--body-dot-color) 11%,transparent);}
+  50% {box-shadow:0 0 0 5px color-mix(in srgb,var(--body-dot-color) 27%,transparent),
+                   0 0 0 12px color-mix(in srgb,var(--body-dot-color) 7%,transparent);}
+}
 </style>
