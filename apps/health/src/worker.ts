@@ -2,7 +2,13 @@
  * ALOHA Health same-origin BFF. The browser never receives LifeSpace credentials.
  * Identity verifies the raw Access assertion; Core owns Space/Model/Grant authorization.
  */
+import {
+  listConcernPresentations, parsePresentationPatch, removeConcernPresentation,
+  setConcernPresentation, type PresentationDatabase, type PresentationScope,
+} from './health-presentation'
+
 export interface HealthEnv {
+  PRESENTATION_DB?: PresentationDatabase
   ASSETS?: { fetch(request: Request): Promise<Response> }
   LIFESPACE_IDENTITY_BASE_URL?: string
   LIFESPACE_CORE_BASE_URL?: string
@@ -37,6 +43,13 @@ function routeFor(url: URL, method: string): Route | null {
   const ownPerson = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/own-person$/.exec(p)
   if (ownPerson && method === 'GET')
     return { spaceId: ownPerson[1], path: '@own-person' }
+  const presentationList = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/presentation\/concerns$/.exec(p)
+  if (presentationList && method === 'GET')
+    return { spaceId:presentationList[1],path:'@presentation-list' }
+  const presentationDetail = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/presentation\/concerns\/([A-Za-z0-9_-]+)$/.exec(p)
+  if(presentationDetail && recordPattern.test(presentationDetail[2]!) &&
+    ['PATCH','DELETE'].includes(method))
+    return { spaceId:presentationDetail[1],recordId:presentationDetail[2],path:'@presentation-detail' }
   const record = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/models\/([a-z_]+)\/records(?:\/([A-Za-z0-9_-]+))?$/.exec(p)
   if (!record || !spacePattern.test(record[1]!) || !modelKeys.has(record[2]!)) return null
   const [, spaceId, modelKey, recordId] = record
@@ -96,9 +109,10 @@ async function getRecord(
   if (!object(result) || !object(result.data)) return json('invalid_core_response', 502)
   return result.data
 }
-// Resolve the currently authenticated user's linked Space Person from Core.
-// Do not allow the Health UI to select another person's health subject.
-async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string):Promise<Response> {
+// Resolve authority only from the verified current User, never browser-provided IDs.
+async function resolveOwnIdentity(
+  fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,
+):Promise<PresentationScope|Response> {
   const headers={Authorization:`Bearer ${bearer}`,Accept:'application/json'}
   const [profile,members]=await Promise.all([
     send(fetchImpl,core+'/api/v1/me',{method:'GET',headers}),
@@ -116,7 +130,52 @@ async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:str
   const member=list.find((m:unknown)=>object(m)&&m.userId===principal.id)
   if(!object(member)||typeof member.personId!=='string'||!/^per_[A-Za-z0-9_-]+$/.test(member.personId))
     return json('own_person_not_linked',409)
-  return Response.json({data:{personId:member.personId}},{headers:{'Cache-Control':'no-store'}})
+  return {spaceId,userId:principal.id,personId:member.personId}
+}
+
+async function handlePresentation(
+  request:Request,env:HealthEnv,fetchImpl:Fetcher,core:string,bearer:string,route:Route,
+):Promise<Response> {
+  if(!env.PRESENTATION_DB) return json('presentation_storage_not_configured',503)
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
+  if(scope instanceof Response) return scope
+  const corePath='/api/v1/spaces/'+scope.spaceId+'/models/health_concern/records'
+  if(route.path==='@presentation-list' || request.method==='DELETE') {
+    // A current Core model read authorization is required even for application-only data.
+    const authorization=await send(fetchImpl,core+corePath+'?limit=1',{
+      method:'GET',headers:{Authorization:`Bearer ${bearer}`,Accept:'application/json'},
+    })
+    if(!authorization.ok) return proxyResponse(authorization)
+  } else {
+    const concern=await getRecord(fetchImpl,core,bearer,corePath+'/'+route.recordId)
+    if(concern instanceof Response) return concern
+    if(concern.subjectPersonId!==scope.personId) return json('concern_not_owned',403)
+  }
+  try {
+    if(route.path==='@presentation-list')
+      return Response.json({data:{items:await listConcernPresentations(env.PRESENTATION_DB,scope)}},
+        {headers:{'Cache-Control':'no-store'}})
+    if(request.method==='DELETE') {
+      await removeConcernPresentation(env.PRESENTATION_DB,scope,route.recordId!)
+      return new Response(null,{status:204,headers:{'Cache-Control':'no-store'}})
+    }
+    if(!request.headers.get('Content-Type')?.includes('application/json')) return json('json_required',415)
+    if(Number(request.headers.get('Content-Length')??0)>8192) return json('payload_too_large',413)
+    const body=await request.text()
+    if(body.length>8192) return json('payload_too_large',413)
+    let payload:unknown
+    try { payload=JSON.parse(body) } catch { return json('invalid_json',400) }
+    let patch
+    try { patch=parsePresentationPatch(payload,route.recordId!) }
+    catch { return json('presentation_invalid',422) }
+    const saved=await setConcernPresentation(env.PRESENTATION_DB,scope,route.recordId!,patch)
+    return Response.json({data:saved},{headers:{'Cache-Control':'no-store'}})
+  } catch { return json('presentation_storage_unavailable',503) }
+}
+async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string):Promise<Response> {
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId)
+  if(scope instanceof Response) return scope
+  return Response.json({data:{personId:scope.personId}},{headers:{'Cache-Control':'no-store'}})
 }
 const filled = (v: unknown) => v !== null && v !== undefined && v !== ''
 function validBounds(v: JsonObject): boolean {
@@ -179,6 +238,8 @@ export async function handleHealthApi(
   const bearer = await exchange(fetchImpl, identity, credential, assertion)
   if (bearer instanceof Response) return bearer
   if(route.path==='@own-person') return ownPerson(fetchImpl,core,bearer,route.spaceId!)
+  if(route.path.startsWith('@presentation-'))
+    return handlePresentation(request,env,fetchImpl,core,bearer,route)
   let body: string | undefined
   let parsed: JsonObject | undefined
   if (request.method === 'POST' || request.method === 'PATCH' || request.method === 'DELETE') {
