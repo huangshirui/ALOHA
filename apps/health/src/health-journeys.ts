@@ -1,7 +1,7 @@
 /** UX navigation/action policy for the first seven health models.
  * The labels describe what the user does; no database/model vocabulary is shown.
  */
-export type BodySection = 'overview'|'concerns'|'metrics'|'timeline'|'documents'|'regimens'
+export type BodySection = 'focus'|'metrics'|'timeline'|'documents'|'regimens'
 export type CreationAction = 'observation'|'event'|'assessment'|'concern'|'metric'|'document'|'regimen'
 export interface CreateChoice { id: CreationAction; label: string; hint: string }
 
@@ -17,9 +17,8 @@ export type PrimaryAction =
 
 export function primaryAction(section:BodySection):PrimaryAction {
   switch(section) {
-    case 'overview': return {mode:'direct',label:'添加健康问题',action:'concern'}
+    case 'focus': return {mode:'direct',label:'添加关注',action:'concern'}
     case 'timeline': return {mode:'menu',label:'新增记录',choices:recordChoices}
-    case 'concerns': return {mode:'direct',label:'添加健康问题',action:'concern'}
     case 'metrics': return {mode:'direct',label:'新增指标',action:'metric'}
     case 'documents': return {mode:'direct',label:'添加资料',action:'document'}
     case 'regimens': return {mode:'direct',label:'新建方案',action:'regimen'}
