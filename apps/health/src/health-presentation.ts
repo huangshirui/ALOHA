@@ -107,7 +107,7 @@ export async function setConcernPresentation(
     'asset_id=CASE WHEN ?=1 THEN excluded.asset_id ELSE health_concern_presentation.asset_id END, '+
     'x=CASE WHEN ?=1 THEN excluded.x ELSE health_concern_presentation.x END, '+
     'y=CASE WHEN ?=1 THEN excluded.y ELSE health_concern_presentation.y END, '+
-    'updated_at=strftime("%Y-%m-%dT%H:%M:%fZ","now")'
+    'updated_at=CURRENT_TIMESTAMP'
   ).bind(scope.spaceId,scope.userId,scope.personId,concernId,
     patch.attention??'unset',position?.view??null,position?.assetId??null,
     position?.point.x??null,position?.point.y??null,
