@@ -19,7 +19,7 @@ const activeKey=ref('')
 const active=computed<TrendPoint|null>(()=>chart.value.points.find(p=>p.key===activeKey.value)??chart.value.points.at(-1)??null)
 function choosePoint(key:string){activeKey.value=key}
 function formatValue(v:number){return Number(v.toFixed(2)).toLocaleString('zh-CN',{maximumFractionDigits:2})}
-const periodLabel=computed(()=>mode.value==='day'?'当天':'当月':'当年')
+const periodLabel=computed(()=>mode.value==='day'?'当天':mode.value==='month'?'当月':'当年')
 const chartDescription=computed(()=>{
  const pts=chart.value.points
  if(!pts.length)return props.metricName+'：暂无数值记录'
