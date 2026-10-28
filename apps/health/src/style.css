@@ -526,3 +526,13 @@
   }
   .health-shell .detail-edit-button .detail-edit-label { display:none; }
 }
+
+/* Focus / 关注度 is a user preference, not an inferred clinical severity.
+   Apply color only to dots and short labels, never whole cards. */
+.concern-attention-value {display:inline-flex;align-items:center;gap:.5rem;min-width:0;}
+.concern-attention-dot {display:inline-block;width:.55rem;height:.55rem;flex:none;border-radius:50%;background:var(--body-dot-color,var(--health-attention-unset));}
+.concern-attention-select {
+  max-width:10rem;min-height:2.4rem;padding:.4rem 2.25rem .4rem .6rem;
+  border:1px solid var(--health-border);border-radius:var(--health-radius-control);
+  background-color:var(--health-surface);color:var(--health-ink);font-size:var(--health-type-body);
+}
