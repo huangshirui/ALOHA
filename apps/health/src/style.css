@@ -573,3 +573,23 @@
 .metric-list-result {display:flex;flex-direction:column;align-items:flex-end;gap:.2rem;min-width:0;flex:none;}
 .metric-list-result .reference-comparison {align-self:flex-end;white-space:nowrap;}
 @media(max-width:47.999rem){.metric-list-result .reference-comparison {font-size:.67rem;}}
+
+/* Search and reference status refine the same metric list. */
+.metric-reference-filters {
+ display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;padding:.4rem .15rem .75rem;
+ border-bottom:1px solid var(--health-border-soft);margin-bottom:.25rem;
+}
+.metric-reference-filters button {
+ display:inline-flex;align-items:center;gap:.4rem;min-height:2.3rem;
+ padding:.45rem .72rem;border:1px solid transparent;
+ border-radius:var(--health-radius-pill);background:transparent;
+ color:var(--health-muted);font-size:var(--health-type-label);font-weight:570;
+}
+.metric-reference-filters button.active {
+ background:var(--health-brand-subtle);color:var(--health-brand-strong);
+ border-color:color-mix(in srgb,var(--health-brand) 20%,var(--health-border));
+}
+.metric-reference-filters button small {font-size:var(--health-type-caption);font-variant-numeric:tabular-nums;color:inherit;opacity:.78}
+.metric-reference-filters button:hover:not(.active) {background:var(--health-surface-secondary);color:var(--health-ink)}
+.metric-reference-filters button:focus-visible {outline:2px solid var(--health-brand);outline-offset:2px}
+.metric-reference-empty {padding:1.2rem .65rem}
