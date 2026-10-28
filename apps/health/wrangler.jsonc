@@ -3,6 +3,7 @@
   "name": "aloha-app-health",
   "compatibility_date": "2026-10-03",
   "workers_dev": true,
+  "keep_vars": true,
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application",
