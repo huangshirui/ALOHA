@@ -22,7 +22,7 @@ import {
 } from './demo-model'
 
 type Tab = 'home' | 'body' | 'food' | 'movement' | 'more'
-type BodyTab = 'overview' | 'concerns' | 'metrics' | 'timeline' | 'documents' | 'regimens'
+type BodyTab = 'focus' | 'metrics' | 'timeline' | 'documents' | 'regimens'
 type Sheet = '' | 'edit' | 'import'
 type RecordView = { kind: HealthKind; id: string }
 const alohaApps = [
@@ -44,8 +44,7 @@ const navItems = [
   { id: 'more' as Tab, title: '更多', icon: LayoutGrid },
 ]
 const bodyTabs = [
-  { id: 'overview' as BodyTab, title: '概览' },
-  { id: 'concerns' as BodyTab, title: '健康问题' },
+  { id: 'focus' as BodyTab, title: '关注' },
   { id: 'metrics' as BodyTab, title: '指标' },
   { id: 'timeline' as BodyTab, title: '时间线' },
   { id: 'documents' as BodyTab, title: '资料' },
@@ -62,7 +61,9 @@ const kindCollection: Record<HealthKind, keyof ReturnType<typeof seedDemo>> = {
 const kindIcon = { concern: Heart, metric: Activity, observation: ClipboardCheck, event: CalendarDays, document: FileText, assessment: BadgeCheck, regimen: ListChecks }
 const demo = reactive(seedDemo())
 const activeTab = ref<Tab>('home')
-const bodyTab = ref<BodyTab>('overview')
+const bodyTab = ref<BodyTab>('focus')
+const mapView = ref<BodyView>('front')
+const mapSelectedConcern = ref<string|null>(null)
 const bodyBindings = ref<BodyMapBinding[]>(seedBodyBindings())
 const selected = ref<RecordView | null>(null)
 const routeStack = ref<HealthLocation[]>([])
@@ -109,7 +110,6 @@ const timeline = computed(() => [
   ...demo.events.map(e=>({ id:e.id,kind:'event' as HealthKind,date:e.date,title:e.summary,meta:eventName(e) })),
   ...demo.assessments.map(a=>({ id:a.id,kind:'assessment' as HealthKind,date:a.assessedDate,title:a.title,meta:'评估记录' })),
 ].sort((a,b)=>b.date.localeCompare(a.date)))
-const filteredConcerns = computed(()=>demo.concerns.filter(c=>c.name.includes(search.value) || c.summary.includes(search.value)))
 const filteredMetrics = computed(()=>demo.metrics.filter(m=>m.name.includes(search.value)))
 const filteredDocuments = computed(()=>demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
 const filteredRegimens = computed(()=>demo.regimens.filter(r=>r.name.includes(search.value)))
@@ -141,7 +141,7 @@ function location(): HealthLocation {
 }
 function navigate(tab: Tab) {
   routeStack.value=[]
-  activeTab.value=tab; selected.value=null; sheet.value=''; bodyTab.value='overview'; search.value=''
+  activeTab.value=tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body');bodyTab.value=tab }
@@ -359,10 +359,10 @@ function detailName(kind: HealthKind,record:any) {
             <section class="hero-card">
               <div class="hero-head"><span>健康概览</span><span>持续关注的内容</span></div>
               <div class="hero-main"><div><h2>{{ activeConcerns.length }} 项正在关注</h2><p>记录已经开始。这里会随着健康资料和日常记录逐步丰富。</p></div><HeartPulse class="hero-watermark" :size="92" :stroke-width="1"/></div>
-              <div class="hero-stats"><button type="button" @click="openBody('concerns')"><b>{{ activeConcerns.length }}</b><span>关注事项 <ChevronRight :size="15"/></span></button><button type="button" @click="openBody('documents')"><b>{{ docCount }}</b><span>资料 <ChevronRight :size="15"/></span></button><button type="button" @click="openBody('timeline')"><b>{{ demo.observations.length }}</b><span>测量记录 <ChevronRight :size="15"/></span></button></div>
+              <div class="hero-stats"><button type="button" @click="openBody('focus')"><b>{{ activeConcerns.length }}</b><span>关注事项 <ChevronRight :size="15"/></span></button><button type="button" @click="openBody('documents')"><b>{{ docCount }}</b><span>资料 <ChevronRight :size="15"/></span></button><button type="button" @click="openBody('timeline')"><b>{{ demo.observations.length }}</b><span>测量记录 <ChevronRight :size="15"/></span></button></div>
             </section>
             <section class="ui-card focus-panel">
-              <div class="card-heading"><div><span class="eyebrow">持续关注</span><h2>正在关注的健康问题</h2></div><button class="inline-link" type="button" @click="openBody('concerns')">查看全部 <ArrowUpRight :size="15"/></button></div>
+              <div class="card-heading"><div><span class="eyebrow">持续关注</span><h2>正在关注的健康问题</h2></div><button class="inline-link" type="button" @click="openBody('focus')">查看全部 <ArrowUpRight :size="15"/></button></div>
               <button v-for="c in activeConcerns.slice(0,3)" :key="c.id" type="button" class="row-link" @click="show('concern',c.id)">
                 <span class="list-icon"><Heart :size="19"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary || '点击查看关联的健康记录' }}</small></span><ChevronRight :size="18" class="subtle-icon"/>
               </button>
@@ -503,10 +503,14 @@ function detailName(kind: HealthKind,record:any) {
             <nav class="sub-navigation" aria-label="身体页面导航">
               <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="changeBodyTab(item.id)">{{ item.title }}</button>
             </nav>
-            <div v-if="bodyTab==='overview'" class="body-overview">
+            <div v-if="bodyTab==='focus'" class="body-overview">
               <BodyOverview
                 :concerns="demo.concerns"
                 :bindings="bodyBindings"
+                :view="mapView"
+                :selected-concern-id="mapSelectedConcern"
+                @update:view="mapView=$event"
+                @update:selected-concern-id="mapSelectedConcern=$event"
                 @open-concern="show('concern',$event)"
                 @place-point="assignConcernPoint"
               />
@@ -517,12 +521,11 @@ function detailName(kind: HealthKind,record:any) {
                   aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
               </div>
               <div class="list-panel">
-                <template v-if="bodyTab==='concerns'"><button v-for="c in filteredConcerns" :key="c.id" class="list-row" type="button" @click="show('concern',c.id)"><span class="list-icon"><Heart :size="19"/></span><span class="row-main"><b>{{ c.name }}</b><small>{{ c.summary||'持续记录和回顾' }}</small></span><span class="status-chip">{{ c.status==='active'?'关注中':'已结束' }}</span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='metrics'"><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='timeline'"><button v-for="e in filteredTimeline" :key="e.kind+e.id" class="list-row" type="button" @click="show(e.kind,e.id)"><span class="list-icon"><component :is="kindIcon[e.kind]" :size="19"/></span><span class="row-main"><b>{{ e.title }}</b><small>{{ e.meta }} · {{ displayDate(e.date) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
-                <div v-if="(bodyTab==='concerns'&&!filteredConcerns.length)||(bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='timeline'&&!filteredTimeline.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length)" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
+                <div v-if="(bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='timeline'&&!filteredTimeline.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length)" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
               </div>
               <p v-if="bodyTab==='documents'" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
             </template>
@@ -535,7 +538,7 @@ function detailName(kind: HealthKind,record:any) {
               :agent-open="agentOpen"
             
             @ask="openAgent"/>
-          <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('overview')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
+          <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('focus')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
         <section v-else class="more-view">
           <HealthPageHeader title="更多" subtitle="应用、账号与设置"
             :agent-open="agentOpen" @ask="openAgent"/>
