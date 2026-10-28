@@ -590,7 +590,12 @@ function detailName(kind: HealthKind,record:any) {
                   aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
               </div>
               <div class="list-panel">
-                <template v-if="bodyTab==='metrics'"><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong><ChevronRight :size="18"/></button></template>
+                <template v-if="bodyTab==='metrics'"><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong>
+                    <small v-if="latestFor(m.id) && referenceLabel(latestFor(m.id)!,m)"
+                      class="reference-comparison" :class="'reference-'+referenceFor(latestFor(m.id)!,m)?.comparison?.position">
+                      {{ referenceLabel(latestFor(m.id)!,m) }}
+                    </small>
+                  </span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='timeline'">
                   <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
                     @update:selected-kind="timelineKind=$event" @open="show"/>
