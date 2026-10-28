@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { ChevronRight, HeartPulse, Info, MapPin, CircleDot, X } from 'lucide-vue-next'
+import { ChevronRight, HeartPulse, Info, MapPin, CircleDot } from 'lucide-vue-next'
 import {
   countForView, isPointOnBody, normalizedPoint, unmappedConcerns, visibleHotspots,
   type BodyMapBinding, type BodyMapConcern, type BodyPoint, type BodyView,
@@ -12,6 +12,7 @@ const emit=defineEmits<{
   placePoint:[id:string,view:BodyView,point:BodyPoint]
 }>()
 const imageSrc=import.meta.env.BASE_URL+'body-front-outline.svg'
+const sides:BodyView[]=['front','back']
 const view=ref<BodyView>('front')
 const selectedConcern=ref<string|null>(null)
 const locatingConcern=ref<string|null>(null)
@@ -81,7 +82,7 @@ function confirmPlacement(){
   <div ref="explorerEl" class="body-explorer">
     <section class="ui-card body-figure-card" aria-label="健康关注位置图">
       <div class="body-view-switch" role="group" aria-label="人体视图">
-        <button v-for="side in (['front','back'] as const)" :key="side" type="button"
+        <button v-for="side in sides" :key="side" type="button"
           :class="{active:view===side}" :aria-pressed="view===side" @click="switchView(side)">
           {{ side==='front'?'正面':'背面' }}
           <span class="body-view-count" :class="{hasItems:counts[side]>0}">{{ counts[side] }}</span>
