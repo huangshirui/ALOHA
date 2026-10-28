@@ -542,7 +542,14 @@
 .metric-detail-layout { align-items:start; }
 @media (min-width:75rem) {
   .detail-columns.metric-detail-layout {
-    grid-template-columns:minmax(0,1.22fr) minmax(16rem,.78fr);
+    grid-template-columns:minmax(0,1.65fr) minmax(16rem,.75fr);
+  }
+}
+/* The AI dock takes real width from the workspace.
+   Prefer a wide chart above history instead of squeezed two-column charts. */
+@media (min-width:60rem) {
+  .health-shell.agent-open .detail-columns.metric-detail-layout {
+    grid-template-columns:minmax(0,1fr);
   }
 }
 
