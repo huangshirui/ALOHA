@@ -2,6 +2,14 @@
 
 > 仅供体验和评审。所有启动数据均为虚构示例；新增内容只保存在当前页面内存中，刷新即恢复。不接入 LifeSpace、真实 AI 或任何健康数据接口。
 
+## 2026-10-28 · HealthObservation UX 与来源字段收敛
+
+- 观测记录移除 `status`、`interpretation`、`sourceNote`，不仅隐藏输入框，还移除原型的数据类型、初始数据、详情/历史状态文案、参考范围过滤与校验中依赖的状态判断。手工新增立即成为正式观测；误录可直接编辑或删除。原型本身不提供真实持久化或 Change History；未来由 LifeSpace Change / Operation Attribution 承担真实记录变更归因。
+- 原始报告标记不在观测上复制一个有限枚举；当观测有关联的 `sourceDocumentId` 时，在详情通过「关联资料 → 原始资料」进入 HealthDocument。演示上传仍不读取文件内容，因而不能声称能显示报告里的原始标记。
+- 模拟报告导入在用户勾选示例值并完成最终确认之前，不会创建 HealthObservation；只有确认后才加入观测和资料关联，不产生 `preliminary` 状态。未勾选则只创建文档记录；示例测量明确为虚构。
+- 保留观测日期、数值、单位、备注、`sourceDocumentId` 与本次参考范围/来源 `referenceSource`。指标自身默认参考范围来源也保留；它是参考上下限依据，不是被移除的自由文本 `sourceNote`。本次只针对 HealthObservation；健康评估、干预方案等其他记录的状态不改。
+- LifeSpace Information Provenance 仍为 concept-only，不引入通用 Provenance 字段；原型的决定记录在 ALOHA「99 · 架构演进与决策日志」。
+
 ## 时间轴式「时间线」（2026-10-28）
 
 - 时间线从扁平列表调整为按年/月、日分组的**纵向时间轴**，左日期栏、中央连接线/小节点、右轻量记录行；同日多条测量、事件和评估在同一日期组下，不重复日期标题。
