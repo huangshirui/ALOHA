@@ -2,6 +2,11 @@
  * Missing days/months/years are connected visually, never manufactured.
  */
 export type MetricGranularity='day'|'month'|'year'
+export const TREND_CHART_HEIGHT=320
+export const TREND_CHART_LEFT=64
+export const TREND_CHART_RIGHT_PADDING=22
+export const TREND_CHART_Y_LABEL_X=54
+export const TREND_CHART_X_LABEL_Y=305
 export interface NumericObservation {
  id:string;observedDate:string;valueNumber:number|null;status:string
 }
@@ -69,10 +74,10 @@ export function smoothPath(points:ReadonlyArray<{x:number;y:number}>):string {
  }
  return path
 }
-export function buildTrendChart(raw:ReadonlyArray<NumericObservation>,g:MetricGranularity,width=680,height=224):TrendChart{
+export function buildTrendChart(raw:ReadonlyArray<NumericObservation>,g:MetricGranularity,width=680,height=TREND_CHART_HEIGHT):TrendChart{
  const aggregate=aggregateTrend(raw,g)
  if(!aggregate.length)return {points:[],path:'',ticks:[],yTicks:[],domain:null}
- const left=52,right=width-20,top=22,bottom=height-37
+ const left=TREND_CHART_LEFT,right=width-TREND_CHART_RIGHT_PADDING,top=26,bottom=height-46
  const values=aggregate.map(p=>p.value)
  const vmin=Math.min(...values),vmax=Math.max(...values)
  const padding=(vmax-vmin||Math.max(1,Math.abs(vmax)*.06))*.15
@@ -82,7 +87,7 @@ export function buildTrendChart(raw:ReadonlyArray<NumericObservation>,g:MetricGr
  const xFor=(v:number)=>first===last?(left+right)/2:left+(v-first)/(last-first)*(right-left)
  const yFor=(v:number)=>bottom-(v-min)/(max-min)*(bottom-top)
  const points=aggregate.map((p,i)=>({...p,x:round(xFor(time[i]!)),y:round(yFor(p.value))}))
- const maxTicks=5
+ const maxTicks=width<440?3:width<620?4:5
  const tickPositions=aggregate.length<=maxTicks?aggregate.map((p,i)=>i):
   Array.from(new Set(Array.from({length:maxTicks},(_,i)=>Math.round(i*(aggregate.length-1)/(maxTicks-1)))))
  const ticks=tickPositions.map(i=>({key:points[i]!.key,label:points[i]!.label,x:points[i]!.x}))
