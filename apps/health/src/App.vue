@@ -70,7 +70,8 @@ const kindCollection: Record<HealthKind, keyof ReturnType<typeof seedDemo>> = {
 }
 const kindIcon = { concern: Heart, metric: Activity, observation: ClipboardCheck, event: CalendarDays, document: FileText, assessment: BadgeCheck, regimen: ListChecks }
 const demo = reactive(seedDemo())
-const activeTab = ref<Tab>('home')
+// The Home slot is reserved for a future cross-domain overview; land on Body for now.
+const activeTab = ref<Tab>('body')
 const bodyTab = ref<BodyTab>('focus')
 const mapView = ref<BodyView>('front')
 const mapSelectedConcern = ref<string|null>(null)
@@ -178,7 +179,7 @@ function location(): HealthLocation {
 }
 function navigate(tab: Tab) {
   routeStack.value=[]
-  activeTab.value=tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
+  activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body');bodyTab.value=tab }
