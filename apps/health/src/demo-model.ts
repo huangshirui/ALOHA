@@ -26,6 +26,9 @@ export interface Metric {
   name: string
   valueType: MetricValueType
   defaultUnit: string
+  referenceLow?:number|null
+  referenceHigh?:number|null
+  referenceSource?:string
 }
 export interface Observation extends SharedRecord {
   metricId: string
@@ -35,6 +38,9 @@ export interface Observation extends SharedRecord {
   valueBoolean: boolean | null
   unit: string
   interpretation: string
+  referenceLow?:number|null
+  referenceHigh?:number|null
+  referenceSource?:string
   status: ObservationStatus
   sourceDocumentId: string
   sourceNote: string
@@ -160,8 +166,8 @@ export function buildObservationValue(metric: Metric, raw: string): Pick<Observa
 export function makeEmpty(kind: HealthKind, date: string): Record<string, unknown> {
   switch (kind) {
     case 'concern': return { name:'',summary:'',status:'active',onsetDate:'',resolvedDate:'',notes:'',concernIds:[] }
-    case 'metric': return { name:'',valueType:'number',defaultUnit:'' }
-    case 'observation': return { metricId:'',observedDate:date,value:'',unit:'',interpretation:'',status:'final',sourceDocumentId:'',sourceNote:'',notes:'',concernIds:[] }
+    case 'metric': return { name:'',valueType:'number',defaultUnit:'',referenceLow:'',referenceHigh:'',referenceSource:'' }
+    case 'observation': return { metricId:'',observedDate:date,value:'',unit:'',interpretation:'',referenceLow:'',referenceHigh:'',referenceSource:'',status:'final',sourceDocumentId:'',sourceNote:'',notes:'',concernIds:[] }
     case 'event': return { eventType:'visit',summary:'',date,timeStart:'',timeEnd:'',location:'',description:'',status:'active',concernIds:[] }
     case 'document': return { title:'',documentType:'lab_report',issuedDate:date,issuerName:'',eventId:'',fileName:'',notes:'',concernIds:[] }
     case 'assessment': return { title:'',content:'',assessedDate:date,status:'final',sourceNote:'',notes:'',basisIds:[],concernIds:[] }
