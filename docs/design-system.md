@@ -26,6 +26,8 @@ Each PWA keeps its own install name, path, icon and accent while remaining visua
 
 The accent differentiates surfaces; neutral colors, typography rhythm, spacing, radii, elevation and interaction feedback remain shared.
 
+**App identity vs UI accent / 应用身份与界面主题色分离：** App icon assets represent a PWA's brand independently of its interactive accent. In ALOHA Health, the red/pink heart app icon is reused unchanged in the browser tab, install icon, Health sidebar/Hub logo and the Health entry in the ALOHA app switcher; navigation, selected states, buttons and functional diagrams continue using Health green. Cross-app switcher entries retain the corresponding app's brand hue (Assistant blue, Finance amber, Things violet) rather than being recolored with the current PWA's accent. This is a presentation rule, not a change to PWA scopes or platform identity.
+
 ## Typography hierarchy / 字体层级
 
 ALOHA's four PWAs share the same framework-agnostic type scale from `packages/design-tokens/tokens.css`. This is the **only** cross-surface typography source; individual pages must not invent a new display-title scale.
