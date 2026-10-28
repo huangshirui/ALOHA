@@ -4,6 +4,10 @@
  */
 export type BodyView = 'front' | 'back'
 export const BODY_MAP_ASSET_ID = 'body-outline-clean-2026-10-v2'
+export const BODY_MAP_ASSET_IDS:Readonly<Record<BodyView,string>> = {
+  front:BODY_MAP_ASSET_ID,
+  back:'body-outline-back-2026-10-v1',
+}
 export const BODY_MAP_CROP = { x:390, y:40, width:244, height:475 } as const
 export interface BodyPoint { x:number; y:number }
 export interface SourcePixel { x:number; y:number }
@@ -50,7 +54,7 @@ export function seedBodyBindings():BodyMapBinding[] {
   // Fully synthetic examples so both front/back discovery flows are testable.
   return [
     {concernId:'c-1',view:'front',assetId:BODY_MAP_ASSET_ID,point:sourceToNormalized({x:512,y:195})},
-    {concernId:'c-2',view:'back',assetId:BODY_MAP_ASSET_ID,point:sourceToNormalized({x:536,y:397})},
+    {concernId:'c-2',view:'back',assetId:BODY_MAP_ASSET_IDS.back,point:sourceToNormalized({x:536,y:397})},
   ]
 }
 export function visibleHotspots<T extends BodyMapConcern>(
@@ -59,7 +63,7 @@ export function visibleHotspots<T extends BodyMapConcern>(
   const lookup=new Map(concerns.filter(c=>c.status==='active').map(c=>[c.id,c]))
   return bindings.flatMap(b=>{
     const concern=lookup.get(b.concernId)
-    return concern && b.view===view && b.assetId===BODY_MAP_ASSET_ID
+    return concern && b.view===view && b.assetId===BODY_MAP_ASSET_IDS[view]
       ? [{concern,point:b.point}] : []
   })
 }
@@ -69,7 +73,7 @@ export function countForView<T extends BodyMapConcern>(
 export function unmappedConcerns<T extends BodyMapConcern>(
   concerns:ReadonlyArray<T>,bindings:ReadonlyArray<BodyMapBinding>,
 ):T[] {
-  const ids=new Set(bindings.filter(b=>b.assetId===BODY_MAP_ASSET_ID).map(b=>b.concernId))
+  const ids=new Set(bindings.filter(b=>b.assetId===BODY_MAP_ASSET_IDS[b.view]).map(b=>b.concernId))
   return concerns.filter(c=>!ids.has(c.id))
 }
 export function setConcernPoint(
@@ -79,7 +83,7 @@ export function setConcernPoint(
   if(!Number.isFinite(point.x)||!Number.isFinite(point.y)||point.x<0||point.x>1||point.y<0||point.y>1
     ||!isPointOnBody(point)) throw new Error('请选择人体轮廓内的位置')
   return [...bindings.filter(b=>b.concernId!==concernId),{
-    concernId,view,assetId:BODY_MAP_ASSET_ID,point:{...point},
+    concernId,view,assetId:BODY_MAP_ASSET_IDS[view],point:{...point},
   }]
 }
 export function removeConcernPoint(bindings:ReadonlyArray<BodyMapBinding>,concernId:string):BodyMapBinding[] {
