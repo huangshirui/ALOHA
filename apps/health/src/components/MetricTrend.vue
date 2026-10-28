@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { X } from 'lucide-vue-next'
-import { buildTrendChart, selectedTrendPoint, type MetricGranularity, type NumericObservation } from '../metric-trend'
+import {
+ buildTrendChart, selectedTrendPoint,
+ TREND_CHART_HEIGHT, TREND_CHART_LEFT, TREND_CHART_Y_LABEL_X, TREND_CHART_X_LABEL_Y,
+ TREND_CHART_RIGHT_PADDING, type MetricGranularity, type NumericObservation
+} from '../metric-trend'
 
 const props=defineProps<{
  observations:NumericObservation[]
@@ -15,7 +19,22 @@ const modes=[
  {value:'month' as const,label:'月'},
  {value:'year' as const,label:'年'},
 ]
-const chart=computed(()=>buildTrendChart(props.observations,mode.value))
+const chartWidth=ref(680)
+const plotRef=ref<HTMLElement|null>(null)
+let plotResizeObserver:ResizeObserver|null=null
+function measurePlot(){
+ const width=plotRef.value?.getBoundingClientRect().width
+ if(width && Number.isFinite(width)) chartWidth.value=Math.max(320,Math.round(width))
+}
+onMounted(()=>{
+ measurePlot()
+ if(typeof ResizeObserver!=='undefined' && plotRef.value){
+  plotResizeObserver=new ResizeObserver(measurePlot)
+  plotResizeObserver.observe(plotRef.value)
+ }
+})
+onBeforeUnmount(()=>plotResizeObserver?.disconnect())
+const chart=computed(()=>buildTrendChart(props.observations,mode.value,chartWidth.value,TREND_CHART_HEIGHT))
 const activeKey=ref('')
 const active=computed(()=>selectedTrendPoint(chart.value.points,activeKey.value))
 function choosePoint(key:string){activeKey.value=activeKey.value===key?'':key}
@@ -39,15 +58,15 @@ const chartDescription=computed(()=>{
      </div>
    </div>
    <template v-if="chart.points.length">
-     <div class="metric-trend-plot">
-       <svg viewBox="0 0 680 224" role="group" :aria-label="chartDescription">
+     <div ref="plotRef" class="metric-trend-plot">
+       <svg :viewBox="`0 0 ${chartWidth} ${TREND_CHART_HEIGHT}`" role="group" :aria-label="chartDescription">
          <g class="metric-trend-grid">
-           <line v-for="tick in chart.yTicks" :key="'g'+tick.y" :x1="52" :x2="660" :y1="tick.y" :y2="tick.y"/>
+           <line v-for="tick in chart.yTicks" :key="'g'+tick.y" :x1="TREND_CHART_LEFT" :x2="chartWidth-TREND_CHART_RIGHT_PADDING" :y1="tick.y" :y2="tick.y"/>
          </g>
          <g class="metric-trend-axis" aria-hidden="true">
-           <text v-for="tick in chart.yTicks" :key="'y'+tick.y" x="45" :y="tick.y+4" text-anchor="end">{{ tick.label }}</text>
+           <text v-for="tick in chart.yTicks" :key="'y'+tick.y"  :x="TREND_CHART_Y_LABEL_X" :y="tick.y+5" text-anchor="end">{{ tick.label }}</text>
            <text v-for="(tick,i) in chart.ticks" :key="'x'+tick.key" :x="tick.x"
-             y="214" :text-anchor="i===0?'start':i===chart.ticks.length-1?'end':'middle'">{{ tick.label }}</text>
+              :y="TREND_CHART_X_LABEL_Y" :text-anchor="i===0?'start':i===chart.ticks.length-1?'end':'middle'">{{ tick.label }}</text>
          </g>
          <path v-if="chart.points.length>=2" class="metric-trend-line" :d="chart.path"/>
          <g v-for="point in chart.points" :key="point.key" class="metric-trend-point"
@@ -85,10 +104,10 @@ const chartDescription=computed(()=>{
 .metric-trend-switch button{border:0;border-radius:calc(var(--health-radius-control) - 3px);background:transparent;min-width:2.75rem;min-height:2rem;padding:.3rem .7rem;font-size:var(--health-type-label);font-weight:600;color:var(--health-muted)}
 .metric-trend-switch button.active{color:var(--health-brand-strong);background:var(--health-surface);box-shadow:0 0 0 1px var(--health-border)}
 .metric-trend-switch button:focus-visible,.metric-trend-source:focus-visible{outline:2px solid var(--health-brand);outline-offset:2px}
-.metric-trend-plot{width:100%;overflow-x:auto;scrollbar-width:thin}
-.metric-trend-plot svg{display:block;width:100%;min-width:19rem;height:auto;overflow:visible}
+.metric-trend-plot{width:100%;min-width:0;overflow:hidden}
+.metric-trend-plot svg{display:block;width:100%;height:320px;overflow:visible}
 .metric-trend-grid line{stroke:var(--health-border-soft);stroke-width:1}
-.metric-trend-axis text{fill:var(--health-muted);font-size:12px}
+.metric-trend-axis text{fill:var(--health-muted);font-size:14.5px;font-weight:500;font-variant-numeric:tabular-nums}
 .metric-trend-line{fill:none;stroke:var(--health-brand);stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}
 .metric-trend-hit{fill:transparent}
 .metric-trend-dot{fill:var(--health-surface);stroke:var(--health-brand);stroke-width:2.5}
@@ -107,7 +126,7 @@ const chartDescription=computed(()=>{
 .metric-trend-note{margin:.4rem 0 0}
 .metric-trend-empty{padding:2rem .5rem;text-align:center}
 @media(max-width:47.999rem){
- .metric-trend-plot svg{min-width:17.5rem}
+ .metric-trend-plot svg{width:100%;height:320px}
   .metric-trend-readout{align-items:center;flex-wrap:wrap}
 }
 </style>
