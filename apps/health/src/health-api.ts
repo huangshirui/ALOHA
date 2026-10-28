@@ -24,7 +24,8 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
   if (!response.ok) {
-    throw new Error(`Health API ${response.status}: ${response.status === 503 ? '后台尚未配置' : '请求失败'}`)
+    const message = response.status === 401 ? '请先通过 Access 登录' : response.status === 403 ? '当前用户没有该空间或模型的访问权限' : response.status === 404 ? '健康模型尚未发布，或记录不存在' : response.status === 409 ? '记录已被更新，请刷新后重试' : response.status === 503 ? '后台尚未配置或暂不可用' : '请求失败'
+    throw new Error('Health API ' + response.status + ': ' + message)
   }
   if (response.status === 204) return undefined as T
   const payload: unknown = await response.json()
