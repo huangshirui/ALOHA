@@ -12,6 +12,8 @@ import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import BodyOverview from './components/BodyOverview.vue'
+import HealthTimeline from './components/HealthTimeline.vue'
+import type { TimelineFilter } from './health-timeline'
 import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
 import { concernAttentionOptions, attentionColor, parseConcernAttention, type ConcernAttention } from './concern-attention'
 import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
@@ -76,6 +78,7 @@ const editId = ref('')
 const draft = ref<Record<string,any>>({})
 const formError = ref('')
 const search = ref('')
+const timelineKind = ref<TimelineFilter>('all')
 const notice = ref('')
 const agentSession = useDemoAgentSession()
 const agentOpen = agentSession.open
@@ -544,10 +547,13 @@ function detailName(kind: HealthKind,record:any) {
               </div>
               <div class="list-panel">
                 <template v-if="bodyTab==='metrics'"><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong><ChevronRight :size="18"/></button></template>
-                <template v-if="bodyTab==='timeline'"><button v-for="e in filteredTimeline" :key="e.kind+e.id" class="list-row" type="button" @click="show(e.kind,e.id)"><span class="list-icon"><component :is="kindIcon[e.kind]" :size="19"/></span><span class="row-main"><b>{{ e.title }}</b><small>{{ e.meta }} · {{ displayDate(e.date) }}</small></span><ChevronRight :size="18"/></button></template>
+                <template v-if="bodyTab==='timeline'">
+                  <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
+                    @update:selected-kind="timelineKind=$event" @open="show"/>
+                </template>
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
-                <div v-if="(bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='timeline'&&!filteredTimeline.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length)" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
+                <div v-if="(bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length)" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
               </div>
               <p v-if="bodyTab==='documents'" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
             </template>
