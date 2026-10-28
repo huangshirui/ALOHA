@@ -15,6 +15,7 @@ import BodyOverview from './components/BodyOverview.vue'
 import HealthTimeline from './components/HealthTimeline.vue'
 import MetricTrend from './components/MetricTrend.vue'
 import ReferenceIndicator from './components/ReferenceIndicator.vue'
+import {matchMetricReferenceFilter, metricReferenceState, type MetricReferenceFilter} from './metric-reference-filter'
 import type { TimelineFilter } from './health-timeline'
 import { compareReference,formatReferenceRange,parseReferenceDraft,validateReferenceDraft } from './health-reference'
 import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
@@ -82,6 +83,13 @@ const draft = ref<Record<string,any>>({})
 const formError = ref('')
 const search = ref('')
 const timelineKind = ref<TimelineFilter>('all')
+const metricReferenceFilter=ref<MetricReferenceFilter>('all')
+const metricReferenceChoices=[
+ {value:'all' as const,label:'全部'},
+ {value:'within' as const,label:'范围内'},
+ {value:'outside' as const,label:'超出范围'},
+ {value:'unknown' as const,label:'未判定'},
+]
 const timelineScrollPosition = ref(0)
 const notice = ref('')
 const agentSession = useDemoAgentSession()
@@ -122,7 +130,21 @@ const timeline = computed(() => [
   ...demo.events.map(e=>({ id:e.id,kind:'event' as const,date:e.date,title:e.summary,meta:eventName(e)+(e.timeStart?' · '+e.timeStart:'') })),
   ...demo.assessments.map(a=>({ id:a.id,kind:'assessment' as const,date:a.assessedDate,title:a.title,meta:'评估记录' })),
 ].sort((a,b)=>b.date.localeCompare(a.date)))
-const filteredMetrics = computed(()=>demo.metrics.filter(m=>m.name.includes(search.value)))
+const metricState=(m:Metric)=>metricReferenceState(m,latestFor(m.id))
+const metricReferenceCounts=computed(()=>{
+ const result:Record<MetricReferenceFilter,number>={all:0,within:0,outside:0,unknown:0}
+ for(const metric of demo.metrics){
+   if(!metric.name.toLowerCase().includes(search.value.trim().toLowerCase()))continue
+   const state=metricState(metric)
+   result.all++
+   result[state]++
+ }
+ return result
+})
+const filteredMetrics=computed(()=>demo.metrics.filter(m=>
+ m.name.toLowerCase().includes(search.value.trim().toLowerCase()) &&
+ matchMetricReferenceFilter(metricState(m),metricReferenceFilter.value)
+))
 const filteredDocuments = computed(()=>demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
 const filteredRegimens = computed(()=>demo.regimens.filter(r=>r.name.includes(search.value)))
 const filteredTimeline = computed(()=>timeline.value.filter(e=>e.title.includes(search.value) || e.meta.includes(search.value)))
@@ -587,10 +609,22 @@ function detailName(kind: HealthKind,record:any) {
                   aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
               </div>
               <div class="list-panel">
-                <template v-if="bodyTab==='metrics'"><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong>
+                <template v-if="bodyTab==='metrics'">
+                  <div class="metric-reference-filters" role="group" aria-label="按参考范围筛选健康指标">
+                    <button v-for="option in metricReferenceChoices" :key="option.value" type="button"
+                      :class="{active:metricReferenceFilter===option.value}"
+                      :aria-pressed="metricReferenceFilter===option.value"
+                      @click="metricReferenceFilter=option.value">
+                      {{ option.label }} <small>{{ metricReferenceCounts[option.value] }}</small>
+                    </button>
+                  </div><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong>
                     <ReferenceIndicator v-if="latestFor(m.id)"
                       :comparison="referenceFor(latestFor(m.id)!,m)?.comparison"/>
-                  </span><ChevronRight :size="18"/></button></template>
+                  </span><ChevronRight :size="18"/></button>
+                  <p v-if="!filteredMetrics.length" class="empty-inline metric-reference-empty">
+                    {{ search.trim()?'没有找到符合条件的指标。':metricReferenceFilter==='all'?'还没有指标，添加后可以查看测量变化。':'目前没有这类指标，可以切换其他筛选。' }}
+                  </p>
+                </template>
                 <template v-if="bodyTab==='timeline'">
                   <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
                     @update:selected-kind="timelineKind=$event" @open="show"/>
