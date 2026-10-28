@@ -557,3 +557,15 @@
 .metric-summary .metric-hero { min-width:0; padding:0; }
 .metric-add-button { flex:none; }
 .metric-chart-heading { margin-bottom:.15rem; }
+
+/* Reference bounds are optional contextual comparisons, not diagnostic badges. */
+.health-reference-fieldset {display:grid;gap:var(--health-space-3);padding:var(--health-space-3);border:1px solid var(--health-border-soft);border-radius:var(--health-radius-control);min-width:0;}
+.health-reference-fieldset legend {padding:0 .4rem;color:var(--health-ink);font-size:var(--health-type-label);font-weight:650;}
+.health-reference-fieldset .helper-copy {margin:0;}
+.reference-comparison {display:inline-flex;align-items:center;align-self:flex-start;gap:.3rem;color:var(--health-muted);font-size:var(--health-type-caption);font-weight:630;line-height:1.4;}
+.reference-comparison::before {content:'';width:.4rem;height:.4rem;flex:none;border-radius:50%;background:currentColor;}
+.reference-below,.reference-above {color:var(--health-attention-watch);}
+.reference-within {color:var(--health-brand-strong);}
+.reference-inline {margin-top:.18rem;}
+.reference-range-note {margin:0 0 var(--health-space-3);font-size:var(--health-type-caption);color:var(--health-muted);line-height:1.6;}
+.reference-range-note span {display:block;}
