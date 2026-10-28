@@ -250,7 +250,12 @@ function confirmPlacement(){
 .body-region-card-heading h2,.card-heading h2 {margin:0;font-size:var(--health-type-section);font-weight:680;}
 .body-concern-item {display:flex;align-items:center;gap:.2rem;border-bottom:1px solid var(--health-border-soft);}
 .body-concern-item:last-child {border-bottom:0;}
-.body-concern-item.selected {background:transparent;box-shadow:inset 3px 0 0 var(--health-brand);border-radius:var(--health-radius-control);}
+/* Selected list items use an extremely light, even outline. No left accent bar. */
+.body-concern-item.selected {
+  background:color-mix(in srgb,var(--health-brand) 3%,var(--health-surface));
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--health-brand) 18%,var(--health-border-soft));
+  border-radius:var(--health-radius-control);
+}
 .body-concern-open {display:flex;align-items:center;gap:.6rem;flex:1;min-width:0;border:0;text-align:left;background:transparent;color:var(--health-ink);padding:.65rem .2rem;}
 .body-concern-open:hover .row-main b {color:var(--health-brand-strong);}
 .body-attention-label {display:inline-flex;align-items:center;gap:.35rem;margin-top:.18rem;font-size:var(--health-type-caption);color:var(--health-muted);}
@@ -260,12 +265,20 @@ function confirmPlacement(){
 .body-region-empty {margin:.8rem 0 0;color:var(--health-muted);font-size:var(--health-type-body);line-height:1.6;}
 @container (max-width:51rem){.body-explorer{grid-template-columns:minmax(0,1fr)}.body-map-canvas{min-height:21rem}.body-silhouette{width:min(100%,14rem)}}
 @media(max-width:47.999rem){.body-explorer{grid-template-columns:minmax(0,1fr)}.body-map-canvas{min-height:19rem}.body-silhouette{width:min(100%,13.5rem)}}
-@container bodyfigure (min-width:32rem) {
+/* Calculated from 2 × 11.5rem usable figures + .75rem gap + 6rem
+   breathing space = 29.75rem. 30rem is a first usable-width threshold,
+   independent of whether an AI panel is open. */
+@container bodyfigure (min-width:30rem) {
   .body-view-switch {display:none;}
-  .body-map-pair {grid-template-columns:repeat(2,minmax(0,1fr));gap:.4rem;}
+  .body-map-pair {
+    grid-template-columns:repeat(2,minmax(0,11.75rem));
+    justify-content:center;
+    column-gap:.75rem;
+    align-items:start;
+  }
   .body-map-figure {display:flex;}
   .body-figure-label {display:flex;}
-  .body-silhouette {width:min(100%,10.5rem);}
+  .body-silhouette {width:min(100%,11.5rem);}
 }
 @media(prefers-reduced-motion:no-preference){
   .body-hotspot-dot {transition:box-shadow var(--health-motion) ease;}
