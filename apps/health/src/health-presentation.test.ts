@@ -51,6 +51,7 @@ describe('Health presentation / ALOHA-owned D1 storage',()=>{
     for(const invalid of [
       {},{attention:'urgent'},{attention:'watch',subjectPersonId:'per_other'},
       {placement:{...placement,assetId:BODY_MAP_ASSET_IDS.back}},
+      {placement:{...placement,concernId:'rec_other'}},
       {placement:{...placement,point:{x:1.1,y:0.4}}},
       {placement:{...placement,point:{x:0.9,y:0.1}}},
       {placement:{...placement,point:{x:Infinity,y:0.2}}},
