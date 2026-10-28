@@ -183,7 +183,7 @@ export function seedDemo(): DemoData {
     ],
     metrics: [
       { id:'m-1',name:'体重',valueType:'number',defaultUnit:'kg' },
-      { id:'m-2',name:'收缩压',valueType:'number',defaultUnit:'mmHg' },
+      { id:'m-2',name:'收缩压',valueType:'number',defaultUnit:'mmHg',referenceLow:115,referenceHigh:120,referenceSource:'仅供原型视觉演示，非医学参考标准' },
       { id:'m-3',name:'舒适程度',valueType:'text',defaultUnit:'' },
       { id:'m-4',name:'今日不适',valueType:'boolean',defaultUnit:'' },
     ],
