@@ -1,5 +1,5 @@
-/** Reference ranges are comparisons, never diagnoses.
- * Source interpretation belongs to each original HealthObservation and is not rewritten.
+/** Reference ranges compare values, not diagnoses.
+ * Original report interpretations belong to the linked HealthDocument.
  */
 export interface ReferenceBounds {
   referenceLow?:number|null
@@ -10,8 +10,6 @@ export interface ReferenceMetric extends ReferenceBounds {defaultUnit:string;val
 export interface ReferenceObservation extends ReferenceBounds {
   valueNumber:number|null
   unit:string
-  status:string
-  interpretation?:string
 }
 export type ReferencePosition='below'|'within'|'above'
 export type ReferenceComparison={
@@ -24,7 +22,7 @@ export type ReferenceComparison={
 }
 export type ReferenceResult={
   comparison:ReferenceComparison|null
-  reason:'no_range'|'non_numeric'|'invalid_record'|'unit_mismatch'|'invalid_range'|null
+  reason:'no_range'|'non_numeric'|'unit_mismatch'|'invalid_range'|null
 }
 const exists=(v:unknown):v is number=>typeof v==='number' && Number.isFinite(v)
 const hasBounds=(r:ReferenceBounds)=>exists(r.referenceLow)||exists(r.referenceHigh)
@@ -61,7 +59,6 @@ export function chooseReferenceRange(
 export function compareReference(
   metric:ReferenceMetric,obs:ReferenceObservation,
 ):ReferenceResult {
-  if(obs.status==='entered_in_error')return {comparison:null,reason:'invalid_record'}
   if(!exists(obs.valueNumber)||metric.valueType!=='number')return {comparison:null,reason:'non_numeric'}
   const selected=chooseReferenceRange(metric,obs)
   if(!selected){
