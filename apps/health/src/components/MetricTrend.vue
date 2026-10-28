@@ -11,6 +11,9 @@ const props=defineProps<{
  observations:NumericObservation[]
  unit:string
  metricName:string
+ referenceLow?:number|null
+ referenceHigh?:number|null
+ referenceSource?:string
 }>()
 const emit=defineEmits<{openObservation:[id:string]}>()
 const mode=ref<MetricGranularity>('day')
@@ -40,6 +43,19 @@ const chart=computed(()=>buildTrendChart(props.observations,mode.value,chartWidt
 watch(()=>chart.value.points.length,async count=>{
  if(count && !plotResizeObserver){await nextTick();observePlot()}
 })
+const referenceBand=computed(()=>{
+ const domain=chart.value.domain
+ if(!domain)return null
+ const low=typeof props.referenceLow==='number'&&Number.isFinite(props.referenceLow)?props.referenceLow:null
+ const high=typeof props.referenceHigh==='number'&&Number.isFinite(props.referenceHigh)?props.referenceHigh:null
+ if(low===null&&high===null)return null
+ if(low!==null&&high!==null&&low>high)return null
+ const lower=Math.max(domain.min,low??domain.min),upper=Math.min(domain.max,high??domain.max)
+ if(lower>=upper)return null
+ const top=26,bottom=TREND_CHART_HEIGHT-46
+ const yFor=(n:number)=>bottom-(n-domain.min)/(domain.max-domain.min)*(bottom-top)
+ return {y:yFor(upper),height:yFor(lower)-yFor(upper)}
+})
 const activeKey=ref('')
 const active=computed(()=>selectedTrendPoint(chart.value.points,activeKey.value))
 function choosePoint(key:string){activeKey.value=activeKey.value===key?'':key}
@@ -65,6 +81,9 @@ const chartDescription=computed(()=>{
    <template v-if="chart.points.length">
      <div ref="plotRef" class="metric-trend-plot">
        <svg :viewBox="`0 0 ${chartWidth} ${TREND_CHART_HEIGHT}`" role="group" :aria-label="chartDescription">
+         <rect v-if="referenceBand" class="metric-trend-reference-band" :x="TREND_CHART_LEFT"
+           :y="referenceBand.y" :width="chartWidth-TREND_CHART_LEFT-TREND_CHART_RIGHT_PADDING"
+           :height="referenceBand.height" aria-hidden="true"/>
          <g class="metric-trend-grid">
            <line v-for="tick in chart.yTicks" :key="'g'+tick.y" :x1="TREND_CHART_LEFT" :x2="chartWidth-TREND_CHART_RIGHT_PADDING" :y1="tick.y" :y2="tick.y"/>
          </g>
@@ -111,6 +130,7 @@ const chartDescription=computed(()=>{
 .metric-trend-switch button:focus-visible,.metric-trend-source:focus-visible{outline:2px solid var(--health-brand);outline-offset:2px}
 .metric-trend-plot{width:100%;min-width:0;overflow:hidden}
 .metric-trend-plot svg{display:block;width:100%;height:320px;overflow:visible}
+.metric-trend-reference-band{fill:color-mix(in srgb,var(--health-brand) 7%,transparent);pointer-events:none}
 .metric-trend-grid line{stroke:var(--health-border-soft);stroke-width:1}
 .metric-trend-axis text{fill:var(--health-muted);font-size:14.5px;font-weight:500;font-variant-numeric:tabular-nums}
 .metric-trend-line{fill:none;stroke:var(--health-brand);stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}
