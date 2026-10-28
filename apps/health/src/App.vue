@@ -15,6 +15,7 @@ import BodyOverview from './components/BodyOverview.vue'
 import HealthTimeline from './components/HealthTimeline.vue'
 import MetricTrend from './components/MetricTrend.vue'
 import type { TimelineFilter } from './health-timeline'
+import { compareReference,formatReferenceRange,parseReferenceDraft,validateReferenceDraft } from './health-reference'
 import { seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
 import { concernAttentionOptions, attentionColor, parseConcernAttention, type ConcernAttention } from './concern-attention'
 import { primaryAction, recordChoices, saveDestination, type HealthLocation } from './health-journeys'
@@ -198,6 +199,11 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if (id && !record) return
   const d=record ? structuredClone({...record}) : makeEmpty(kind,today)
   if(kind==='concern') d.attention=attentionByConcern.value[id]??'unset'
+  if(kind==='metric'||kind==='observation'){
+    d.referenceLow=d.referenceLow??''
+    d.referenceHigh=d.referenceHigh??''
+    d.referenceSource=d.referenceSource??''
+  }
   if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
   if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
@@ -221,11 +227,17 @@ function formSave() {
   if(kind==='regimen') formError.value=validateRegimen(v.startDate,v.endDate,v.recurrence,v.firstDueDate)??''
   if(kind==='observation') formError.value=validateObservation(demo.metrics.find(m=>m.id===v.metricId),String(v.value??''))??''
   if(kind==='metric' && demo.metrics.some(m=>m.name.trim()===String(v.name).trim() && m.id!==editId.value)) formError.value='已有同名指标，可直接使用现有指标'
+  if(kind==='metric' && v.valueType==='number') formError.value=validateReferenceDraft(v.referenceLow,v.referenceHigh,v.referenceSource,'number')??formError.value
+  if(kind==='observation' && demo.metrics.find(m=>m.id===v.metricId)?.valueType==='number') formError.value=validateReferenceDraft(v.referenceLow,v.referenceHigh,v.referenceSource,'number')??formError.value
   if(kind==='metric' && editId.value && demo.metrics.find(m=>m.id===editId.value)?.valueType!==v.valueType && demo.observations.some(o=>o.metricId===editId.value)) formError.value='已经有历史记录的指标不能改动记录方式'
   if(formError.value) return
   const payload:any={...v}
   // This is an ALOHA presentation preference, never a canonical HealthConcern field.
   if(kind==='concern') delete payload.attention
+  if(kind==='metric'||kind==='observation'){
+    const numeric=kind==='metric'?v.valueType==='number':demo.metrics.find(m=>m.id===v.metricId)?.valueType==='number'
+    Object.assign(payload,numeric?parseReferenceDraft(v.referenceLow,v.referenceHigh,v.referenceSource):parseReferenceDraft('','',''))
+  }
   if(kind==='observation') {
     const metric=demo.metrics.find(m=>m.id===v.metricId)!
     Object.assign(payload,buildObservationValue(metric,String(v.value)))
