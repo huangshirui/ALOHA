@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest'
 import {
- aggregateTrend,buildTrendChart,smoothPath,selectedTrendPoint,
+ aggregateTrend,buildTrendChart,smoothPath,selectedTrendPoint,TREND_CHART_HEIGHT,TREND_CHART_LEFT,TREND_CHART_RIGHT_PADDING,
  type NumericObservation,
 } from './metric-trend'
 
@@ -65,6 +65,21 @@ describe('Health metric trends — true observation dates',()=>{
    // After changing from day to month, an old day-level selection must be cleared.
    const monthly=buildTrendChart(readings,'month').points
    expect(selectedTrendPoint(monthly,'2026-02-01')).toBeNull()
+ })
+ it('uses a tall chart and adapts plotted width and axis density without changing recorded values',()=>{
+   expect(TREND_CHART_HEIGHT).toBe(320)
+   const wide=buildTrendChart(readings,'day',900)
+   const compact=buildTrendChart(readings,'day',340)
+   expect(wide.points).toHaveLength(compact.points.length)
+   expect(wide.points.map(p=>p.value)).toEqual(compact.points.map(p=>p.value))
+   expect(wide.points[0]?.x).toBe(TREND_CHART_LEFT)
+   expect(wide.points.at(-1)?.x).toBe(900-TREND_CHART_RIGHT_PADDING)
+   expect(compact.points[0]?.x).toBe(TREND_CHART_LEFT)
+   expect(compact.points.at(-1)?.x).toBe(340-TREND_CHART_RIGHT_PADDING)
+   expect(wide.ticks).toHaveLength(4)
+   expect(compact.ticks).toHaveLength(3)
+   expect(Math.max(...compact.points.map(p=>p.y))).toBeLessThan(TREND_CHART_HEIGHT-40)
+   expect(Math.min(...compact.points.map(p=>p.y))).toBeGreaterThan(20)
  })
  it('does not mutate the source readings',()=>{
    const before=JSON.stringify(readings)
