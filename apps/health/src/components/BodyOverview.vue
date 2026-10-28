@@ -112,8 +112,11 @@ function confirmPlacement(){
         <p v-if="positionError" class="body-position-error" role="alert">{{ positionError }}</p>
       </div>
       <div class="body-map-canvas">
-        <div ref="figureEl" class="body-silhouette"
-          role="group" :aria-label="(view==='front'?'正面':'背面')+'身体健康关注位置'">
+        <div class="body-map-pair">
+          <div v-for="side in sides" :key="side" class="body-map-figure" :class="{'is-current':view===side}">
+            <div class="body-figure-label"><span>{{ side==='front'?'正面':'背面' }}</span><small>{{ counts[side] }} 项</small></div>
+            <div :ref="el=>setFigureRef(side,el)" class="body-silhouette"
+          role="group" :aria-label="(side==='front'?'正面':'背面')+'身体健康关注位置'">
           <!-- Opaque interior layer hides the grid under the person.
                Foreground is the original, unchanged clean SVG outline. -->
           <svg class="body-interior" viewBox="390 40 244 475" aria-hidden="true" focusable="false">
@@ -134,20 +137,22 @@ function confirmPlacement(){
               C543 135 522 130 527 116 C542 91 538 55 512 55 Z"
               fill="var(--health-surface)"/>
           </svg>
-          <img class="body-artwork" :src="imageSrc" alt="" width="244" height="475" draggable="false"/>
-          <button v-for="spot in spots" :key="spot.concern.id" type="button"
+          <img class="body-artwork" :src="imageSrc(side)" alt="" width="244" height="475" draggable="false"/>
+          <button v-for="spot in spotsFor(side)" :key="spot.concern.id" type="button"
             class="body-region-marker"
             :class="{selected:selectedConcernId===spot.concern.id}"
-            :style="{left:(spot.point.x*100)+'%',top:(spot.point.y*100)+'%'}"
-            :title="spot.concern.name" :aria-label="spot.concern.name+'，选择关注位置'"
+            :style="{left:(spot.point.x*100)+'%',top:(spot.point.y*100)+'%', '--body-dot-color':attentionColor(attentionByConcern[spot.concern.id]??'unset')}"
+            :title="spot.concern.name+' · '+attentionLabel(attentionByConcern[spot.concern.id]??'unset')" :aria-label="spot.concern.name+'，'+attentionLabel(attentionByConcern[spot.concern.id]??'unset')+'，选择关注位置'"
             :aria-pressed="selectedConcernId===spot.concern.id"
-            @click="selectDot(spot.concern.id)">
+            @click="selectDot(spot.concern.id,side)">
             <span class="body-hotspot-dot" aria-hidden="true"/>
           </button>
           <button v-if="locatingConcern" class="body-map-position-layer" type="button"
-            aria-label="在人体轮廓内点击定位" @click="pickPoint"><span>点击定位</span></button>
-          <span v-if="pendingPoint" class="body-pending-dot"
+            aria-label="在人体轮廓内点击定位" @click="pickPoint($event,side)"><span>点击定位</span></button>
+          <span v-if="pendingPoint && view===side" class="body-pending-dot"
             :style="{left:(pendingPoint.x*100)+'%',top:(pendingPoint.y*100)+'%'}"/>
+        </div>
+          </div>
         </div>
       </div>
       <p class="body-map-note"><Info :size="14"/> 标记是关注位置，不代表医学诊断。</p>
@@ -170,6 +175,9 @@ function confirmPlacement(){
             <span class="row-main">
               <b>{{ concern.name }}</b>
               <small>{{ locationLabel(concern.id) }} · {{ concern.status==='active'?'关注中':'已结束' }}{{ concern.summary?' · '+concern.summary:'' }}</small>
+              <span class="body-attention-label" :style="{'--body-dot-color':attentionColor(attentionByConcern[concern.id]??'unset')}">
+                <i aria-hidden="true"/>{{ attentionLabel(attentionByConcern[concern.id]??'unset') }}
+              </span>
             </span>
             <ChevronRight :size="17" class="subtle-icon"/>
           </button>
