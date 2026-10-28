@@ -1,6 +1,6 @@
 import {describe,expect,it} from 'vitest'
 import {
- aggregateTrend,buildTrendChart,smoothPath,selectedTrendPoint,TREND_CHART_HEIGHT,TREND_CHART_LEFT,TREND_CHART_RIGHT_PADDING,
+ aggregateTrend,buildTrendChart,projectReferenceLines,smoothPath,selectedTrendPoint,TREND_CHART_HEIGHT,TREND_CHART_LEFT,TREND_CHART_RIGHT_PADDING,
  type NumericObservation,
 } from './metric-trend'
 
@@ -80,6 +80,34 @@ describe('Health metric trends — true observation dates',()=>{
    expect(compact.ticks).toHaveLength(3)
    expect(Math.max(...compact.points.map(p=>p.y))).toBeLessThan(TREND_CHART_HEIGHT-40)
    expect(Math.min(...compact.points.map(p=>p.y))).toBeGreaterThan(20)
+ })
+ it('renders both configured reference bounds as actual axis lines, not fake measurements',()=>{
+   const chart=buildTrendChart(readings.slice(0,2),'day',680,TREND_CHART_HEIGHT,{referenceLow:65,referenceHigh:150})
+   expect(chart.points.map(p=>p.value)).toEqual([80,100])
+   expect(chart.domain!.min).toBeLessThan(65)
+   expect(chart.domain!.max).toBeGreaterThan(150)
+   const lines=projectReferenceLines(chart.domain,{referenceLow:65,referenceHigh:150})
+   expect(lines.map(l=>l.side)).toEqual(['low','high'])
+   expect(lines.map(l=>l.label)).toEqual(['下限','上限'])
+   expect(lines[1]!.y).toBeLessThan(lines[0]!.y)
+   expect(lines.every(l=>l.y>=26 && l.y<=TREND_CHART_HEIGHT-46)).toBe(true)
+ })
+ it('uses a single line for equal bounds, one-sided bounds, and no line without range',()=>{
+   const chart=buildTrendChart(readings,'day',600,TREND_CHART_HEIGHT,{referenceHigh:110})
+   expect(projectReferenceLines(chart.domain,{referenceHigh:110}).map(l=>l.label)).toEqual(['上限'])
+   expect(projectReferenceLines(chart.domain,{referenceLow:120,referenceHigh:120}).map(l=>l.label)).toEqual(['参考值'])
+   expect(projectReferenceLines(chart.domain,{})).toEqual([])
+   expect(projectReferenceLines(chart.domain,{referenceLow:200,referenceHigh:100})).toEqual([])
+   expect(projectReferenceLines(null,{referenceLow:110})).toEqual([])
+ })
+ it('preserves actual observations with reference bounds beyond measured values',()=>{
+   const original=JSON.stringify(readings)
+   const withoutBounds=buildTrendChart(readings,'month')
+   const bounded=buildTrendChart(readings,'month',680,TREND_CHART_HEIGHT,{referenceLow:20,referenceHigh:250})
+   expect(bounded.points.map(({key,value,count,recordIds})=>({key,value,count,recordIds})))
+     .toEqual(withoutBounds.points.map(({key,value,count,recordIds})=>({key,value,count,recordIds})))
+   expect(bounded.points.every(p=>p.y>26 && p.y<TREND_CHART_HEIGHT-46)).toBe(true)
+   expect(JSON.stringify(readings)).toBe(original)
  })
  it('does not mutate the source readings',()=>{
    const before=JSON.stringify(readings)
