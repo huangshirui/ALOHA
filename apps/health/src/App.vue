@@ -79,6 +79,7 @@ const draft = ref<Record<string,any>>({})
 const formError = ref('')
 const search = ref('')
 const timelineKind = ref<TimelineFilter>('all')
+const timelineScrollPosition = ref(0)
 const notice = ref('')
 const agentSession = useDemoAgentSession()
 const agentOpen = agentSession.open
@@ -113,7 +114,7 @@ const assessmentCount = computed(() => demo.assessments.length)
 const docCount = computed(() => demo.documents.length)
 const timeline = computed(() => [
   ...demo.observations.map(o=>({ id:o.id,kind:'observation' as const,date:o.observedDate,title:observationTitle(o),meta:'测量记录' })),
-  ...demo.events.map(e=>({ id:e.id,kind:'event' as const,date:e.date,title:e.summary,meta:eventName(e) })),
+  ...demo.events.map(e=>({ id:e.id,kind:'event' as const,date:e.date,title:e.summary,meta:eventName(e)+(e.timeStart?' · '+e.timeStart:'') })),
   ...demo.assessments.map(a=>({ id:a.id,kind:'assessment' as const,date:a.assessedDate,title:a.title,meta:'评估记录' })),
 ].sort((a,b)=>b.date.localeCompare(a.date)))
 const filteredMetrics = computed(()=>demo.metrics.filter(m=>m.name.includes(search.value)))
@@ -156,6 +157,8 @@ function changeBodyTab(tab:BodyTab) {
 }
 function show(kind: HealthKind,id: string) {
   if (selected.value?.kind === kind && selected.value.id===id) return
+  if(activeTab.value==='body' && bodyTab.value==='timeline' && !selected.value)
+    timelineScrollPosition.value=window.scrollY
   routeStack.value.push(location())
   activeTab.value='body'; selected.value=saveDestination(kind,id);sheet.value='';search.value=''
   window.scrollTo({top:0,behavior:'smooth'})
@@ -167,7 +170,9 @@ function back() {
     bodyTab.value=previous.section
     selected.value=previous.record
   } else selected.value=null
-  window.scrollTo({top:0,behavior:'smooth'})
+  if(previous?.tab==='body' && previous.section==='timeline' && !previous.record)
+    nextTick(()=>window.scrollTo({top:timelineScrollPosition.value,behavior:'auto'}))
+  else window.scrollTo({top:0,behavior:'smooth'})
 }
 function startCreate(kind: HealthKind) {
   if(kind==='document') openImport(selected.value?.kind==='concern' ? selected.value.id : '')
