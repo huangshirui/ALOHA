@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
 import {
  buildTrendChart, selectedTrendPoint,
@@ -26,15 +26,20 @@ function measurePlot(){
  const width=plotRef.value?.getBoundingClientRect().width
  if(width && Number.isFinite(width)) chartWidth.value=Math.max(320,Math.round(width))
 }
-onMounted(()=>{
+function observePlot(){
  measurePlot()
- if(typeof ResizeObserver!=='undefined' && plotRef.value){
+ if(typeof ResizeObserver!=='undefined' && plotRef.value && !plotResizeObserver){
   plotResizeObserver=new ResizeObserver(measurePlot)
   plotResizeObserver.observe(plotRef.value)
  }
-})
+}
+onMounted(observePlot)
 onBeforeUnmount(()=>plotResizeObserver?.disconnect())
 const chart=computed(()=>buildTrendChart(props.observations,mode.value,chartWidth.value,TREND_CHART_HEIGHT))
+// Plot may appear later when the first observation is recorded.
+watch(()=>chart.value.points.length,async count=>{
+ if(count && !plotResizeObserver){await nextTick();observePlot()}
+})
 const activeKey=ref('')
 const active=computed(()=>selectedTrendPoint(chart.value.points,activeKey.value))
 function choosePoint(key:string){activeKey.value=activeKey.value===key?'':key}
