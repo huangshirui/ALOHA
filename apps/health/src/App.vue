@@ -9,7 +9,7 @@ import {
 } from 'lucide-vue-next'
 import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, listAuthorizedSpaces, listHealthRecords,
-  listSpacePeople, updateHealthRecord, type HealthRecord } from './health-api'
+  getOwnSpacePerson, updateHealthRecord, type HealthRecord } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
 import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
@@ -76,9 +76,7 @@ const kindIcon = { concern: Heart, metric: Activity, observation: ClipboardCheck
 const liveMode = import.meta.env.VITE_HEALTH_DATA_MODE === 'live'
 const demo = reactive(liveMode ? emptyHealthData() : seedDemo())
 type SpaceChoice = {id:string,name:string,role:string,timezone?:string}
-type PersonChoice = {id:string,displayName:string}
 const liveSpaces = ref<SpaceChoice[]>([])
-const livePeople = ref<PersonChoice[]>([])
 const selectedSpaceId = ref('')
 const subjectPersonId = ref('')
 const liveStatus = ref<'idle'|'loading'|'select'|'ready'|'error'>('idle')
@@ -164,32 +162,21 @@ async function loadLiveRecords() {
     liveMessage.value=e instanceof Error?e.message:'健康档案读取失败'
   }
 }
-async function chooseLivePerson(personId:string) {
-  if(!livePeople.value.some(p=>p.id===personId)) {
-    subjectPersonId.value='';clearLiveRecords();liveStatus.value='select';return
-  }
-  subjectPersonId.value=personId
-  localStorage.setItem('aloha.health.person.'+selectedSpaceId.value,personId)
-  await loadLiveRecords()
-}
 async function chooseLiveSpace(spaceId:string) {
   clearLiveRecords()
-  livePeople.value=[];subjectPersonId.value=''
+  subjectPersonId.value=''
   if(!liveSpaces.value.some(s=>s.id===spaceId)) {
     selectedSpaceId.value='';liveStatus.value='select';return
   }
   selectedSpaceId.value=spaceId
   localStorage.setItem('aloha.health.space',spaceId)
-  liveStatus.value='loading';liveMessage.value='正在加载人员…'
+  liveStatus.value='loading';liveMessage.value='正在核对当前用户的档案人员…'
   try {
-    const people=await listSpacePeople(spaceId)
-    livePeople.value=people.items
-    if(people.nextCursor) throw new Error('人员列表过多，需要增加分页选择')
-    const stored=localStorage.getItem('aloha.health.person.'+spaceId)
-    if(stored && livePeople.value.some(p=>p.id===stored)) await chooseLivePerson(stored)
-    else {liveStatus.value='select';liveMessage.value='请确认档案对应的人员'}
+    const self=await getOwnSpacePerson(spaceId)
+    subjectPersonId.value=self.personId
+    await loadLiveRecords()
   } catch(e) {
-    liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'人员读取失败'
+    liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法确定当前用户的档案人员'
   }
 }
 async function initializeLive() {
@@ -541,12 +528,6 @@ function detailName(kind: HealthKind,record:any) {
             <select :value="selectedSpaceId" @change="chooseLiveSpace(($event.target as HTMLSelectElement).value)">
               <option value="">选择个人空间</option>
               <option v-for="space in liveSpaces" :key="space.id" :value="space.id">{{ space.name }}</option>
-            </select>
-          </label>
-          <label v-if="selectedSpaceId" class="health-live-select">人员
-            <select :value="subjectPersonId" @change="chooseLivePerson(($event.target as HTMLSelectElement).value)">
-              <option value="">选择本人档案</option>
-              <option v-for="person in livePeople" :key="person.id" :value="person.id">{{ person.displayName }}</option>
             </select>
           </label>
           <span :class="['health-live-status',{'health-live-error':liveStatus==='error'}]" role="status">{{ liveMessage }}</span>
