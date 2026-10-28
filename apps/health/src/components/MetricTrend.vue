@@ -16,10 +16,10 @@ const modes=[
 ]
 const chart=computed(()=>buildTrendChart(props.observations,mode.value))
 const activeKey=ref('')
-const active=computed<TrendPoint|null>(()=>chart.value.points.find(p=>p.key===activeKey.value)??chart.value.points.at(-1)??null)
-function choosePoint(key:string){activeKey.value=key}
+const active=computed<TrendPoint|null>(()=>activeKey.value ? (chart.value.points.find(p=>p.key===activeKey.value)??null) : null)
+function choosePoint(key:string){activeKey.value=activeKey.value===key?'':key}
 function formatValue(v:number){return Number(v.toFixed(2)).toLocaleString('zh-CN',{maximumFractionDigits:2})}
-const periodLabel=computed(()=>mode.value==='day'?'当天':mode.value==='month'?'当月':'当年')
+const periodLabel=computed(()=>mode.value==='day'?'当日':mode.value==='month'?'当月':'当年')
 const chartDescription=computed(()=>{
  const pts=chart.value.points
  if(!pts.length)return props.metricName+'：暂无数值记录'
@@ -36,7 +36,6 @@ const chartDescription=computed(()=>{
          {{ item.label }}
        </button>
      </div>
-     <span class="metric-trend-unit">{{ unit || '无单位' }}</span>
    </div>
    <template v-if="chart.points.length">
      <div class="metric-trend-plot">
@@ -60,16 +59,17 @@ const chartDescription=computed(()=>{
          </g>
        </svg>
      </div>
-     <div v-if="active" class="metric-trend-readout">
+     <div v-if="active" class="metric-trend-readout" role="status">
        <div class="metric-trend-readout-main">
-         <span>{{ active.key }} · {{ periodLabel }}{{ active.count>1?'平均值':'观测值' }}</span>
+         <span class="metric-trend-selection-caption">已选 · {{ active.key }} · {{ periodLabel }}{{ active.count>1?'平均':'观测' }}</span>
          <strong>{{ formatValue(active.value) }}<small v-if="unit"> {{ unit }}</small></strong>
-         <span>{{ active.count }} 次真实观测</span>
+         <span v-if="active.count>1">{{ active.count }} 次记录的平均值</span>
        </div>
        <button v-if="active.count===1" type="button" class="metric-trend-source"
-         @click="emit('openObservation',active.recordIds[0]!)">查看记录</button>
+         @click="emit('openObservation',active.recordIds[0]!)">查看这条记录</button>
+       <button type="button" class="metric-trend-clear" aria-label="取消选中图表观测点" @click="activeKey=''">×</button>
      </div>
-     <p class="metric-trend-note">缺少记录的周期仅连线，不代表实际测量值；月、年有多次记录时显示平均值。</p>
+     <p class="metric-trend-note">曲线连接已有记录，没有测量的日期不补值。</p>
    </template>
    <div v-else class="metric-trend-empty" role="status">
      暂无可绘制的数值记录。添加测量后就能看到变化趋势。
@@ -84,7 +84,6 @@ const chartDescription=computed(()=>{
 .metric-trend-switch button{border:0;border-radius:calc(var(--health-radius-control) - 3px);background:transparent;min-width:2.75rem;min-height:2rem;padding:.3rem .7rem;font-size:var(--health-type-label);font-weight:600;color:var(--health-muted)}
 .metric-trend-switch button.active{color:var(--health-brand-strong);background:var(--health-surface);box-shadow:0 0 0 1px var(--health-border)}
 .metric-trend-switch button:focus-visible,.metric-trend-source:focus-visible{outline:2px solid var(--health-brand);outline-offset:2px}
-.metric-trend-unit{color:var(--health-muted);font-size:var(--health-type-caption)}
 .metric-trend-plot{width:100%;overflow-x:auto;scrollbar-width:thin}
 .metric-trend-plot svg{display:block;width:100%;min-width:19rem;height:auto;overflow:visible}
 .metric-trend-grid line{stroke:var(--health-border-soft);stroke-width:1}
@@ -95,17 +94,19 @@ const chartDescription=computed(()=>{
 .metric-trend-point{cursor:pointer;outline:none}
 .metric-trend-point.active .metric-trend-dot{fill:var(--health-brand);stroke:var(--health-surface);stroke-width:2.5;filter:drop-shadow(0 0 3px color-mix(in srgb,var(--health-brand) 28%,transparent))}
 .metric-trend-point:focus-visible .metric-trend-hit{stroke:var(--health-brand);stroke-width:2;fill:color-mix(in srgb,var(--health-brand) 8%,transparent)}
-.metric-trend-readout{display:flex;align-items:center;justify-content:space-between;gap:.65rem;border-top:1px solid var(--health-border-soft);padding:.85rem 0}
-.metric-trend-readout-main{display:flex;flex-direction:column;gap:.2rem;min-width:0}
+.metric-trend-readout{display:flex;align-items:center;gap:.65rem;padding:.55rem .7rem;margin:.15rem 0 .4rem;background:var(--health-surface-secondary);border:1px solid var(--health-border-soft);border-radius:var(--health-radius-control)}
+.metric-trend-readout-main{display:flex;flex:1;align-items:baseline;flex-wrap:wrap;gap:.25rem .65rem;min-width:0}
 .metric-trend-readout-main span{color:var(--health-muted);font-size:var(--health-type-caption)}
-.metric-trend-readout-main strong{color:var(--health-ink);font-size:1.2rem;font-weight:720;font-variant-numeric:tabular-nums}
+.metric-trend-readout-main strong{color:var(--health-ink);font-size:var(--health-type-body);font-weight:700;font-variant-numeric:tabular-nums}
 .metric-trend-readout-main strong small{color:var(--health-muted);font-size:var(--health-type-caption);font-weight:500}
-.metric-trend-source{flex:none;border:1px solid var(--health-border);border-radius:var(--health-radius-control);padding:.5rem .75rem;background:var(--health-surface);color:var(--health-brand-strong);font-size:var(--health-type-label)}
+.metric-trend-source{flex:none;border:1px solid var(--health-border);border-radius:var(--health-radius-control);padding:.5rem .7rem;background:var(--health-surface);color:var(--health-brand-strong);font-size:var(--health-type-label)}
+.metric-trend-clear{display:grid;place-items:center;flex:none;width:2rem;height:2rem;border:0;border-radius:var(--health-radius-control);background:transparent;color:var(--health-muted);font-size:1.15rem}
+.metric-trend-clear:hover{color:var(--health-ink);background:var(--health-surface)}
 .metric-trend-note,.metric-trend-empty{color:var(--health-muted);font-size:var(--health-type-caption);line-height:1.7}
 .metric-trend-note{margin:.4rem 0 0}
 .metric-trend-empty{padding:2rem .5rem;text-align:center}
 @media(max-width:47.999rem){
  .metric-trend-plot svg{min-width:17.5rem}
- .metric-trend-readout{align-items:flex-start}
+  .metric-trend-readout{align-items:center;flex-wrap:wrap}
 }
 </style>
