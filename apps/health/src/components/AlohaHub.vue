@@ -33,6 +33,8 @@ const emit = defineEmits<{
 
 const opened = ref(false)
 const section = ref<HubSection>('apps')
+// Reuse the installed Health PWA icon so the tab, sidebar and app switcher agree.
+const healthIconUrl = `${import.meta.env.BASE_URL}app-icon.svg`
 function showMenu() {
   if(props.entryOnly){ emit('openMore');return }
   section.value = 'apps'
@@ -58,7 +60,10 @@ function selectApp(app: AlohaAppLink) {
     <button v-if="!page" type="button" class="aloha-hub-trigger" :class="{ compact }"
       :aria-expanded="entryOnly ? undefined : opened" :aria-haspopup="entryOnly ? undefined : 'dialog'" :aria-label="entryOnly?'打开更多页面':'ALOHA 公共菜单'"
       title="应用、账号与设置" @click="showMenu">
-      <span class="aloha-hub-logo"><Heart :size="compact ? 19 : 22" fill="currentColor"/></span>
+      <span class="aloha-hub-logo">
+        <img v-if="currentApp==='health'" :src="healthIconUrl" alt="" aria-hidden="true"/>
+        <component v-else :is="appGlyph(currentApp)" :size="compact ? 19 : 22" aria-hidden="true"/>
+      </span>
         <span v-if="!compact" class="aloha-hub-wordmark"><strong>ALOHA</strong><small>{{ currentApp.toUpperCase() }}</small></span>
       <ChevronDown v-if="!compact && !entryOnly" :size="17" class="aloha-hub-chevron"/>
       <ArrowUpRight v-else-if="entryOnly && !compact" :size="17" class="aloha-hub-chevron"/>
@@ -77,12 +82,18 @@ function selectApp(app: AlohaAppLink) {
           <div class="aloha-hub-group-caption">应用</div>
           <template v-for="app in apps" :key="app.id">
             <a v-if="app.href && app.id!==currentApp" class="aloha-hub-app" :href="app.href" @click="close">
-              <span class="aloha-hub-app-icon"><component :is="appGlyph(app.id)" :size="21"/></span>
+              <span class="aloha-hub-app-icon" :class="'app-icon-'+app.id">
+                <img v-if="app.id==='health'" :src="healthIconUrl" alt="" aria-hidden="true"/>
+                <component v-else :is="appGlyph(app.id)" :size="21" aria-hidden="true"/>
+              </span>
               <span class="aloha-hub-app-copy"><b>{{ app.name }}</b><small>{{ app.description }}</small></span>
               <ArrowUpRight :size="17"/>
             </a>
             <button v-else type="button" class="aloha-hub-app" :class="{ selected:app.id===currentApp }" :disabled="app.id!==currentApp" @click="selectApp(app)">
-              <span class="aloha-hub-app-icon"><component :is="appGlyph(app.id)" :size="21"/></span>
+              <span class="aloha-hub-app-icon" :class="'app-icon-'+app.id">
+                <img v-if="app.id==='health'" :src="healthIconUrl" alt="" aria-hidden="true"/>
+                <component v-else :is="appGlyph(app.id)" :size="21" aria-hidden="true"/>
+              </span>
               <span class="aloha-hub-app-copy"><b>{{ app.name }}</b><small>{{ app.id===currentApp?'当前应用':app.description }}</small></span>
               <Check v-if="app.id===currentApp" :size="17"/>
               <span v-else class="aloha-hub-pending">待接入</span>
@@ -138,7 +149,8 @@ function selectApp(app: AlohaAppLink) {
 .page-hub .aloha-hub-app-copy small { font-size:var(--health-type-caption); }
 .aloha-hub-trigger { display:flex;align-items:center;gap:.65rem;width:100%;padding:.15rem .65rem;border:0;background:transparent;color:var(--aloha-color-text);text-align:left; }
 .aloha-hub-trigger.compact { justify-content:center; padding:.1rem; }
-.aloha-hub-logo { display:grid;place-items:center;flex:none;width:2.75rem;height:2.75rem;border-radius:var(--aloha-radius-md);background:var(--aloha-accent);color:white; }
+.aloha-hub-logo { display:grid;place-items:center;flex:none;width:2.75rem;height:2.75rem;border-radius:var(--aloha-radius-md);overflow:hidden;background:transparent;color:var(--aloha-accent-strong); }
+.aloha-hub-logo img,.aloha-hub-app-icon img {display:block;width:100%;height:100%;object-fit:contain;}
 .aloha-hub-wordmark { display:flex;flex:1;flex-direction:column;gap:.1rem;min-width:0; }
 .aloha-hub-wordmark strong { font-size:1.16rem;letter-spacing:-.035em; }
 .aloha-hub-wordmark small { font-size:.64rem;letter-spacing:.15em;color:var(--aloha-accent-strong);font-weight:700; }
@@ -156,9 +168,15 @@ function selectApp(app: AlohaAppLink) {
 .aloha-hub-group-caption.second { border-top:1px solid var(--aloha-color-border);margin-top:.7rem;padding-top:1rem; }
 .aloha-hub-app,.aloha-hub-link { width:100%;display:flex;align-items:center;gap:.7rem;border:0;text-decoration:none;border-radius:var(--aloha-radius-md);padding:.62rem .5rem;background:transparent;color:var(--aloha-color-text);text-align:left; }
 .aloha-hub-app.selected { background:var(--aloha-accent-soft); }
-.aloha-hub-app:disabled { opacity:.6;cursor:default; }
+.aloha-hub-app:disabled {cursor:default;}
+.aloha-hub-app:disabled .aloha-hub-app-copy,.aloha-hub-app:disabled .aloha-hub-pending {opacity:.6;}
 .aloha-hub-app:not(:disabled):hover,.aloha-hub-link:hover { background:var(--aloha-accent-soft); }
-.aloha-hub-app-icon { display:grid;place-items:center;flex:none;width:2.55rem;height:2.55rem;border-radius:var(--aloha-radius-md);color:var(--aloha-accent-strong);background:var(--aloha-accent-soft); }
+/* App identity colors belong to each icon, not to Health's green UI accent. */
+.aloha-hub-app-icon { display:grid;place-items:center;flex:none;width:2.55rem;height:2.55rem;border-radius:var(--aloha-radius-md);overflow:hidden;color:var(--aloha-accent-strong);background:var(--aloha-accent-soft); }
+.aloha-hub-app-icon.app-icon-health {background:transparent;}
+.aloha-hub-app-icon.app-icon-assistant {color:white;background:linear-gradient(135deg,#274d8c,#10284c);}
+.aloha-hub-app-icon.app-icon-finance {color:white;background:linear-gradient(135deg,#ffc85a,#e89616);}
+.aloha-hub-app-icon.app-icon-things {color:white;background:linear-gradient(135deg,#8170ed,#5541c6);}
 .aloha-hub-app-copy { flex:1;display:flex;min-width:0;flex-direction:column;gap:.16rem; }
 .aloha-hub-app-copy b { font-size:.81rem; }
 .aloha-hub-app-copy small { font-size:.7rem;color:var(--aloha-color-text-muted); }
