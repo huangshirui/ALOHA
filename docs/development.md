@@ -33,16 +33,16 @@ Do not use unrelated repository work to force this cutover.
 
 ### Health
 
-Health is intentionally scaffold-only:
+Health now has an interactive prototype and a Draft trusted LifeSpace backend integration (PR #37); this is not a production activation:
 
 - local workspace: `apps/health`;
 - PWA `id`, `start_url`, scope: `/health/`;
 - build output: `apps/health/dist/health`;
 - Worker deployment unit: `aloha-app-health` via `apps/health/wrangler.jsonc`;
-- current deployment: independent Worker preview only;
+- current deployment: independent Worker preview only; Live mode additionally requires LifeSpace Staging + Access + separate ALOHA D1;
 - production `/health/*` route: not activated.
 
-No health model, data source or API path is implied by this scaffold.
+Seven Health domain models are published manually through LifeSpace Console. The Draft Health BFF owns no canonical Health model: its separate optional D1 holds only user-scoped body-point/attention presentation state. See `apps/health/BACKEND.md`.
 
 ## Install and run
 
@@ -84,7 +84,7 @@ The public repository intentionally contains no real n8n endpoint, token, capabi
 
 ## Health development rule
 
-Until a health-domain decision explicitly exists, Health development is limited to client/runtime scaffolding and generic product-shell work.
+The initial seven Health models and trusted BFF path now have an explicit domain decision. Further schema changes still require a concrete design and owner; do not add new speculative models.
 
 Do not add speculative schemas for health records, metrics, medications, labs, device sync or medical documents. Do not choose a backend path by copying the Assistant Agent-Control path.
 
