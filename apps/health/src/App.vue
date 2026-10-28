@@ -353,8 +353,8 @@ function detailName(kind: HealthKind,record:any) {
       <main class="content">
         <section v-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
-            :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
-            @select-app="handleAppSelection" @update-density="uiDensity=$event"
+            :agent-open="agentOpen"
+            
             @ask="openAgent">
             <template #actions>
               <HealthCreateMenu label="快速记录" :choices="recordChoices" @select="startCreate($event)"/>
@@ -400,12 +400,12 @@ function detailName(kind: HealthKind,record:any) {
           <template v-if="selected && current">
             <HealthPageHeader :title="detailName(selected.kind,current)" :context="labelForKind(selected.kind)"
               :subtitle="selected.kind==='concern' ? (current.summary || '持续关注的健康问题') : undefined"
-              can-back :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
-            @select-app="handleAppSelection" @update-density="uiDensity=$event"
+              can-back :agent-open="agentOpen"
+            
             @ask="openAgent" @back="back">
               <template #actions>
                 <button type="button" class="quiet-button detail-edit-button" aria-label="修改记录" title="修改记录" @click="openEditor(selected.kind,current.id)">
-                  <Pencil :size="16"/> 修改
+                  <Pencil :size="16"/><span class="detail-edit-label">修改</span>
                 </button>
                 <button type="button" class="icon-button destructive" title="删除演示记录"
                   aria-label="删除演示记录" @click="removeCurrent"><Trash2 :size="18"/></button>
@@ -493,8 +493,8 @@ function detailName(kind: HealthKind,record:any) {
 
           <template v-else>
             <HealthPageHeader title="身体健康" subtitle="健康问题、指标、事件与资料"
-              :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
-              @select-app="handleAppSelection" @update-density="uiDensity=$event"
+              :agent-open="agentOpen"
+              
               @ask="openAgent">
               <template #actions>
                 <HealthCreateMenu v-if="bodyCreateAction.mode==='menu'"
@@ -540,8 +540,8 @@ function detailName(kind: HealthKind,record:any) {
         <section v-else class="future-page">
           <HealthPageHeader :title="activeTab==='food'?'饮食管理':'运动管理'"
               subtitle="逐步连接日常习惯与身体变化"
-              :apps="alohaApps" :density="uiDensity" :agent-open="agentOpen"
-            @select-app="handleAppSelection" @update-density="uiDensity=$event"
+              :agent-open="agentOpen"
+            
             @ask="openAgent"/>
           <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('overview')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
       </main>
@@ -577,7 +577,13 @@ function detailName(kind: HealthKind,record:any) {
       </footer>
     </aside>
 
-    <nav class="bottom-nav" aria-label="主导航"><button v-for="item in navItems" :key="item.id" :class="{active:activeTab===item.id}" type="button" @click="navigate(item.id)"><component :is="item.icon" :size="22" :stroke-width="1.8"/><span>{{ item.title }}</span></button></nav>
+    <nav class="bottom-nav" aria-label="主导航">
+      <button v-for="item in navItems" :key="item.id" :class="{active:activeTab===item.id}" type="button" @click="navigate(item.id)">
+        <component :is="item.icon" :size="22" :stroke-width="1.8"/><span>{{ item.title }}</span>
+      </button>
+      <AlohaHub :apps="alohaApps" current-app="health" compact bottom-nav preview
+        :density="uiDensity" @select-app="handleAppSelection" @update:density="uiDensity=$event"/>
+    </nav>
 
     <div v-if="sheet" class="modal-backdrop" @click.self="closeSheet">
       <section class="drawer" role="dialog" aria-modal="true" :aria-label="sheet==='edit'?'编辑健康记录':'整理报告'">
