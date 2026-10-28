@@ -12,10 +12,11 @@ describe('Health six-journey interaction policy', () => {
     }
   })
   it('gives each body tab exactly one relevant primary action', () => {
-    const sections:BodySection[] = ['overview','concerns','metrics','timeline','documents','regimens']
+    const sections:BodySection[] = ['focus','metrics','timeline','documents','regimens']
     const actions=sections.map(primaryAction)
-    expect(actions.map(a=>a.mode)).toEqual(['direct','direct','direct','menu','direct','direct'])
-    expect(actions.filter(a=>a.mode==='direct').map(a=>a.action)).toEqual(['concern','concern','metric','document','regimen'])
+    expect(primaryAction('focus')).toEqual({mode:'direct',label:'添加关注',action:'concern'})
+    expect(actions.map(a=>a.mode)).toEqual(['direct','direct','menu','direct','direct'])
+    expect(actions.filter(a=>a.mode==='direct').map(a=>a.action)).toEqual(['concern','metric','document','regimen'])
   })
   it('a created object is shown as a detail, with its origin retained by the page stack', () => {
     expect(saveDestination('observation','new-1')).toEqual({kind:'observation',id:'new-1'})
