@@ -399,6 +399,14 @@ async function removeCurrent() {
   if(!selected.value||!current.value) return
   const kind=selected.value.kind,id=selected.value.id
   if(kind==='metric' && demo.observations.some(o=>o.metricId===id)) {notice.value='该指标已有测量记录，请先保留指标与历史数据。';return}
+  if(liveMode && kind==='document' && (
+    demo.observations.some(o=>o.sourceDocumentId===id) ||
+    demo.regimens.some(r=>r.sourceDocumentId===id) ||
+    demo.assessments.some(a=>a.basisIds.includes(id))
+  )) {notice.value='这份资料仍被其他健康记录引用，请先解除引用再删除。';return}
+  if(liveMode && kind==='event' && demo.documents.some(d=>d.eventId===id)) {
+    notice.value='该事件仍有关联资料，请先处理引用。';return
+  }
   if(!window.confirm(liveMode?'确定从 LifeSpace 删除这条健康记录吗？此操作会记录变更历史。':'要从本次演示中删除这条记录吗？')) return
   if(liveMode) {
     try {
