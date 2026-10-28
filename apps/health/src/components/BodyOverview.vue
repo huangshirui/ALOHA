@@ -1,41 +1,47 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { ChevronRight, HeartPulse, Info, MapPin, CircleDot } from 'lucide-vue-next'
+import { ChevronRight, HeartPulse, Info, MapPin, Search } from 'lucide-vue-next'
 import {
-  countForView, isPointOnBody, normalizedPoint, unmappedConcerns, visibleHotspots,
+  countForView, isPointOnBody, normalizedPoint, visibleHotspots, BODY_MAP_ASSET_ID,
   type BodyMapBinding, type BodyMapConcern, type BodyPoint, type BodyView,
 } from '../body-map'
 
-const props=defineProps<{concerns:BodyMapConcern[];bindings:BodyMapBinding[]}>()
+const props=defineProps<{concerns:BodyMapConcern[];bindings:BodyMapBinding[];view:BodyView;selectedConcernId:string|null}>()
 const emit=defineEmits<{
   openConcern:[id:string]
+  'update:view':[view:BodyView]
+  'update:selectedConcernId':[id:string|null]
   placePoint:[id:string,view:BodyView,point:BodyPoint]
 }>()
 const imageSrc=import.meta.env.BASE_URL+'body-front-outline.svg'
 const sides:BodyView[]=['front','back']
-const view=ref<BodyView>('front')
-const selectedConcern=ref<string|null>(null)
+const search=ref('')
 const locatingConcern=ref<string|null>(null)
 const pendingPoint=ref<BodyPoint|null>(null)
 const positionError=ref('')
 const figureEl=ref<HTMLElement|null>(null)
 const explorerEl=ref<HTMLElement|null>(null)
 const recordsCardEl=ref<HTMLElement|null>(null)
-const spots=computed(()=>visibleHotspots(props.concerns,props.bindings,view.value))
+const spots=computed(()=>visibleHotspots(props.concerns,props.bindings,props.view))
+const filteredConcerns=computed(()=>props.concerns.filter(c=>(c.name+' '+c.summary).toLowerCase().includes(search.value.trim().toLowerCase())))
+function locationLabel(id:string){
+  const binding=props.bindings.find(b=>b.concernId===id && b.assetId===BODY_MAP_ASSET_ID)
+  return binding ? (binding.view==='front'?'正面':'背面') : '未定位'
+}
 const counts=computed(()=>({
   front:countForView(props.concerns,props.bindings,'front'),
   back:countForView(props.concerns,props.bindings,'back'),
 }))
-const unplaced=computed(()=>unmappedConcerns(props.concerns,props.bindings))
 const locatingName=computed(()=>props.concerns.find(c=>c.id===locatingConcern.value)?.name||'健康问题')
 function switchView(next:BodyView) {
-  view.value=next
-  selectedConcern.value=null
+  emit('update:view',next)
+  emit('update:selectedConcernId',null)
   pendingPoint.value=null
   positionError.value=''
 }
 async function selectDot(id:string){
-  selectedConcern.value=id
+  search.value=''
+  emit('update:selectedConcernId',id)
   await nextTick()
   // A docked AI panel can cause stacking at Desktop sizes too.
   if((explorerEl.value?.clientWidth ?? Number.POSITIVE_INFINITY)<=816 ||
@@ -47,7 +53,7 @@ async function beginPlacement(id:string){
   pendingPoint.value=null
   positionError.value=''
   const existing=props.bindings.find(b=>b.concernId===id)
-  if(existing)view.value=existing.view
+  if(existing) emit('update:view',existing.view)
   await nextTick()
   figureEl.value?.scrollIntoView({block:'center',behavior:'smooth'})
 }
@@ -72,8 +78,8 @@ function cancelPlacement(){
 function confirmPlacement(){
   if(!locatingConcern.value||!pendingPoint.value)return
   const id=locatingConcern.value
-  emit('placePoint',id,view.value,pendingPoint.value)
-  selectedConcern.value=id
+  emit('placePoint',id,props.view,pendingPoint.value)
+  emit('update:selectedConcernId',id)
   cancelPlacement()
 }
 </script>
@@ -122,10 +128,10 @@ function confirmPlacement(){
           <img class="body-artwork" :src="imageSrc" alt="" width="244" height="475" draggable="false"/>
           <button v-for="spot in spots" :key="spot.concern.id" type="button"
             class="body-region-marker"
-            :class="{selected:selectedConcern===spot.concern.id}"
+            :class="{selected:selectedConcernId===spot.concern.id}"
             :style="{left:(spot.point.x*100)+'%',top:(spot.point.y*100)+'%'}"
             :title="spot.concern.name" :aria-label="spot.concern.name+'，选择关注位置'"
-            :aria-pressed="selectedConcern===spot.concern.id"
+            :aria-pressed="selectedConcernId===spot.concern.id"
             @click="selectDot(spot.concern.id)">
             <span class="body-hotspot-dot" aria-hidden="true"/>
           </button>
@@ -138,36 +144,36 @@ function confirmPlacement(){
       <p class="body-map-note"><Info :size="14"/> 标记是关注位置，不代表医学诊断。</p>
     </section>
 
-    <aside class="body-explorer-aside">
-      <section ref="recordsCardEl" class="ui-card body-region-card" aria-label="当前视图的健康问题">
+    <aside class="body-explorer-aside" aria-label="健康关注事项">
+      <section ref="recordsCardEl" class="ui-card body-region-card" aria-label="全部健康关注">
         <div class="body-region-card-heading">
-          <h2>{{ view==='front'?'正面关注':'背面关注' }}</h2>
+          <h2>关注事项</h2>
+          <span class="body-concern-count">{{ concerns.length }} 项</span>
         </div>
-        <div v-for="spot in spots" :key="spot.concern.id"
-          class="body-concern-item" :class="{selected:selectedConcern===spot.concern.id}">
-          <button type="button" class="body-concern-open" @click="emit('openConcern',spot.concern.id)">
+        <label class="body-concern-search">
+          <Search :size="17" aria-hidden="true"/>
+          <input v-model="search" type="search" aria-label="搜索关注事项" placeholder="搜索关注事项"/>
+        </label>
+        <div v-for="concern in filteredConcerns" :key="concern.id"
+          class="body-concern-item" :class="{selected:selectedConcernId===concern.id}">
+          <button type="button" class="body-concern-open" @click="emit('openConcern',concern.id)">
             <span class="list-icon"><HeartPulse :size="18"/></span>
-            <span class="row-main"><b>{{ spot.concern.name }}</b><small>{{ spot.concern.summary }}</small></span>
+            <span class="row-main">
+              <b>{{ concern.name }}</b>
+              <small>{{ locationLabel(concern.id) }} · {{ concern.status==='active'?'关注中':'已结束' }}{{ concern.summary?' · '+concern.summary:'' }}</small>
+            </span>
             <ChevronRight :size="17" class="subtle-icon"/>
           </button>
-          <button class="body-concern-pin" type="button"
-            :title="'调整'+spot.concern.name+'的标记位置'"
-            :aria-label="'调整'+spot.concern.name+'的标记位置'"
-            @click="beginPlacement(spot.concern.id)"><MapPin :size="17"/></button>
-        </div>
-        <p v-if="!spots.length" class="body-region-empty">这面还没有标记。可以切换另一面查看。</p>
-      </section>
-      <section v-if="unplaced.length" class="ui-card body-unmapped-card">
-        <div class="card-heading"><h2>未定位的问题</h2><CircleDot :size="18" class="subtle-icon"/></div>
-        <div v-for="concern in unplaced" :key="concern.id" class="body-concern-item">
-          <button type="button" class="body-concern-open" @click="emit('openConcern',concern.id)">
-            <span class="row-main"><b>{{ concern.name }}</b><small>{{ concern.summary }}</small></span>
-            <ChevronRight :size="16"/>
-          </button>
           <button type="button" class="body-concern-pin"
-            :title="'给'+concern.name+'定位'" :aria-label="'给'+concern.name+'定位'"
-            @click="beginPlacement(concern.id)"><MapPin :size="18"/></button>
+            :title="'给'+concern.name+'定位或调整位置'"
+            :aria-label="'给'+concern.name+'定位或调整位置'"
+            @click="beginPlacement(concern.id)">
+            <MapPin :size="17"/>
+          </button>
         </div>
+        <p v-if="!filteredConcerns.length" class="body-region-empty">
+          {{ search?'没有找到相关关注事项。':'还没有关注事项，添加后即可在身体图上标记位置。' }}
+        </p>
       </section>
     </aside>
   </div>
@@ -205,7 +211,11 @@ function confirmPlacement(){
 .body-map-note {display:flex;align-items:flex-start;gap:.35rem;margin:.6rem 0 0;color:var(--health-muted);font-size:var(--health-type-caption);line-height:1.5;}
 .body-map-note svg {flex:none;margin-top:.12rem;}
 .body-region-card {scroll-margin-top:5rem;min-height:8rem;}
-.body-region-card-heading {margin-bottom:.5rem;}
+.body-region-card-heading {display:flex;align-items:center;justify-content:space-between;gap:.7rem;margin-bottom:.75rem;}
+.body-concern-count {white-space:nowrap;font-size:var(--health-type-caption);color:var(--health-muted);}
+.body-concern-search {display:flex;align-items:center;gap:.5rem;padding:.65rem .75rem;margin-bottom:.35rem;border:1px solid var(--health-border);border-radius:var(--health-radius-control);color:var(--health-muted);background:var(--health-surface);}
+.body-concern-search input {border:0;background:transparent;color:var(--health-ink);width:100%;min-width:0;outline:none;font:inherit;font-size:var(--health-type-body);}
+.body-concern-search:focus-within {outline:2px solid var(--health-brand);outline-offset:2px;}
 .body-region-card-heading h2,.card-heading h2 {margin:0;font-size:var(--health-type-section);font-weight:680;}
 .body-concern-item {display:flex;align-items:center;gap:.2rem;border-bottom:1px solid var(--health-border-soft);}
 .body-concern-item:last-child {border-bottom:0;}
