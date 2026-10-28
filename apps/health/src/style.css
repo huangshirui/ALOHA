@@ -536,3 +536,12 @@
   border:1px solid var(--health-border);border-radius:var(--health-radius-control);
   background-color:var(--health-surface);color:var(--health-ink);font-size:var(--health-type-body);
 }
+
+/* Metric detail has three jobs: latest reading, trend, and source history.
+   Keep the history compact rather than stretching a mostly empty card. */
+.metric-detail-layout { align-items:start; }
+@media (min-width:75rem) {
+  .detail-columns.metric-detail-layout {
+    grid-template-columns:minmax(0,1.22fr) minmax(16rem,.78fr);
+  }
+}
