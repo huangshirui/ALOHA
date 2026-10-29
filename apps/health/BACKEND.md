@@ -20,6 +20,12 @@
 
 LifeSpace Console 分别在对应环境的 ALOHA Application 配置七模型 read/write Access；用户须具备 Space Membership/Grant 和 `profile:read/spaces:read/resources:read/resources:write` Scope。应用侧仅声明这批预期 Scope，不会越过 Identity/ Core 当前授权。
 
+## Cloudflare Worker-to-Worker Staging 网络路由
+
+当 Health Native Preview 的 BFF 通过 HTTPS 调用 LifeSpace Staging Identity/Core 的 Worker Custom Domain 时，使用 Cloudflare 官方 `global_fetch_strictly_public` compatibility flag 让 `fetch()` 经过公网入口路由，而不是同 Zone 内部 Origin 路由。Flag 位于 Health Worker Wrangler 配置顶层（Cloudflare Preview 与 Production 共享代码兼容设置）；不能因此改为生产 Identity/Core，两个 Staging HTTPS Origin 仍由 Cloudflare Preview Secret 独立提供。BFF 固定拼装 API 路由、拒绝重定向，不接受浏览器控制任意上游 URL。
+
+此前 Staging 真实浏览器只读 Spaces API 返回 `identity_transport_unavailable`，表明调用 Identity 的子请求抛出网络异常、没有得到有效上游 HTTP 响应。该 Flag 是当前首选的最小路由修复；实际能否恢复通信必须在重新部署命名 Staging Preview 后通过登录态下的 Spaces GET 验证，不能仅凭 CI 或配置声明视为已修复。不得在排查时输出 Access JWT、`lsa_*` 或用户数据。
+
 ## Identity 交换失败的安全诊断
 
 Health BFF 遇到来自 Identity 的未知 5xx、边缘错误或网络异常时，只返回固定错误代号，不在浏览器、CI 或公开日志中传递 LifeSpace 原始响应体、访问断言、`lsa_*` 或用户数据。
