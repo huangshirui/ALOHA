@@ -3,6 +3,7 @@
  * Identity verifies the raw Access assertion; Core owns Space/Model/Grant authorization.
  */
 import { parsePresentationPatch, type PresentationScope } from './health-presentation'
+import { uploadHealthDocument, downloadHealthDocument } from './health-files'
 export { HealthPresentationState } from './health-presentation-do'
 
 export interface HealthPresentationNamespace {
@@ -43,6 +44,10 @@ type Route = { path: string; modelKey?: string; spaceId?: string; recordId?: str
 function routeFor(url: URL, method: string): Route | null {
   const p = url.pathname
   if (p === '/health/api/v1/spaces' && method === 'GET') return { path: '/api/v1/me/spaces' }
+  const upload = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/documents\/upload$/.exec(p)
+  if (upload && method === 'POST') return {spaceId:upload[1],path:'@document-upload'}
+  const download = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/documents\/([A-Za-z][A-Za-z0-9_-]{2,127})\/download$/.exec(p)
+  if (download && method === 'GET') return {spaceId:download[1],recordId:download[2],path:'@document-download'}
   const ownPerson = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/own-person$/.exec(p)
   if (ownPerson && method === 'GET')
     return { spaceId: ownPerson[1], path: '@own-person' }
@@ -281,6 +286,20 @@ export async function handleHealthApi(
   const bearer = await exchange(fetchImpl, identity, credential, assertion)
   if (bearer instanceof Response) return bearer
   if(route.path==='@own-person') return ownPerson(fetchImpl,core,bearer,route.spaceId!)
+  if(route.path==='@document-upload') {
+    const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
+    if(scope instanceof Response)return scope
+    return uploadHealthDocument(request,fetchImpl,core,bearer,scope.spaceId,scope.personId)
+  }
+  if(route.path==='@document-download') {
+    const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
+    if(scope instanceof Response)return scope
+    const doc=await getRecord(fetchImpl,core,bearer,
+      '/api/v1/spaces/'+scope.spaceId+'/models/health_document/records/'+route.recordId)
+    if(doc instanceof Response)return doc
+    if(doc.subjectPersonId!==scope.personId)return json('document_not_owned',403)
+    return downloadHealthDocument(fetchImpl,core,bearer,scope.spaceId,route.recordId!,String(doc.artifactRef??''))
+  }
   if(route.path.startsWith('@presentation-'))
     return handlePresentation(request,env,fetchImpl,core,bearer,route)
   let body: string | undefined
