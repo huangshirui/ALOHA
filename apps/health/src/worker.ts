@@ -246,11 +246,7 @@ export async function handleHealthApi(
   if (!identity || !core || !credential) return json('backend_not_configured', 503)
   const origin = request.headers.get('Origin')
   if (request.method !== 'GET' && origin !== url.origin) return json('origin_forbidden', 403)
-  // When accessed via a separately authenticated product ingress, the upstream
-  // Access service token may replace Cf-Access-Jwt-Assertion with its own audience.
-  // Prefer the forwarded original proof; Identity verifies its signature/audience.
-  const assertion = request.headers.get('X-Aloha-Access-Assertion') ??
-    request.headers.get('Cf-Access-Jwt-Assertion') ?? ''
+  const assertion = request.headers.get('Cf-Access-Jwt-Assertion') ?? ''
   if (assertion.length > 32768 || !assertionPattern.test(assertion))
     return json('access_assertion_required', 401)
   const bearer = await exchange(fetchImpl, identity, credential, assertion)
