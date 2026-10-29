@@ -4,7 +4,7 @@
  */
 import { parsePresentationPatch, type PresentationScope } from './health-presentation'
 import { uploadHealthDocument, downloadHealthDocument } from './health-files'
-import { readHealthSession, makeHealthSessionCookie, signedTokenSubject } from './health-session'
+import { readHealthSession, makeHealthSessionCookie, signedTokenSubject, clearHealthSessionCookie } from './health-session'
 export { HealthPresentationState } from './health-presentation-do'
 
 export interface HealthPresentationNamespace {
@@ -149,13 +149,13 @@ async function ensureLifeSpaceSession(
       body:JSON.stringify({accessAssertion:assertion}),
     })
     if(!checked.ok){
-      if(checked.status===401)return json('not_authenticated',401)
-      if([403,409,422].includes(checked.status))return json('access_not_linked_or_forbidden',403)
+      if(checked.status===401)return withSessionCookie(json('not_authenticated',401),clearHealthSessionCookie())
+      if([403,409,422].includes(checked.status))return withSessionCookie(json('access_not_linked_or_forbidden',403),clearHealthSessionCookie())
       return json('identity_session_check_unavailable',503)
     }
     const verified:unknown=await checked.json().catch(()=>null)
     if(!object(verified)||!object(verified.data)||
-       verified.data.userId!==cached.userId)return json('identity_session_mismatch',401)
+       verified.data.userId!==cached.userId)return withSessionCookie(json('identity_session_mismatch',401),clearHealthSessionCookie())
     return {bearer:cached.accessToken,cookie:null}
   }
   const exchanged=await exchange(fetchImpl,identity,credential,assertion)
