@@ -4,7 +4,7 @@ import {handlePreviewIngress,type PreviewIngressEnv} from './index'
 const token='header.synthetic.signature'
 const env:PreviewIngressEnv={
   ACCESS_AUDIENCE:'synthetic-product-audience',
-  HEALTH_PREVIEW_URL:'https://demo.example.workers.dev',
+  HEALTH_PREVIEW_URL:'https://staging-demo.example.workers.dev',
   UPSTREAM_ACCESS_CLIENT_ID:'synthetic-service-id',
   UPSTREAM_ACCESS_CLIENT_SECRET:'synthetic-service-secret',
 }
@@ -35,12 +35,13 @@ describe('shared Preview ingress',()=>{
     const f=vi.fn(async()=>new Response('never'))
     expect((await handlePreviewIngress(request(),{...env,HEALTH_PREVIEW_URL:undefined},ctx,f)).status).toBe(503)
     expect((await handlePreviewIngress(request(),{...env,HEALTH_PREVIEW_URL:'https://core.example.com'},ctx,f)).status).toBe(503)
+    expect((await handlePreviewIngress(request(),{...env,HEALTH_PREVIEW_URL:'https://demo.example.workers.dev'},ctx,f)).status).toBe(503)
     expect((await handlePreviewIngress(request(),{...env,UPSTREAM_ACCESS_CLIENT_SECRET:undefined},ctx,f)).status).toBe(503)
     expect(f).not.toHaveBeenCalled()
   })
   it('passes original verified user JWT inside a service-authenticated upstream request',async()=>{
     const f=vi.fn(async(req:Request)=>{
-      expect(req.url).toBe('https://demo.example.workers.dev/health/api/v1/spaces?limit=2')
+      expect(req.url).toBe('https://staging-demo.example.workers.dev/health/api/v1/spaces?limit=2')
       expect(req.headers.get('X-Aloha-Access-Assertion')).toBe(token)
       expect(req.headers.get('CF-Access-Client-Id')).toBe(env.UPSTREAM_ACCESS_CLIENT_ID)
       expect(req.headers.get('CF-Access-Client-Secret')).toBe(env.UPSTREAM_ACCESS_CLIENT_SECRET)
@@ -58,7 +59,7 @@ describe('shared Preview ingress',()=>{
   })
   it('rejects cross-origin writes and normalizes only same-origin mutation origin',async()=>{
     const f=vi.fn(async(req:Request)=>{
-      expect(req.headers.get('origin')).toBe('https://demo.example.workers.dev')
+      expect(req.headers.get('origin')).toBe('https://staging-demo.example.workers.dev')
       expect(req.method).toBe('PATCH')
       return Response.json({ok:true})
     })
@@ -71,7 +72,7 @@ describe('shared Preview ingress',()=>{
     expect(f).toHaveBeenCalledOnce()
   })
   it('does not redirect browsers to upstream hostnames',async()=>{
-    const response=await handlePreviewIngress(request('/health/'),env,ctx,async()=>Response.redirect('https://demo.example.workers.dev/private',302))
+    const response=await handlePreviewIngress(request('/health/'),env,ctx,async()=>Response.redirect('https://staging-demo.example.workers.dev/private',302))
     expect(response.status).toBe(502)
   })
 })
