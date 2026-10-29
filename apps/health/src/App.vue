@@ -289,13 +289,13 @@ function chartPoints(metricId: string) {
 function location(): HealthLocation {
   return { tab:activeTab.value, section:bodyTab.value, record:selected.value ? {...selected.value} : null }
 }
-function navigate(tab: Tab) {
+function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
-  if(liveMode&&selectedSpaceId.value)void loadLiveRecords('focus')
+  if(loadDefault&&liveMode&&selectedSpaceId.value)void loadLiveRecords('focus')
   window.scrollTo({top:0,behavior:'smooth'})
 }
-function openBody(tab: BodyTab) { navigate('body');changeBodyTab(tab) }
+function openBody(tab: BodyTab) { navigate('body',false);changeBodyTab(tab) }
 function changeBodyTab(tab:BodyTab) {
   selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value=''
   if(liveMode&&selectedSpaceId.value)void loadLiveRecords(tab)
