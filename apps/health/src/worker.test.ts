@@ -58,6 +58,41 @@ describe('Health trusted BFF', () => {
       expect(fetcher, name).toHaveBeenCalledTimes(1)
     }
   })
+  it('uses trusted LifeSpace service bindings instead of public fetch when configured', async () => {
+    const identity = { fetch: vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toBe('/internal/v1/access/tokens')
+      expect(request.headers.get('Authorization')).toBe('Bearer lsa_fake_for_test')
+      expect(JSON.stringify(await request.json())).toContain('requestedScopes')
+      return success({ accessToken: 'jwt_server_only' })
+    }) }
+    const core = { fetch: vi.fn(async (request: Request) => {
+      expect(new URL(request.url).pathname).toContain('/models/health_metric/records')
+      expect(request.headers.get('Authorization')).toBe('Bearer jwt_server_only')
+      return success({ items: [], nextCursor: null })
+    }) }
+    const publicFetch = vi.fn(async () => { throw new Error('public fetch should not run') })
+    const response = await handleHealthApi(make(url + '?limit=20'), {
+      ...env, LIFESPACE_IDENTITY: identity, LIFESPACE_CORE: core,
+    }, publicFetch)
+    expect(response.status).toBe(200)
+    expect(identity.fetch).toHaveBeenCalledTimes(1)
+    expect(core.fetch).toHaveBeenCalledTimes(1)
+    expect(new URL(core.fetch.mock.calls[0]![0].url).searchParams.get('limit')).toBe('20')
+    expect(publicFetch).not.toHaveBeenCalled()
+  })
+  it('does not silently fall back to public fetch after a service binding failure', async () => {
+    const identity = { fetch: vi.fn(async (_request: Request): Promise<Response> => {
+      throw new Error('synthetic private transport detail')
+    }) }
+    const publicFetch = vi.fn(async () => success({ accessToken: 'should_not_be_used' }))
+    const response = await handleHealthApi(make(url), {
+      ...env, LIFESPACE_IDENTITY: identity,
+    }, publicFetch)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ error: 'identity_transport_unavailable' })
+    expect(identity.fetch).toHaveBeenCalledTimes(1)
+    expect(publicFetch).not.toHaveBeenCalled()
+  })
   it('does not leak Identity denial details or application credentials', async () => {
     const fetcher = vi.fn(async () => Response.json({
       error:{code:'INVALID_ACCESS_ASSERTION',message:'synthetic private payload'},
