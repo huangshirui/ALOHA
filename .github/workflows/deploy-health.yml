@@ -37,6 +37,11 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      - name: Assert this ref contains the reviewed Health BFF
+        run: |
+          test -f apps/health/src/worker.ts
+          node -e "const fs=require('node:fs');const c=JSON.parse(fs.readFileSync('apps/health/wrangler.jsonc'));if(c.name!=='aloha-app-health'||c.main!=='./src/worker.ts'||!c.previews?.durable_objects?.bindings?.some(b=>b.name==='HEALTH_PRESENTATION'))process.exit(1)"
+
       - name: Verify Health
         run: npm run typecheck -w @aloha/health && npm run test -w @aloha/health
 
@@ -45,12 +50,16 @@ jobs:
           VITE_HEALTH_DATA_MODE: live
         run: npm run build:health
 
+      - name: Verify Worker bundle compiles without deploying
+        working-directory: apps/health
+        run: npx wrangler deploy --dry-run --outdir ../../.health-preview-dry-run
+
       - name: Deploy named staging Preview (does not modify Production)
         working-directory: apps/health
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: npx --yes wrangler@4.135.0 preview --name staging
+        run: npx wrangler preview --name staging
 
       - name: Reminder
         run: |
