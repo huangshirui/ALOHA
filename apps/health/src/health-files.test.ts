@@ -107,6 +107,45 @@ describe('HealthDocument Core-backed file transfer',()=>{
     expect(await r.text()).toContain('%PDF-1.7')
     expect(r.headers.get('location')).toBeNull()
   })
+  it('attempts cleanup of the unlinked fil_* if the final document write fails',async()=>{
+    const calls:string[]=[]
+    const fetcher=vi.fn(async(input:RequestInfo|URL,init?:RequestInit):Promise<Response>=>{
+      const p=auth(input)
+      calls.push(p)
+      if(p.endsWith('/file-uploads'))return data({id:uploadId,upload:{url:signature,method:'PUT'}},201)
+      if(p==='/health-upload')return new Response(null,{status:200})
+      if(p.endsWith('/complete'))return data({id:fileId})
+      if(p.endsWith('/models/health_document/records')&&init?.method==='POST')
+        return Response.json({error:{code:'FORBIDDEN'}},{status:403})
+      if(p.endsWith('/files/'+fileId)&&init?.method==='DELETE')
+        return new Response(null,{status:204})
+      throw new Error('Unexpected synthetic path '+p)
+    })
+    const res=await uploadHealthDocument(
+      new Request('https://health.example.com',{method:'POST',body:form()}),
+      fetcher,env.LIFESPACE_CORE_BASE_URL,'bearer_synthetic',space,'per_synthetic')
+    expect(res.status).toBe(403)
+    expect(calls.at(-1)).toBe('/api/v1/spaces/'+space+'/files/'+fileId)
+    expect(JSON.stringify(await res.json())).not.toContain(signature)
+  })
+  it('checks verified person before allowing document download',async()=>{
+    const calls:string[]=[]
+    const fetcher=vi.fn(async(input:RequestInfo|URL):Promise<Response>=>{
+      const p=auth(input);calls.push(p)
+      if(p==='/internal/v1/access/tokens')return data({accessToken:'bearer_synthetic'})
+      if(p==='/api/v1/me')return data({principal:{type:'user',id:'usr_synthetic'}})
+      if(p.endsWith('/members'))return data([{userId:'usr_synthetic',personId:'per_synthetic'}])
+      if(p.endsWith('/models/health_document/records/'+doc))return data({
+        id:doc,subjectPersonId:'per_another',artifactRef:fileId,
+      })
+      throw new Error('Unauthorized downstream request '+p)
+    })
+    const response=await handleHealthApi(new Request(
+      'https://health.example.com/health/api/v1/spaces/'+space+'/documents/'+doc+'/download',
+      {headers:header}),env,fetcher)
+    expect(response.status).toBe(403)
+    expect(calls).not.toContain('/api/v1/spaces/'+space+'/file-downloads')
+  })
   it('denies requests without Access proof or same-origin mutation',async()=>{
     const {f}=createFetcher()
     const missing=new Request('https://health.example.com/health/api/v1/spaces/'+space+'/documents/upload',{
