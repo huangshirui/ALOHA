@@ -141,7 +141,7 @@ function withSessionCookie(response:Response,cookie:string|null):Response {
 }
 async function ensureLifeSpaceSession(
   request:Request,fetchImpl:Fetcher,identity:string,credential:string,assertion:string,
-):Promise<{bearer:string;cookie:string|null}|Response>{
+):Promise<{bearer:string;cookie:string|null;userId:string|null}|Response>{
   const cached=await readHealthSession(request,credential,assertion)
   if(cached){
     const checked=await send(fetchImpl,identity+'/internal/v1/access/session-check',{
@@ -157,7 +157,7 @@ async function ensureLifeSpaceSession(
     const verified:unknown=await checked.json().catch(()=>null)
     if(!object(verified)||!object(verified.data)||
        verified.data.userId!==cached.userId)return withSessionCookie(json('identity_session_mismatch',401),clearHealthSessionCookie())
-    return {bearer:cached.accessToken,cookie:null}
+    return {bearer:cached.accessToken,cookie:null,userId:cached.userId}
   }
   const exchanged=await exchange(fetchImpl,identity,credential,assertion)
   if(exchanged instanceof Response)return exchanged
@@ -169,7 +169,7 @@ async function ensureLifeSpaceSession(
         credential,assertion,exchanged.accessToken,exchanged.expiresIn,userId)
     }catch{ /* Never fail authenticated API calls merely because a cookie cannot be set. */ }
   }
-  return {bearer:exchanged.accessToken,cookie}
+  return {bearer:exchanged.accessToken,cookie,userId}
 }
 function proxyResponse(response: Response): Response {
   return new Response(response.body, {
@@ -194,26 +194,31 @@ async function getRecord(
 }
 // Resolve authority only from the verified current User, never browser-provided IDs.
 async function resolveOwnIdentity(
-  fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,
+  fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,verifiedUserId:string|null=null,
 ):Promise<PresentationScope|Response> {
   const headers={Authorization:`Bearer ${bearer}`,Accept:'application/json'}
+  // Identity verified this usr_* on token exchange or current session-check.
+  // Core membership remains authoritative on every request.
   const [profile,members]=await Promise.all([
-    send(fetchImpl,core+'/api/v1/me',{method:'GET',headers}),
+    verifiedUserId ? Promise.resolve(null)
+      : send(fetchImpl,core+'/api/v1/me',{method:'GET',headers}),
     send(fetchImpl,core+'/api/v1/spaces/'+spaceId+'/members',{method:'GET',headers}),
   ])
-  if(!profile.ok) return proxyResponse(profile)
-  if(!members.ok) return proxyResponse(members)
-  const profileData:unknown=await profile.json().catch(()=>null)
+  if(profile && !profile.ok)return proxyResponse(profile)
+  if(!members.ok)return proxyResponse(members)
+  const profileData:unknown=profile?await profile.json().catch(()=>null):null
   const membersData:unknown=await members.json().catch(()=>null)
   const principal=object(profileData)&&object(profileData.data)&&object(profileData.data.principal)
     ?profileData.data.principal:null
+  const userId=verifiedUserId??(principal?.type==='user' && typeof principal.id==='string'
+    ?principal.id:null)
   const list=object(membersData)&&Array.isArray(membersData.data)?membersData.data:null
-  if(!principal || principal.type!=='user' || typeof principal.id!=='string' || !list)
+  if(!userId||!/^usr_[A-Za-z0-9_-]+$/.test(userId)||!list)
     return json('invalid_identity_response',502)
-  const member=list.find((m:unknown)=>object(m)&&m.userId===principal.id)
+  const member=list.find((m:unknown)=>object(m)&&m.userId===userId)
   if(!object(member)||typeof member.personId!=='string'||!/^per_[A-Za-z0-9_-]+$/.test(member.personId))
     return json('own_person_not_linked',409)
-  return {spaceId,userId:principal.id,personId:member.personId}
+  return {spaceId,userId,personId:member.personId}
 }
 
 /** ALOHA-only Durable Object call; instance ID is derived from Core-verified Principal. */
@@ -236,9 +241,10 @@ async function callPresentationState(
 }
 async function handlePresentation(
   request:Request,env:HealthEnv,fetchImpl:Fetcher,core:string,bearer:string,route:Route,
+  verifiedUserId:string|null=null,
 ):Promise<Response> {
   if(!env.HEALTH_PRESENTATION) return json('presentation_storage_not_configured',503)
-  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!,verifiedUserId)
   if(scope instanceof Response) return scope
   const corePath='/api/v1/spaces/'+scope.spaceId+'/models/health_concern/records'
   if(route.path==='@presentation-list' || request.method==='DELETE') {
@@ -266,8 +272,8 @@ async function handlePresentation(
   catch{return json('presentation_invalid',422)}
   return callPresentationState(env,scope,'patch',route.recordId!,patch)
 }
-async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string):Promise<Response> {
-  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId)
+async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,verifiedUserId:string|null):Promise<Response> {
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,verifiedUserId)
   if(scope instanceof Response) return scope
   return Response.json({data:{personId:scope.personId}},{headers:{'Cache-Control':'no-store'}})
 }
@@ -278,7 +284,7 @@ async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:str
  */
 async function handleSnapshot(
   env:HealthEnv,fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,identityMs:number,
-  requested:URLSearchParams,
+  requested:URLSearchParams,verifiedUserId:string|null,
 ):Promise<Response> {
   const rawModels=requested.get('models')
   // Explicit allowlist. Never permit arbitrary LifeSpace route/model expansion.
@@ -314,7 +320,7 @@ async function handleSnapshot(
   }
   // Determine the current Space Person from Core before constructing a scoped
   // Query. Never accept a browser-selected Person as a filter/authority.
-  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId)
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,verifiedUserId)
   if(scope instanceof Response)return scope
   const collections=await Promise.all(chosen.map(model=>
     pageThrough(model as SnapshotModelKey,scope.personId)))
@@ -416,15 +422,15 @@ export async function handleHealthApi(
   const identityStarted=performance.now()
   const session=await ensureLifeSpaceSession(request,fetchImpl,identity,credential,assertion)
   if(session instanceof Response)return session
-  const {bearer}=session
+  const {bearer,userId}=session
   const identityMs=performance.now()-identityStarted
   if(route.path==='@snapshot')return withSessionCookie(
-    await handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs,url.searchParams),session.cookie)
+    await handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs,url.searchParams,userId),session.cookie)
   if(route.path==='@own-person')return withSessionCookie(
-    await ownPerson(fetchImpl,core,bearer,route.spaceId!),session.cookie)
+    await ownPerson(fetchImpl,core,bearer,route.spaceId!,userId),session.cookie)
   if(route.path==='@document-upload') {
     const scopeStarted=performance.now()
-    const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
+    const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!,userId)
     const scopeMs=Math.round(performance.now()-scopeStarted)
     if(scope instanceof Response)return withSessionCookie(scope,session.cookie)
     const uploaded=await uploadHealthDocument(request,fetchImpl,core,bearer,scope.spaceId,scope.personId)
@@ -436,7 +442,7 @@ export async function handleHealthApi(
     }),session.cookie)
   }
   if(route.path==='@document-download') {
-    const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
+    const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!,userId)
     if(scope instanceof Response)return withSessionCookie(scope,session.cookie)
     const doc=await getRecord(fetchImpl,core,bearer,
       '/api/v1/spaces/'+scope.spaceId+'/models/health_document/records/'+route.recordId)
@@ -446,7 +452,7 @@ export async function handleHealthApi(
   }
   if(route.path.startsWith('@presentation-')) {
     const started=performance.now()
-    const response=await handlePresentation(request,env,fetchImpl,core,bearer,route)
+    const response=await handlePresentation(request,env,fetchImpl,core,bearer,route,userId)
     const presentationMs=Math.round(performance.now()-started)
     const headers=new Headers(response.headers)
     headers.set('Server-Timing','identity;dur='+Math.round(identityMs)+
