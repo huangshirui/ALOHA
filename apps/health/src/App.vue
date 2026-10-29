@@ -375,7 +375,7 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
     d.referenceSource=d.referenceSource??''
   }
   if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
-  if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
+  if (presetConcernId && !record && kind!=='metric' && !liveMode) d.concernIds=[presetConcernId]
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
@@ -462,7 +462,7 @@ async function formSave() {
         : '已保存至 LifeSpace。'
       if(selected.value?.kind!==kind || selected.value.id!==saved.id) show(kind,saved.id)
     } catch(e) {formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
-    finally {saving.value=false;uploadFile.value=null}
+    finally {saving.value=false;if(sheet.value!=='edit')uploadFile.value=null}
     return
   }
   const rows=getList(kind)
@@ -547,7 +547,7 @@ function pickFile(e: Event) {
   else uploadedName.value=file?.name ?? ''
 }
 function openImport(concernId='') {
-  if(liveMode){openEditor('document','',concernId);return}
+  if(liveMode){openEditor('document');return}
   sheet.value='import';uploadStage.value=1;uploadedName.value='';uploadTitle.value='';uploadType.value='lab_report';uploadConcernId.value=concernId;uploadIncludeResult.value=false
 }
 function importNext() {
@@ -1011,7 +1011,7 @@ function detailName(kind: HealthKind,record:any) {
             <label><span class="field-label">评估标题 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.title" required placeholder="例如：本次检查结果回顾"/></label>
             <label><span class="field-label">评估内容 <span class="required-mark" aria-hidden="true">*</span></span><textarea v-model="draft.content" rows="4" required placeholder="记录医生意见或经确认的总结，不要混作原始数据"/></label>
             <div class="form-two"><label><span class="field-label">评估日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.assessedDate" required type="date"/></label><label>状态<select v-model="draft.status"><option v-for="[value,name] in assessmentStatuses" :key="value" :value="value">{{ name }}</option></select></label></div>
-            <fieldset class="check-group"><legend>依据哪些记录？</legend><label v-for="d in demo.documents" :key="d.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="d.id"/>{{ d.title }}</label><label v-for="o in demo.observations.slice(0,5)" :key="o.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="o.id"/>{{ observationTitle(o) }}</label></fieldset>
+            <fieldset v-if="!liveMode" class="check-group"><legend>依据哪些记录？</legend><label v-for="d in demo.documents" :key="d.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="d.id"/>{{ d.title }}</label><label v-for="o in demo.observations.slice(0,5)" :key="o.id" class="checkbox-line"><input v-model="draft.basisIds" type="checkbox" :value="o.id"/>{{ observationTitle(o) }}</label></fieldset>
             <label>来源说明<input v-model="draft.sourceNote" placeholder="例如：医生意见、个人整理"/></label>
             <label>补充备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
@@ -1028,7 +1028,7 @@ function detailName(kind: HealthKind,record:any) {
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
             <p v-if="!liveMode" class="helper-copy">重复提醒尚未接入演示任务。</p>
           </template>
-          <fieldset v-if="editKind!=='metric'&&editKind!=='concern'" class="check-group"><legend>相关健康问题（可多选）</legend><label v-for="c in demo.concerns" :key="c.id" class="checkbox-line"><input v-model="draft.concernIds" type="checkbox" :value="c.id"/>{{ c.name }}</label><p v-if="!demo.concerns.length" class="helper-copy">可以先创建健康问题，后续再关联。</p></fieldset>
+          <fieldset v-if="!liveMode&&editKind!=='metric'&&editKind!=='concern'" class="check-group"><legend>相关健康问题（可多选）</legend><label v-for="c in demo.concerns" :key="c.id" class="checkbox-line"><input v-model="draft.concernIds" type="checkbox" :value="c.id"/>{{ c.name }}</label><p v-if="!demo.concerns.length" class="helper-copy">可以先创建健康问题，后续再关联。</p></fieldset>
           <p v-if="formError" class="form-error" role="alert"><Info :size="16"/>{{ formError }}</p>
           <p v-if="saving" class="save-progress" role="status" aria-live="polite"><span class="saving-spinner" aria-hidden="true"/>{{ editKind==='document'&&!editId?'正在上传文件并保存资料…':'正在保存至 LifeSpace…' }} 请勿重复提交。</p>
           <div class="form-actions"><button type="button" class="quiet-button" :disabled="saving" @click="closeSheet">取消</button><button type="submit" class="primary-button" :disabled="saving" :aria-busy="saving"><span v-if="saving" class="saving-spinner" aria-hidden="true"/><Check v-else :size="17"/> {{ saving?'正在保存…':editId?'保存修改':'保存记录' }}</button></div>
