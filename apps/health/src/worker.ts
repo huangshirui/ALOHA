@@ -4,6 +4,7 @@
  */
 import { parsePresentationPatch, type PresentationScope } from './health-presentation'
 import { uploadHealthDocument, downloadHealthDocument } from './health-files'
+import { readHealthSession, makeHealthSessionCookie, signedTokenSubject } from './health-session'
 export { HealthPresentationState } from './health-presentation-do'
 
 export interface HealthPresentationNamespace {
@@ -86,13 +87,15 @@ async function send(fetchImpl: Fetcher, url: string, init: RequestInit): Promise
     return json('backend_unavailable', 503)
   }
 }
-function tokenOf(value: unknown): string | null {
-  if (!object(value) || !object(value.data)) return null
-  return typeof value.data.accessToken === 'string' ? value.data.accessToken : null
+type ExchangedToken={accessToken:string;expiresIn:number}
+function tokenOf(value: unknown): ExchangedToken | null {
+  if (!object(value) || !object(value.data) || typeof value.data.accessToken !== 'string')return null
+  return {accessToken:value.data.accessToken,
+    expiresIn:typeof value.data.expiresIn==='number'?value.data.expiresIn:0}
 }
 async function exchange(
   fetchImpl: Fetcher, identity: string, credential: string, assertion: string,
-): Promise<string | Response> {
+): Promise<ExchangedToken | Response> {
   const response = await send(fetchImpl, identity + '/internal/v1/access/tokens', {
     method: 'POST',
     headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
@@ -127,6 +130,45 @@ async function exchange(
   }
   const value = await response.json().catch(() => null)
   return tokenOf(value) ?? json('identity_invalid_response', 502)
+}
+function withSessionCookie(response:Response,cookie:string|null):Response {
+  if(!cookie)return response
+  const headers=new Headers(response.headers)
+  headers.append('Set-Cookie',cookie)
+  headers.set('Cache-Control','private, no-store')
+  return new Response(response.body,{status:response.status,statusText:response.statusText,headers})
+}
+async function ensureLifeSpaceSession(
+  request:Request,fetchImpl:Fetcher,identity:string,credential:string,assertion:string,
+):Promise<{bearer:string;cookie:string|null}|Response>{
+  const cached=await readHealthSession(request,credential,assertion)
+  if(cached){
+    const checked=await send(fetchImpl,identity+'/internal/v1/access/session-check',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+credential,'Content-Type':'application/json'},
+      body:JSON.stringify({accessAssertion:assertion}),
+    })
+    if(!checked.ok){
+      if(checked.status===401)return json('not_authenticated',401)
+      if([403,409,422].includes(checked.status))return json('access_not_linked_or_forbidden',403)
+      return json('identity_session_check_unavailable',503)
+    }
+    const verified:unknown=await checked.json().catch(()=>null)
+    if(!object(verified)||!object(verified.data)||
+       verified.data.userId!==cached.userId)return json('identity_session_mismatch',401)
+    return {bearer:cached.accessToken,cookie:null}
+  }
+  const exchanged=await exchange(fetchImpl,identity,credential,assertion)
+  if(exchanged instanceof Response)return exchanged
+  const userId=signedTokenSubject(exchanged.accessToken)
+  let cookie:string|null=null
+  if(userId && exchanged.expiresIn>15) {
+    try {
+      cookie=await makeHealthSessionCookie(
+        credential,assertion,exchanged.accessToken,exchanged.expiresIn,userId)
+    }catch{ /* Never fail authenticated API calls merely because a cookie cannot be set. */ }
+  }
+  return {bearer:exchanged.accessToken,cookie}
 }
 function proxyResponse(response: Response): Response {
   return new Response(response.body, {
@@ -362,27 +404,30 @@ export async function handleHealthApi(
   if (assertion.length > 32768 || !assertionPattern.test(assertion))
     return json('access_assertion_required', 401)
   const identityStarted=performance.now()
-  const bearer = await exchange(fetchImpl, identity, credential, assertion)
-  if (bearer instanceof Response) return bearer
+  const session=await ensureLifeSpaceSession(request,fetchImpl,identity,credential,assertion)
+  if(session instanceof Response)return session
+  const {bearer}=session
   const identityMs=performance.now()-identityStarted
-  if(route.path==='@snapshot')return handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs)
-  if(route.path==='@own-person') return ownPerson(fetchImpl,core,bearer,route.spaceId!)
+  if(route.path==='@snapshot')return withSessionCookie(
+    await handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs),session.cookie)
+  if(route.path==='@own-person')return withSessionCookie(
+    await ownPerson(fetchImpl,core,bearer,route.spaceId!),session.cookie)
   if(route.path==='@document-upload') {
     const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
-    if(scope instanceof Response)return scope
-    return uploadHealthDocument(request,fetchImpl,core,bearer,scope.spaceId,scope.personId)
+    if(scope instanceof Response)return withSessionCookie(scope,session.cookie)
+    return withSessionCookie(await uploadHealthDocument(request,fetchImpl,core,bearer,scope.spaceId,scope.personId),session.cookie)
   }
   if(route.path==='@document-download') {
     const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
-    if(scope instanceof Response)return scope
+    if(scope instanceof Response)return withSessionCookie(scope,session.cookie)
     const doc=await getRecord(fetchImpl,core,bearer,
       '/api/v1/spaces/'+scope.spaceId+'/models/health_document/records/'+route.recordId)
-    if(doc instanceof Response)return doc
-    if(doc.subjectPersonId!==scope.personId)return json('document_not_owned',403)
-    return downloadHealthDocument(fetchImpl,core,bearer,scope.spaceId,route.recordId!,String(doc.artifactRef??''))
+    if(doc instanceof Response)return withSessionCookie(doc,session.cookie)
+    if(doc.subjectPersonId!==scope.personId)return withSessionCookie(json('document_not_owned',403),session.cookie)
+    return withSessionCookie(await downloadHealthDocument(fetchImpl,core,bearer,scope.spaceId,route.recordId!,String(doc.artifactRef??'')),session.cookie)
   }
   if(route.path.startsWith('@presentation-'))
-    return handlePresentation(request,env,fetchImpl,core,bearer,route)
+    return withSessionCookie(await handlePresentation(request,env,fetchImpl,core,bearer,route),session.cookie)
   const validationStarted=performance.now()
   let body: string | undefined
   let parsed: JsonObject | undefined
@@ -421,7 +466,7 @@ export async function handleHealthApi(
     ', validation;dur='+Math.round(validationMs)+
     ', core;dur='+Math.round(coreMs)+
     ', total;dur='+Math.round(identityMs+validationMs+coreMs))
-  return proxied
+  return withSessionCookie(proxied,session.cookie)
 }
 export default {
   fetch(request: Request, env: HealthEnv): Promise<Response> {
