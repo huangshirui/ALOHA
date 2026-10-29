@@ -342,7 +342,7 @@ async function handleSnapshot(
   const totalMs=performance.now()-started
   const duration=(n:number)=>Math.round(Math.max(0,n))
   return Response.json({data:{
-    personId:scope.personId,models:filtered,presentation:presentationData.data,
+    personId:scope.personId,models:filtered,presentation:presentationData,
   }},{headers:{
     'Cache-Control':'private, no-store','Server-Timing':
       'identity;dur='+duration(identityMs)+', core;dur='+duration(coreMs)+
