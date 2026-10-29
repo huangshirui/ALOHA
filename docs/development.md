@@ -39,10 +39,10 @@ Health now has an interactive prototype and a Draft trusted LifeSpace backend in
 - PWA `id`, `start_url`, scope: `/health/`;
 - build output: `apps/health/dist/health`;
 - Worker deployment unit: `aloha-app-health` via `apps/health/wrangler.jsonc`;
-- current deployment: independent Worker preview only; Live mode additionally requires LifeSpace Staging + Access + separate ALOHA D1;
+- current deployment: independent Worker preview only; Live mode additionally requires LifeSpace Staging + Access; app-only display state lives in a per-user SQLite-backed DO;
 - production `/health/*` route: not activated.
 
-Seven Health domain models are published manually through LifeSpace Console. The Draft Health BFF owns no canonical Health model: its separate optional D1 holds only user-scoped body-point/attention presentation state. See `apps/health/BACKEND.md`.
+Seven Health domain models are published manually through LifeSpace Console. The Draft Health BFF owns no canonical Health model: its separately bound per-user Durable Object holds only body-point/attention presentation state. See `apps/health/BACKEND.md`.
 
 ## Install and run
 
