@@ -281,7 +281,16 @@ const snapshotModels = [
  */
 async function handleSnapshot(
   env:HealthEnv,fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,identityMs:number,
+  requested:URLSearchParams,
 ):Promise<Response> {
+  const rawModels=requested.get('models')
+  // Explicit allowlist. Never permit arbitrary LifeSpace route/model expansion.
+  const chosen=rawModels?rawModels.split(','):[...snapshotModels]
+  if(!chosen.length||chosen.length>snapshotModels.length||
+     new Set(chosen).size!==chosen.length||
+     chosen.some(model=>!snapshotModels.some(allowed=>allowed===model)) ||
+     [...requested.keys()].some(k=>k!=='models'))return json('snapshot_models_invalid',422)
+  const includesConcern=chosen.includes('health_concern')
   const started=performance.now()
   type Page={items:JsonObject[];nextCursor:string|null}
   async function pageThrough(model:string):Promise<JsonObject[]|Response> {
@@ -308,23 +317,24 @@ async function handleSnapshot(
   }
   const [scope,...collections]=await Promise.all([
     resolveOwnIdentity(fetchImpl,core,bearer,spaceId),
-    ...snapshotModels.map(model=>pageThrough(model)),
+    ...chosen.map(model=>pageThrough(model)),
   ])
   if(scope instanceof Response)return scope
   const error=collections.find(item=>item instanceof Response)
   if(error instanceof Response)return error
   const coreMs=performance.now()-started
-  const concernIndex=snapshotModels.indexOf('health_concern')
-  // A successful read of HealthConcern is also the Core-side read authorization
-  // previously used by the separate presentation endpoint.
-  if(!Array.isArray(collections[concernIndex]))return json('invalid_core_response',502)
-  const presentation=await callPresentationState(env,scope,'list')
-  if(!presentation.ok)return proxyResponse(presentation)
-  const presentationData:unknown=await presentation.json().catch(()=>null)
-  if(!object(presentationData)||!object(presentationData.data)||
-     !Array.isArray(presentationData.data.items))return json('invalid_presentation_response',502)
+  let presentationData:JsonObject={items:[]}
+  if(includesConcern){
+    // HealthConcern access was already independently verified by Core.
+    const presentation=await callPresentationState(env,scope,'list')
+    if(!presentation.ok)return proxyResponse(presentation)
+    const payload:unknown=await presentation.json().catch(()=>null)
+    if(!object(payload)||!object(payload.data)||
+       !Array.isArray(payload.data.items))return json('invalid_presentation_response',502)
+    presentationData=payload.data
+  }
   const filtered:Record<string,JsonObject[]>={}
-  snapshotModels.forEach((model,index)=>{
+  chosen.forEach((model,index)=>{
     const items=collections[index] as JsonObject[]
     filtered[model]=model==='health_metric' ? items :
       items.filter(record=>record.subjectPersonId===scope.personId)
@@ -409,7 +419,7 @@ export async function handleHealthApi(
   const {bearer}=session
   const identityMs=performance.now()-identityStarted
   if(route.path==='@snapshot')return withSessionCookie(
-    await handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs),session.cookie)
+    await handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs,url.searchParams),session.cookie)
   if(route.path==='@own-person')return withSessionCookie(
     await ownPerson(fetchImpl,core,bearer,route.spaceId!),session.cookie)
   if(route.path==='@document-upload') {
