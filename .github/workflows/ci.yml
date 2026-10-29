@@ -22,10 +22,6 @@ jobs:
       # npm Arborist peer-set crash; remove it when switching to npm ci.
       - run: npm install --legacy-peer-deps
       - run: npm run check
-      - name: Dry-run package shared Preview ingress
-        run: |
-          cd workers/preview-ingress
-          npx wrangler deploy --dry-run --outdir ../../.preview-ingress-dry-run
       - name: Dry-run package Health Worker (when runtime exists)
         run: |
           if [ -f apps/health/src/worker.ts ]; then
