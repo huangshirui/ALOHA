@@ -54,6 +54,33 @@ jobs:
         working-directory: apps/health
         run: npx wrangler deploy --dry-run --outdir ../../.health-preview-dry-run
 
+      - name: Configure Staging-only internal Service Bindings
+        env:
+          IDENTITY_WORKER: ${{ vars.LIFESPACE_IDENTITY_STAGING_WORKER }}
+          CORE_WORKER: ${{ vars.LIFESPACE_CORE_STAGING_WORKER }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          // Worker names belong to deployment configuration, not public source control.
+          const identity = process.env.IDENTITY_WORKER ?? '';
+          const core = process.env.CORE_WORKER ?? '';
+          const valid = (value) => /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(value);
+          if (!valid(identity) || !valid(core) || identity === core) {
+            throw new Error('Configure distinct LIFESPACE_IDENTITY_STAGING_WORKER and LIFESPACE_CORE_STAGING_WORKER in the GitHub preview environment variables before deployment.');
+          }
+          const configPath = 'apps/health/wrangler.jsonc';
+          const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+          if (!config.previews || config.previews.services) {
+            throw new Error('Unexpected Health Preview Service Binding configuration.');
+          }
+          config.previews.services = [
+            { binding: 'LIFESPACE_IDENTITY', service: identity },
+            { binding: 'LIFESPACE_CORE', service: core },
+          ];
+          fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+          console.log('Staging-only Identity and Core Service Bindings configured for Wrangler Preview deployment (targets withheld).');
+          NODE
+
       - name: Deploy named staging Preview (does not modify Production)
         working-directory: apps/health
         env:
@@ -61,10 +88,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler preview --name staging
 
-      - name: Verify deployed Preview bindings (names only)
+      - name: Verify deployed Preview bindings (types and targets)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          IDENTITY_WORKER: ${{ vars.LIFESPACE_IDENTITY_STAGING_WORKER }}
+          CORE_WORKER: ${{ vars.LIFESPACE_CORE_STAGING_WORKER }}
         run: |
           node --input-type=module <<'NODE'
           const root = `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID}/workers/workers/aloha-app-health/previews`;
@@ -84,12 +113,23 @@ jobs:
           const required = [
             'ASSETS', 'HEALTH_PRESENTATION', 'LIFESPACE_APPLICATION_CREDENTIAL',
             'LIFESPACE_IDENTITY_BASE_URL', 'LIFESPACE_CORE_BASE_URL',
+            'LIFESPACE_IDENTITY', 'LIFESPACE_CORE',
           ];
           const missing = required.filter((name) => !(name in (latest.env ?? {})));
           if (missing.length) {
-            throw new Error(`Missing staging Preview bindings: ${missing.join(', ')}. Reconfigure in Cloudflare Dashboard before using live Health data.`);
+            throw new Error(`Missing staging Preview bindings: ${missing.join(', ')}. Deployment is not ready.`);
           }
-          console.log('Health staging Preview required bindings present (names only; values not read).');
+          const expected = {
+            LIFESPACE_IDENTITY: process.env.IDENTITY_WORKER,
+            LIFESPACE_CORE: process.env.CORE_WORKER,
+          };
+          for (const [name, target] of Object.entries(expected)) {
+            const binding = latest.env[name];
+            if (binding?.type !== 'service' || binding?.service !== target) {
+              throw new Error(`Incorrect staging Preview Service Binding: ${name}.`);
+            }
+          }
+          console.log('Health staging Preview Service Bindings verified (types and targets matched without logging values).');
           NODE
 
       - name: Reminder
