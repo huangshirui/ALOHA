@@ -74,6 +74,18 @@ This exception is intentionally limited: the Worker configuration must set `work
 
 **Dashboard caveat:** This bootstrap may allow the Dashboard to recognize a script-based Worker. It does not guarantee that Cloudflare's current UI can edit secrets scoped to an already-created individual Preview. The Dashboard documents **Previews Base** configuration; Base changes apply to newly created Previews, not existing ones. Always confirm the selected environment and whether the change targets an existing Preview or only the Base template.
 
+## Shared staging ingress (implementation candidate)
+
+The shared staging hostname requires a **separate, small ingress Worker** to route the product's path-scoped PWAs. The first supported path is `/health/*`; every other path fails closed until its independently deployed surface is ready.
+
+The ingress does not use Service Bindings to target downstream Worker Previews: Cloudflare currently routes those bindings to **production**, not the matching Preview. Instead, it makes an explicit HTTPS request to a single configured **named `staging` Worker Preview URL**, with the `global_fetch_strictly_public` compatibility flag. It only accepts a fixed-form `staging-*.workers.dev` upstream host; it cannot turn the request URL into an arbitrary proxy target.
+
+There are two distinct Access checks: the shared browser-facing hostname validates the product user's Access identity, and the downstream Preview requires a dedicated **service-token policy** in addition to its private browser policy. The ingress sends the service token to the downstream Access layer while preserving the original user-signed Access assertion in a private hop header. The Health BFF sends this original proof to LifeSpace Identity for signature, audience and account validation; it never treats the ingress as an independent user authorization authority. On unsafe HTTP methods, the ingress validates the browser Origin and normalizes it for the internal upstream hop; the Health BFF still validates the internal hop Origin.
+
+Required runtime configuration on the **shared ingress Worker only**: `ACCESS_AUDIENCE`, `HEALTH_PREVIEW_URL`, `UPSTREAM_ACCESS_CLIENT_ID` and `UPSTREAM_ACCESS_CLIENT_SECRET` (last two as Secrets). Each Health Worker Preview retains its own separate `LIFESPACE_APPLICATION_CREDENTIAL`; never copy it to the ingress. All actual hostnames, audience IDs and secrets must stay in private Cloudflare configuration. Neither the ingress nor the Health Preview is enabled for real data until its end-to-end Access and Origin checks pass.
+
+The ingress is deployed as its own staging-only Worker with `workers_dev: false` and **no public route in source**. Its manual deployment does not create DNS or attach the shared custom domain. Configure and validate the product-level Cloudflare Access application before binding the hostname; verify that the downstream service-token request is actually accepted, that public bypass URLs are blocked and that the original user assertion reaches the trusted BFF. If a probe fails, do not expose the shared hostname to real health data.
+
 ## Current deployment state
 
 - **Assistant:** workspace is `apps/assistant`, but production remains on the legacy root-scope assets attached to `workers/gateway` until the LifeSpace-dependent migration is ready.
