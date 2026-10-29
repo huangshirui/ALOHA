@@ -2,13 +2,16 @@
  * ALOHA Health same-origin BFF. The browser never receives LifeSpace credentials.
  * Identity verifies the raw Access assertion; Core owns Space/Model/Grant authorization.
  */
-import {
-  listConcernPresentations, parsePresentationPatch, removeConcernPresentation,
-  setConcernPresentation, type PresentationDatabase, type PresentationScope,
-} from './health-presentation'
+import { parsePresentationPatch, type PresentationScope } from './health-presentation'
+export { HealthPresentationState } from './health-presentation-do'
+
+export interface HealthPresentationNamespace {
+  idFromName(name:string):unknown
+  get(id:unknown):{fetch(request:Request):Promise<Response>}
+}
 
 export interface HealthEnv {
-  PRESENTATION_DB?: PresentationDatabase
+  HEALTH_PRESENTATION?: HealthPresentationNamespace
   ASSETS?: { fetch(request: Request): Promise<Response> }
   LIFESPACE_IDENTITY_BASE_URL?: string
   LIFESPACE_CORE_BASE_URL?: string
@@ -133,15 +136,33 @@ async function resolveOwnIdentity(
   return {spaceId,userId:principal.id,personId:member.personId}
 }
 
+/** ALOHA-only Durable Object call; instance ID is derived from Core-verified Principal. */
+async function callPresentationState(
+  env:HealthEnv,scope:PresentationScope,operation:'list'|'patch'|'delete',
+  concernId?:string,patch?:unknown,
+):Promise<Response> {
+  if(!env.HEALTH_PRESENTATION) return json('presentation_storage_not_configured',503)
+  try {
+    const userObject=env.HEALTH_PRESENTATION.get(
+      env.HEALTH_PRESENTATION.idFromName('user:'+scope.userId),
+    )
+    const response=await userObject.fetch(new Request('https://presentation.internal/'+operation,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({spaceId:scope.spaceId,personId:scope.personId,concernId,patch}),
+    }))
+    if(!response.ok) return json('presentation_storage_unavailable',503)
+    return proxyResponse(response)
+  } catch {return json('presentation_storage_unavailable',503)}
+}
 async function handlePresentation(
   request:Request,env:HealthEnv,fetchImpl:Fetcher,core:string,bearer:string,route:Route,
 ):Promise<Response> {
-  if(!env.PRESENTATION_DB) return json('presentation_storage_not_configured',503)
+  if(!env.HEALTH_PRESENTATION) return json('presentation_storage_not_configured',503)
   const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
   if(scope instanceof Response) return scope
   const corePath='/api/v1/spaces/'+scope.spaceId+'/models/health_concern/records'
   if(route.path==='@presentation-list' || request.method==='DELETE') {
-    // A current Core model read authorization is required even for application-only data.
+    // Current LifeSpace Core read authorization is required for application-owned data.
     const authorization=await send(fetchImpl,core+corePath+'?limit=1',{
       method:'GET',headers:{Authorization:`Bearer ${bearer}`,Accept:'application/json'},
     })
@@ -151,26 +172,19 @@ async function handlePresentation(
     if(concern instanceof Response) return concern
     if(concern.subjectPersonId!==scope.personId) return json('concern_not_owned',403)
   }
-  try {
-    if(route.path==='@presentation-list')
-      return Response.json({data:{items:await listConcernPresentations(env.PRESENTATION_DB,scope)}},
-        {headers:{'Cache-Control':'no-store'}})
-    if(request.method==='DELETE') {
-      await removeConcernPresentation(env.PRESENTATION_DB,scope,route.recordId!)
-      return new Response(null,{status:204,headers:{'Cache-Control':'no-store'}})
-    }
-    if(!request.headers.get('Content-Type')?.includes('application/json')) return json('json_required',415)
-    if(Number(request.headers.get('Content-Length')??0)>8192) return json('payload_too_large',413)
-    const body=await request.text()
-    if(body.length>8192) return json('payload_too_large',413)
-    let payload:unknown
-    try { payload=JSON.parse(body) } catch { return json('invalid_json',400) }
-    let patch
-    try { patch=parsePresentationPatch(payload,route.recordId!) }
-    catch { return json('presentation_invalid',422) }
-    const saved=await setConcernPresentation(env.PRESENTATION_DB,scope,route.recordId!,patch)
-    return Response.json({data:saved},{headers:{'Cache-Control':'no-store'}})
-  } catch { return json('presentation_storage_unavailable',503) }
+  if(route.path==='@presentation-list')return callPresentationState(env,scope,'list')
+  if(request.method==='DELETE')
+    return callPresentationState(env,scope,'delete',route.recordId!)
+  if(!request.headers.get('Content-Type')?.includes('application/json'))return json('json_required',415)
+  if(Number(request.headers.get('Content-Length')??0)>8192)return json('payload_too_large',413)
+  const body=await request.text()
+  if(body.length>8192)return json('payload_too_large',413)
+  let payload:unknown
+  try {payload=JSON.parse(body)}catch{return json('invalid_json',400)}
+  let patch
+  try{patch=parsePresentationPatch(payload,route.recordId!)}
+  catch{return json('presentation_invalid',422)}
+  return callPresentationState(env,scope,'patch',route.recordId!,patch)
 }
 async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string):Promise<Response> {
   const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId)
