@@ -14,16 +14,38 @@ describe('one Worker project / isolated staging Preview release contract', () =>
       expect(wrangler.env).toBeUndefined()
 
       const workflow = read(`.github/workflows/deploy-${surface}.yml`)
-      expect(workflow).toContain('preview --name staging')
-      expect(workflow).toContain('environment: preview')
-      const productionDeployCommands = workflow.split('\n')
+      const previewWorkflow = surface === 'health'
+        ? workflow.split('\n  bootstrap-production-runtime:')[0]!
+        : workflow
+      expect(previewWorkflow).toContain('preview --name staging')
+      expect(previewWorkflow).toContain('environment: preview')
+      const productionDeployCommands = previewWorkflow.split('\n')
         .filter(line => /run:\s*(?:npx\s+)?wrangler\s+deploy\b/u.test(line))
         .filter(line => !/\s--dry-run(?:\s|$)/u.test(line))
       expect(productionDeployCommands).toEqual([])
-      expect(workflow).not.toMatch(/command:\s*deploy\b/u)
+      expect(previewWorkflow).not.toMatch(/command:\s*deploy\b/u)
       expect(workflow).not.toContain('STAGING_LIFESPACE_APPLICATION_CREDENTIAL')
     })
   }
+
+  it('one-time production bootstrap cannot activate public routing or receive Preview credentials', () => {
+    const config = JSON.parse(read('apps/health/wrangler.jsonc'))
+    expect(config.workers_dev).toBe(false)
+    expect(config.preview_urls).toBe(true)
+    expect(config.route).toBeUndefined()
+    expect(config.routes).toBeUndefined()
+    expect(config.vars).toBeUndefined()
+
+    const workflow = read('.github/workflows/deploy-health.yml')
+    const bootstrap = workflow.split('\n  bootstrap-production-runtime:')[1]
+    expect(bootstrap).toBeDefined()
+    expect(bootstrap).toContain("inputs.confirmation == 'BOOTSTRAP_ALOHA_HEALTH_PRODUCTION_RUNTIME'")
+    expect(bootstrap).toContain('c.workers_dev!==false')
+    expect(bootstrap).toContain('c.route||c.routes||c.vars')
+    expect(bootstrap).toContain('npx wrangler deploy --dry-run')
+    expect(bootstrap).toMatch(/run: npx wrangler deploy\s*$/mu)
+    expect(bootstrap).not.toContain('LIFESPACE_APPLICATION_CREDENTIAL')
+  })
 
   it('Health workspace has no implicit production deploy script', () => {
     const packageConfig = JSON.parse(read('apps/health/package.json'))
