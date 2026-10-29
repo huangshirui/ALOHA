@@ -383,6 +383,7 @@ export async function handleHealthApi(
   }
   if(route.path.startsWith('@presentation-'))
     return handlePresentation(request,env,fetchImpl,core,bearer,route)
+  const validationStarted=performance.now()
   let body: string | undefined
   let parsed: JsonObject | undefined
   if (request.method === 'POST' || request.method === 'PATCH' || request.method === 'DELETE') {
@@ -400,8 +401,10 @@ export async function handleHealthApi(
       if (error) return error
     }
   }
+  const validationMs=performance.now()-validationStarted
   const outbound = new URL(route.path, core)
   if (request.method === 'GET') outbound.search = url.search
+  const coreStarted=performance.now()
   const response = await send(fetchImpl, outbound.toString(), {
     method: request.method,
     headers: {
@@ -411,7 +414,14 @@ export async function handleHealthApi(
     },
     ...(body === undefined ? {} : { body }),
   })
-  return proxyResponse(response)
+  const coreMs=performance.now()-coreStarted
+  const proxied=proxyResponse(response)
+  // Numeric latency segments, never URLs, tokens, identities or response bodies.
+  proxied.headers.set('Server-Timing','identity;dur='+Math.round(identityMs)+
+    ', validation;dur='+Math.round(validationMs)+
+    ', core;dur='+Math.round(coreMs)+
+    ', total;dur='+Math.round(identityMs+validationMs+coreMs))
+  return proxied
 }
 export default {
   fetch(request: Request, env: HealthEnv): Promise<Response> {
