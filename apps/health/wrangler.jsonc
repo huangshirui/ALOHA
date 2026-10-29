@@ -14,11 +14,30 @@
   },
   "durable_objects": {
     "bindings": [
-      { "name": "HEALTH_PRESENTATION", "class_name": "HealthPresentationState" }
+      {
+        "name": "HEALTH_PRESENTATION",
+        "class_name": "HealthPresentationState"
+      }
     ]
   },
   "migrations": [
-    { "tag": "health-presentation-v1", "new_sqlite_classes": ["HealthPresentationState"] }
+    {
+      "tag": "health-presentation-v1",
+      "new_sqlite_classes": [
+        "HealthPresentationState"
+      ]
+    }
   ],
-  "main": "./src/worker.ts"
+  "main": "./src/worker.ts",
+  "preview_urls": true,
+  "previews": {
+    "durable_objects": {
+      "bindings": [
+        {
+          "name": "HEALTH_PRESENTATION",
+          "class_name": "HealthPresentationState"
+        }
+      ]
+    }
+  }
 }
