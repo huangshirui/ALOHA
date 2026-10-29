@@ -32,8 +32,9 @@ describe('one Worker project / isolated staging Preview release contract', () =>
     const config = JSON.parse(read('apps/health/wrangler.jsonc'))
     expect(config.workers_dev).toBe(false)
     expect(config.compatibility_flags).toContain('global_fetch_strictly_public')
-    // Public front-door fetch must reach the Staging Identity/Core Worker custom domains.
+    // Production routing stays disabled while Preview may use internal staging services.
     expect(config.preview_urls).toBe(true)
+    expect(config.previews.services).toBeUndefined() // Target service names are injected at deploy time only.
     expect(config.route).toBeUndefined()
     expect(config.routes).toBeUndefined()
     expect(config.vars).toBeUndefined()
@@ -71,7 +72,13 @@ describe('one Worker project / isolated staging Preview release contract', () =>
     expect(workflow).toContain('VITE_HEALTH_DATA_MODE: live')
     expect(workflow).toContain('wrangler deploy --dry-run')
     expect(workflow).toContain('test -f apps/health/src/worker.ts')
-    expect(workflow).toContain('Verify deployed Preview bindings (names only)')
+    expect(workflow).toContain('Configure Staging-only internal Service Bindings')
+    expect(workflow).toContain('Verify deployed Preview bindings (types and targets)')
+    expect(workflow).toContain('config.previews.services')
+    expect(workflow).toContain("binding?.type !== 'service'")
+    expect(workflow).toContain('binding?.service !== target')
+    expect(workflow).toContain('LIFESPACE_IDENTITY_STAGING_WORKER')
+    expect(workflow).toContain('LIFESPACE_CORE_STAGING_WORKER')
     expect(workflow).toContain('Missing staging Preview bindings')
     expect(workflow).toContain('LIFESPACE_IDENTITY_BASE_URL')
     expect(workflow).toContain('LIFESPACE_CORE_BASE_URL')
