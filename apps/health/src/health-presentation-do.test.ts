@@ -26,7 +26,7 @@ function memoryObject() {
           y:!previous||hasPlacement===1?y as number|null:previous.y,
         })
       }
-      if(query.startsWith('DELETE '))map.delete(key(space,person,concern))
+      if(query.startsWith('DELETE '))map.delete(key(String(space),String(person),String(concern)))
       const rows=query.startsWith('SELECT ')
         ? [...map.values()].filter(row=>row.space_id===space&&row.person_id===person
            &&(args.length===2||row.concern_id===concern))
