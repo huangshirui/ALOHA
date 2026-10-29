@@ -71,6 +71,8 @@ describe('HealthDocument Core-backed file transfer',()=>{
     })
     const response=await handleHealthApi(request,env,f)
     expect(response.status).toBe(201)
+    for(const phase of ['upload_init','r2_put','file_complete','record_create'])
+      expect(response.headers.get('server-timing')).toContain(phase+';dur=')
     expect((await response.json()).data.artifactRef).toBe(fileId)
     expect(visits).toContain('/health-upload')
     expect(visits).toContain('/api/v1/spaces/'+space+'/file-uploads/'+uploadId+'/complete')
