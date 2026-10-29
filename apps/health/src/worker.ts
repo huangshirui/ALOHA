@@ -48,6 +48,9 @@ function routeFor(url: URL, method: string): Route | null {
   if (upload && method === 'POST') return {spaceId:upload[1],path:'@document-upload'}
   const download = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/documents\/([A-Za-z][A-Za-z0-9_-]{2,127})\/download$/.exec(p)
   if (download && method === 'GET') return {spaceId:download[1],recordId:download[2],path:'@document-download'}
+  const snapshot = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/snapshot$/.exec(p)
+  if (snapshot && method === 'GET')
+    return {spaceId:snapshot[1],path:'@snapshot'}
   const ownPerson = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/own-person$/.exec(p)
   if (ownPerson && method === 'GET')
     return { spaceId: ownPerson[1], path: '@own-person' }
@@ -225,6 +228,76 @@ async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:str
   if(scope instanceof Response) return scope
   return Response.json({data:{personId:scope.personId}},{headers:{'Cache-Control':'no-store'}})
 }
+const snapshotModels = [
+  'health_metric','health_concern','health_event','health_document',
+  'health_observation','health_regimen','health_assessment',
+] as const
+
+/** One Access proof, one Identity exchange, seven concurrent Core model reads.
+ * No persistent caching of health records or Identity tokens. Every Core request
+ * continues to independently enforce LifeSpace access and model policies.
+ */
+async function handleSnapshot(
+  env:HealthEnv,fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,identityMs:number,
+):Promise<Response> {
+  const started=performance.now()
+  type Page={items:JsonObject[];nextCursor:string|null}
+  async function pageThrough(model:string):Promise<JsonObject[]|Response> {
+    const records:JsonObject[]=[]
+    let cursor:string|null=null
+    for(let index=0;index<20;index++){
+      const params=new URLSearchParams({limit:'100'})
+      if(cursor)params.set('cursor',cursor)
+      const response=await send(fetchImpl,core+'/api/v1/spaces/'+spaceId+
+        '/models/'+model+'/records?'+params,{method:'GET',
+        headers:{Authorization:'Bearer '+bearer,Accept:'application/json'}})
+      if(!response.ok)return proxyResponse(response)
+      const payload:unknown=await response.json().catch(()=>null)
+      if(!object(payload)||!object(payload.data)||
+        !Array.isArray(payload.data.items)||
+        !(payload.data.nextCursor===null||typeof payload.data.nextCursor==='string')||
+        !payload.data.items.every(object))return json('invalid_core_response',502)
+      const page=payload.data as Page
+      records.push(...page.items)
+      cursor=page.nextCursor
+      if(!cursor)return records
+    }
+    return json('snapshot_page_limit',413)
+  }
+  const [scope,...collections]=await Promise.all([
+    resolveOwnIdentity(fetchImpl,core,bearer,spaceId),
+    ...snapshotModels.map(model=>pageThrough(model)),
+  ])
+  if(scope instanceof Response)return scope
+  const error=collections.find(item=>item instanceof Response)
+  if(error instanceof Response)return error
+  const coreMs=performance.now()-started
+  const concernIndex=snapshotModels.indexOf('health_concern')
+  // A successful read of HealthConcern is also the Core-side read authorization
+  // previously used by the separate presentation endpoint.
+  if(!Array.isArray(collections[concernIndex]))return json('invalid_core_response',502)
+  const presentation=await callPresentationState(env,scope,'list')
+  if(!presentation.ok)return proxyResponse(presentation)
+  const presentationData:unknown=await presentation.json().catch(()=>null)
+  if(!object(presentationData)||!object(presentationData.data)||
+     !Array.isArray(presentationData.data.items))return json('invalid_presentation_response',502)
+  const filtered:Record<string,JsonObject[]>={}
+  snapshotModels.forEach((model,index)=>{
+    const items=collections[index] as JsonObject[]
+    filtered[model]=model==='health_metric' ? items :
+      items.filter(record=>record.subjectPersonId===scope.personId)
+  })
+  const totalMs=performance.now()-started
+  const duration=(n:number)=>Math.round(Math.max(0,n))
+  return Response.json({data:{
+    personId:scope.personId,models:filtered,presentation:presentationData.data,
+  }},{headers:{
+    'Cache-Control':'private, no-store','Server-Timing':
+      'identity;dur='+duration(identityMs)+', core;dur='+duration(coreMs)+
+      ', presentation;dur='+duration(totalMs-coreMs)+
+      ', total;dur='+duration(identityMs+totalMs),
+  }})
+}
 const filled = (v: unknown) => v !== null && v !== undefined && v !== ''
 function validBounds(v: JsonObject): boolean {
   for (const key of ['referenceLow','referenceHigh']) {
@@ -241,7 +314,12 @@ async function validateMutation(
     return json('reference_bounds_invalid', 422)
   if (route.modelKey !== 'health_observation') return null
   let next = payload
-  if (method === 'PATCH' && route.recordId) {
+  // UI PATCH contains the full observation value triad and metric identity.
+  // Only fetch previous state when a partial PATCH needs merging; Core still
+  // enforces optimistic version, model policy and record ownership on write.
+  const complete = ['metricId','valueNumber','valueText','valueBoolean',
+    'referenceLow','referenceHigh'].every(key => Object.hasOwn(payload,key))
+  if (method === 'PATCH' && route.recordId && !complete) {
     const previous = await getRecord(fetchImpl, core, bearer, route.path)
     if (previous instanceof Response) return previous
     next = { ...previous, ...payload }
@@ -283,8 +361,11 @@ export async function handleHealthApi(
   const assertion = request.headers.get('Cf-Access-Jwt-Assertion') ?? ''
   if (assertion.length > 32768 || !assertionPattern.test(assertion))
     return json('access_assertion_required', 401)
+  const identityStarted=performance.now()
   const bearer = await exchange(fetchImpl, identity, credential, assertion)
   if (bearer instanceof Response) return bearer
+  const identityMs=performance.now()-identityStarted
+  if(route.path==='@snapshot')return handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs)
   if(route.path==='@own-person') return ownPerson(fetchImpl,core,bearer,route.spaceId!)
   if(route.path==='@document-upload') {
     const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
