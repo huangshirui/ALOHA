@@ -423,9 +423,17 @@ export async function handleHealthApi(
   if(route.path==='@own-person')return withSessionCookie(
     await ownPerson(fetchImpl,core,bearer,route.spaceId!),session.cookie)
   if(route.path==='@document-upload') {
+    const scopeStarted=performance.now()
     const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
+    const scopeMs=Math.round(performance.now()-scopeStarted)
     if(scope instanceof Response)return withSessionCookie(scope,session.cookie)
-    return withSessionCookie(await uploadHealthDocument(request,fetchImpl,core,bearer,scope.spaceId,scope.personId),session.cookie)
+    const uploaded=await uploadHealthDocument(request,fetchImpl,core,bearer,scope.spaceId,scope.personId)
+    const headers=new Headers(uploaded.headers)
+    headers.append('Server-Timing',
+      'identity;dur='+Math.round(identityMs)+', own_person;dur='+scopeMs)
+    return withSessionCookie(new Response(uploaded.body,{
+      status:uploaded.status,statusText:uploaded.statusText,headers,
+    }),session.cookie)
   }
   if(route.path==='@document-download') {
     const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!)
@@ -436,8 +444,22 @@ export async function handleHealthApi(
     if(doc.subjectPersonId!==scope.personId)return withSessionCookie(json('document_not_owned',403),session.cookie)
     return withSessionCookie(await downloadHealthDocument(fetchImpl,core,bearer,scope.spaceId,route.recordId!,String(doc.artifactRef??'')),session.cookie)
   }
-  if(route.path.startsWith('@presentation-'))
-    return withSessionCookie(await handlePresentation(request,env,fetchImpl,core,bearer,route),session.cookie)
+  if(route.path.startsWith('@presentation-')) {
+    const started=performance.now()
+    const response=await handlePresentation(request,env,fetchImpl,core,bearer,route)
+    const presentationMs=Math.round(performance.now()-started)
+    const headers=new Headers(response.headers)
+    headers.set('Server-Timing','identity;dur='+Math.round(identityMs)+
+      ', presentation;dur='+presentationMs)
+    if(request.method!=='GET')console.log(JSON.stringify({
+      event:'health_mutation_timing',kind:'presentation',
+      method:request.method,identity_ms:Math.round(identityMs),
+      presentation_ms:presentationMs,
+    }))
+    return withSessionCookie(new Response(response.body,{
+      status:response.status,statusText:response.statusText,headers,
+    }),session.cookie)
+  }
   const validationStarted=performance.now()
   let body: string | undefined
   let parsed: JsonObject | undefined
@@ -476,6 +498,11 @@ export async function handleHealthApi(
     ', validation;dur='+Math.round(validationMs)+
     ', core;dur='+Math.round(coreMs)+
     ', total;dur='+Math.round(identityMs+validationMs+coreMs))
+  if(request.method!=='GET')console.log(JSON.stringify({
+    event:'health_mutation_timing',kind:route.modelKey??'model',
+    method:request.method,identity_ms:Math.round(identityMs),
+    validation_ms:Math.round(validationMs),core_ms:Math.round(coreMs),
+  }))
   return withSessionCookie(proxied,session.cookie)
 }
 export default {
