@@ -1,0 +1,42 @@
+import { readFileSync } from 'node:fs'
+import { describe, expect, it } from 'vitest'
+
+const root = new URL('../../../', import.meta.url)
+const read = (path:string) => readFileSync(new URL(path, root), 'utf8')
+
+describe('one Worker project / isolated staging Preview release contract', () => {
+  for (const surface of ['health','finance','things']) {
+    it(`${surface} Preview cannot deploy Production or choose a runtime environment`, () => {
+      const wrangler = JSON.parse(read(`apps/${surface}/wrangler.jsonc`))
+      expect(wrangler.name).toBe(`aloha-app-${surface}`)
+      expect(wrangler.preview_urls).toBe(true)
+      expect(wrangler).toHaveProperty('previews')
+      expect(wrangler.env).toBeUndefined()
+
+      const workflow = read(`.github/workflows/deploy-${surface}.yml`)
+      expect(workflow).toContain('preview --name staging')
+      expect(workflow).toContain('environment: preview')
+      expect(workflow).not.toMatch(/run:\s*(?:npx\s+)?wrangler\s+deploy\b/u)
+      expect(workflow).not.toMatch(/command:\s*deploy\b/u)
+      expect(workflow).not.toContain('STAGING_LIFESPACE_APPLICATION_CREDENTIAL')
+    })
+  }
+
+  it('Health Preview binds its own SQLite Durable Object class', () => {
+    const config = JSON.parse(read('apps/health/wrangler.jsonc'))
+    expect(config.durable_objects.bindings).toEqual([
+      {name:'HEALTH_PRESENTATION',class_name:'HealthPresentationState'},
+    ])
+    expect(config.previews.durable_objects.bindings).toEqual(config.durable_objects.bindings)
+    expect(config.migrations).toContainEqual({
+      tag:'health-presentation-v1',new_sqlite_classes:['HealthPresentationState'],
+    })
+  })
+
+  it('Health Preview builds live mode but requires trusted backend configuration', () => {
+    const workflow = read('.github/workflows/deploy-health.yml')
+    expect(workflow).toContain('VITE_HEALTH_DATA_MODE: live')
+    expect(workflow).not.toContain('data_mode:')
+    expect(workflow).not.toMatch(/LIFESPACE_.*(?:https?:\/\/|lsa_)/u)
+  })
+})
