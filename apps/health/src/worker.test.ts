@@ -243,6 +243,60 @@ describe('Health trusted BFF', () => {
     expect(exchanges).toBe(1)
     expect(checks).toBe(1)
   })
+  it('resolves the same current Space Person with one Core read for a verified JWT',async()=>{
+    const jwt='header.'+btoa(JSON.stringify({sub:'usr_self'})).replace(/=/g,'')+'.signature'
+    const calls:string[]=[]
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      calls.push(p)
+      if(p==='/internal/v1/access/tokens')return success({accessToken:jwt,expiresIn:600})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.endsWith('/health_concern/records/query')){
+        expect(init?.method).toBe('POST')
+        expect(JSON.parse(String(init?.body)).filter).toEqual({
+          field:'subjectPersonId',op:'contains',value:'per_self',
+        })
+        return success({items:[],nextCursor:null})
+      }
+      throw new Error('Unexpected request '+p)
+    })
+    const response=await handleHealthApi(make(
+      'https://health.example.com/health/api/v1/spaces/spc_test/snapshot?models=health_concern'),
+      {...env,HEALTH_PRESENTATION:{idFromName:()=>0,get:()=>({fetch:async()=>success({items:[]})})}},f)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.personId).toBe('per_self')
+    expect(calls).toEqual([
+      '/internal/v1/access/tokens','/api/v1/spaces/spc_test/members',
+      '/api/v1/spaces/spc_test/models/health_concern/records/query',
+    ])
+  })
+  it('overlaps independent membership and Concern checks before a presentation mutation',async()=>{
+    const started=new Set<string>()
+    let finish!:()=>void
+    const both=new Promise<void>(resolve=>finish=resolve)
+    const stub={fetch:vi.fn(async()=>success({concernId:'rec_self',attention:'watch',placement:null}))}
+    const ns={idFromName:vi.fn((x:string)=>x),get:vi.fn(()=>stub)}
+    const f=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'server_token'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members')||p.endsWith('/rec_self')){
+        started.add(p.endsWith('/members')?'member':'concern')
+        if(started.size===2)finish()
+        await both
+        return p.endsWith('/members')
+          ?success([{userId:'usr_self',personId:'per_self'}])
+          :success({id:'rec_self',subjectPersonId:'per_self'})
+      }
+      throw new Error('unexpected route '+p)
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/presentation/concerns/rec_self'
+    const result=await handleHealthApi(make(url,'PATCH',{attention:'watch'}),
+      {...env,HEALTH_PRESENTATION:ns},f)
+    expect(result.status).toBe(200)
+    expect([...started].sort()).toEqual(['concern','member'])
+    expect(stub.fetch).toHaveBeenCalledTimes(1)
+  })
   it('reads only explicitly requested models from Core, not seven by default',async()=>{
     const stub={fetch:vi.fn(async()=>success({items:[]}))}
     const namespace={idFromName:vi.fn((x:string)=>x),get:vi.fn(()=>stub)}
