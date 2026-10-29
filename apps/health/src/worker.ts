@@ -83,11 +83,30 @@ async function exchange(
       requestedScopes: ['profile:read', 'spaces:read', 'resources:read', 'resources:write'],
     }),
   })
-  if (!response.ok) return json(
-    response.status === 401 ? 'not_authenticated' :
-      [403,409,422].includes(response.status) ? 'access_not_linked_or_forbidden' : 'identity_unavailable',
-    response.status === 401 ? 401 : [403,409,422].includes(response.status) ? 403 : 503,
-  )
+  if (!response.ok) {
+    if (response.status === 401) return json('not_authenticated', 401)
+    if ([403, 409, 422].includes(response.status))
+      return json('access_not_linked_or_forbidden', 403)
+
+    // Safe, bounded diagnostics only: never forward Identity response bodies,
+    // Access assertions, application credentials, upstream URLs or request IDs.
+    const payload: unknown = await response.json().catch(() => null)
+    const upstreamCode = object(payload) && object(payload.error)
+      ? payload.error.code : object(payload) ? payload.error : null
+    if (upstreamCode === 'backend_unavailable')
+      return json('identity_transport_unavailable', 503)
+    if (upstreamCode === 'ACCESS_VERIFIER_UNAVAILABLE')
+      return json('identity_access_verifier_unavailable', 503)
+    if (upstreamCode === 'ACCESS_NOT_CONFIGURED')
+      return json('identity_access_not_configured', 503)
+    if (upstreamCode === 'IDENTITY_NOT_CONFIGURED')
+      return json('identity_not_configured', 503)
+    if (upstreamCode === 'INTERNAL_ERROR')
+      return json('identity_internal_error', 503)
+    if (response.status === 404) return json('identity_route_not_found', 503)
+    // The HTTP status is non-sensitive; do not expose opaque upstream content.
+    return json('identity_upstream_http_' + response.status, 503)
+  }
   const value = await response.json().catch(() => null)
   return tokenOf(value) ?? json('identity_invalid_response', 502)
 }
