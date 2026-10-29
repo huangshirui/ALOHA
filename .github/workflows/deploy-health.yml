@@ -1,10 +1,10 @@
-name: Deploy Health PWA Staging Preview
+name: Deploy Health PWA Preview and Runtime Bootstrap
 
 on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Confirm staging Preview deploy (never Production)"
+        description: "Staging Preview: DEPLOY_ALOHA_HEALTH_STAGING_PREVIEW; one-time production runtime bootstrap: BOOTSTRAP_ALOHA_HEALTH_PRODUCTION_RUNTIME"
         required: true
         type: string
 
@@ -65,3 +65,51 @@ jobs:
         run: |
           echo "The named staging Preview is separate from the Health Worker Production deployment."
           echo "Configure Preview-scoped secrets and protect its hostname with Cloudflare Access."
+
+  bootstrap-production-runtime:
+    name: One-time production runtime bootstrap (no public routes)
+    if: inputs.confirmation == 'BOOTSTRAP_ALOHA_HEALTH_PRODUCTION_RUNTIME'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout reviewed branch
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Use repository npm version
+        run: npm install --global npm@10.9.2
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Fail closed if this would publish a production URL
+        run: |
+          test -f apps/health/src/worker.ts
+          node -e "const fs=require('node:fs');const c=JSON.parse(fs.readFileSync('apps/health/wrangler.jsonc'));if(c.name!=='aloha-app-health'||c.main!=='./src/worker.ts'||c.workers_dev!==false||c.route||c.routes||c.vars||!c.preview_urls||!c.previews?.durable_objects?.bindings?.some(b=>b.name==='HEALTH_PRESENTATION'))process.exit(1)"
+
+      - name: Verify Health
+        run: npm run typecheck -w @aloha/health && npm run test -w @aloha/health
+
+      - name: Build Health runtime assets
+        run: npm run build:health
+
+      - name: Dry-run production Worker bundle
+        working-directory: apps/health
+        run: npx wrangler deploy --dry-run --outdir ../../.health-bootstrap-dry-run
+
+      - name: Bootstrap runtime on production Worker (not a public launch)
+        working-directory: apps/health
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Deployment boundary
+        run: |
+          echo "Production Worker script updated, without workers.dev or route activation."
+          echo "No backend credentials have been installed on Production."
+          echo "Configure preview secrets using the Cloudflare Dashboard; do not copy production settings."
