@@ -295,7 +295,7 @@ function location(): HealthLocation {
 function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
-  if(loadDefault&&liveMode&&selectedSpaceId.value)void loadLiveRecords('focus')
+  if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body',false);changeBodyTab(tab) }
