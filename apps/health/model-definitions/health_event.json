@@ -1,0 +1,103 @@
+{
+  "definitionVersion": 1,
+  "key": "health_event",
+  "description": "记录某次健康相关事件，如受伤、就诊、检查、治疗或一次症状发作。回答发生了什么及何时发生；指标数值另记健康观测。",
+  "display": {
+    "singular": "健康事件",
+    "plural": "健康事件"
+  },
+  "fields": {
+    "subjectPersonId": {
+      "type": "person",
+      "title": "健康主体",
+      "required": true,
+      "immutable": true
+    },
+    "eventType": {
+      "type": "enum",
+      "title": "事件类型",
+      "required": true,
+      "values": [
+        "symptom",
+        "injury",
+        "visit",
+        "examination",
+        "procedure",
+        "treatment",
+        "medication_intake",
+        "vaccination",
+        "rehabilitation",
+        "other"
+      ],
+      "description": "选择实际事件类别；症状发作、受伤与就诊检查应分别记录。"
+    },
+    "summary": {
+      "type": "string",
+      "title": "摘要",
+      "required": true,
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "简要描述本次发生的事情，而非长期健康问题名称。"
+    },
+    "when": {
+      "type": "temporal_range",
+      "title": "发生时段",
+      "required": true,
+      "description": "事件发生的日期或明确时段；不要将记录创建时间当作发生时间。"
+    },
+    "status": {
+      "type": "enum",
+      "title": "状态",
+      "required": true,
+      "values": [
+        "active",
+        "cancelled"
+      ],
+      "description": "active 为有效事件；cancelled 仅用于已取消、尚未发生的预约等，不表示伤病痊愈。"
+    },
+    "location": {
+      "type": "location",
+      "title": "地点",
+      "nullable": true
+    },
+    "description": {
+      "type": "text",
+      "title": "详情",
+      "nullable": true,
+      "description": "本次事件的经过或补充事实，不填结构化检验数值。"
+    }
+  },
+  "defaults": {
+    "status": "active"
+  },
+  "referenceLabel": {
+    "field": "summary"
+  },
+  "semanticRelations": {
+    "outgoing": [
+      "relates_to"
+    ]
+  },
+  "query": {
+    "searchable": [
+      "summary",
+      "description",
+      "location"
+    ],
+    "filterable": [
+      "subjectPersonId",
+      "eventType",
+      "when",
+      "status",
+      "location"
+    ],
+    "sortable": [
+      "when",
+      "summary"
+    ]
+  },
+  "access": [
+    "read",
+    "write"
+  ]
+}

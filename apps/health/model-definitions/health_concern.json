@@ -1,0 +1,91 @@
+{
+  "definitionVersion": 1,
+  "key": "health_concern",
+  "description": "记录需要持续跟踪的健康问题、症状或风险，用于汇集相关健康事实并跟踪变化；不等同于医学确诊或一次就诊。",
+  "display": {
+    "singular": "健康关注",
+    "plural": "健康关注"
+  },
+  "fields": {
+    "subjectPersonId": {
+      "type": "person",
+      "title": "健康主体",
+      "required": true,
+      "immutable": true,
+      "description": "需要跟踪该问题的人；不是记录创建者。"
+    },
+    "name": {
+      "type": "string",
+      "title": "名称",
+      "required": true,
+      "minLength": 1,
+      "maxLength": 160,
+      "description": "概括持续管理的主题，例如“症状随访”或“健康风险追踪”。"
+    },
+    "summary": {
+      "type": "text",
+      "title": "摘要",
+      "nullable": true,
+      "description": "当前事实背景的简要摘要，不写未经证实的诊断或长篇 AI 分析。"
+    },
+    "status": {
+      "type": "enum",
+      "title": "状态",
+      "required": true,
+      "values": [
+        "active",
+        "inactive"
+      ],
+      "description": "active 表示仍需关注；inactive 表示暂不跟踪，不必然代表痊愈。"
+    },
+    "onsetDate": {
+      "type": "date",
+      "title": "开始日期",
+      "nullable": true,
+      "description": "症状首次出现或开始管理的日期；未知则留空。"
+    },
+    "resolvedDate": {
+      "type": "date",
+      "title": "结束日期",
+      "nullable": true,
+      "description": "问题确认结束的日期；未解决或未知则留空。"
+    },
+    "notes": {
+      "type": "text",
+      "title": "备注",
+      "nullable": true
+    }
+  },
+  "defaults": {
+    "status": "active"
+  },
+  "referenceLabel": {
+    "field": "name"
+  },
+  "semanticRelations": {
+    "outgoing": [
+      "monitors",
+      "relates_to"
+    ]
+  },
+  "query": {
+    "searchable": [
+      "name",
+      "summary"
+    ],
+    "filterable": [
+      "subjectPersonId",
+      "status",
+      "onsetDate",
+      "resolvedDate"
+    ],
+    "sortable": [
+      "onsetDate",
+      "name"
+    ]
+  },
+  "access": [
+    "read",
+    "write"
+  ]
+}

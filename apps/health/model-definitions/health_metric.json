@@ -1,0 +1,71 @@
+{
+  "definitionVersion": 1,
+  "key": "health_metric",
+  "description": "定义可重复测量的健康指标，如体重、血脂或活动度。保存值类型、默认单位和参考范围；单次结果请记录为健康观测。",
+  "display": {
+    "singular": "健康指标",
+    "plural": "健康指标"
+  },
+  "fields": {
+    "name": {
+      "type": "string",
+      "title": "指标名称",
+      "required": true,
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "valueType": {
+      "type": "enum",
+      "title": "值类型",
+      "required": true,
+      "values": [
+        "number",
+        "text",
+        "boolean"
+      ],
+      "description": "决定观测结果使用数值、文本或布尔值；已有观测后不要随意改变。"
+    },
+    "defaultUnit": {
+      "type": "string",
+      "title": "默认单位",
+      "nullable": true,
+      "description": "数值指标的默认单位；每次观测仍须保留实际单位。"
+    },
+    "referenceLow": {
+      "type": "number",
+      "title": "参考下限",
+      "nullable": true,
+      "description": "数值指标的默认参考下限；不是个人目标或诊断标准。"
+    },
+    "referenceHigh": {
+      "type": "number",
+      "title": "参考上限",
+      "nullable": true,
+      "description": "数值指标的默认参考上限；须与默认单位匹配。"
+    },
+    "referenceSource": {
+      "type": "string",
+      "title": "参考范围来源",
+      "nullable": true,
+      "description": "默认参考范围的依据或适用条件；没有证据时不要编造。"
+    }
+  },
+  "referenceLabel": {
+    "field": "name"
+  },
+  "query": {
+    "searchable": [
+      "name"
+    ],
+    "filterable": [
+      "valueType"
+    ],
+    "sortable": [
+      "name"
+    ]
+  },
+  "access": [
+    "read",
+    "write"
+  ]
+}

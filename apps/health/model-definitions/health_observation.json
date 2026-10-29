@@ -1,0 +1,105 @@
+{
+  "definitionVersion": 1,
+  "key": "health_observation",
+  "description": "记录某人在某日的一次健康指标结果，例如体温或心率测量。引用已有指标，只填与其值类型匹配的一种结果；本次参考范围可单独保留。",
+  "display": {
+    "singular": "健康观测",
+    "plural": "健康观测"
+  },
+  "fields": {
+    "subjectPersonId": {
+      "type": "person",
+      "title": "健康主体",
+      "required": true,
+      "immutable": true,
+      "description": "结果对应的被测量者；不是录入者。"
+    },
+    "metricId": {
+      "type": "record",
+      "title": "指标",
+      "required": true,
+      "targetModel": "health_metric",
+      "description": "本次测量对应的已有健康指标；先查询并复用，避免同名重复创建。"
+    },
+    "observedDate": {
+      "type": "date",
+      "title": "观测日期",
+      "required": true,
+      "description": "实际测量或采样所属日期，不是录入日期。"
+    },
+    "valueNumber": {
+      "type": "number",
+      "title": "数值",
+      "nullable": true,
+      "description": "仅数值型指标填写；与文本值、布尔值三选一。"
+    },
+    "valueText": {
+      "type": "text",
+      "title": "文本值",
+      "nullable": true,
+      "description": "仅文本型指标填写；与数值、布尔值三选一。"
+    },
+    "valueBoolean": {
+      "type": "boolean",
+      "title": "布尔值",
+      "nullable": true,
+      "description": "仅布尔型指标填写；false 是有效结果，不能当作缺失。"
+    },
+    "unit": {
+      "type": "string",
+      "title": "单位",
+      "nullable": true,
+      "description": "本次结果实际使用的单位；不能直接假定等于指标默认单位。"
+    },
+    "referenceLow": {
+      "type": "number",
+      "title": "参考下限",
+      "nullable": true,
+      "description": "本次报告使用的参考下限；不是指标默认下限。"
+    },
+    "referenceHigh": {
+      "type": "number",
+      "title": "参考上限",
+      "nullable": true,
+      "description": "本次报告使用的参考上限；须与当次单位匹配。"
+    },
+    "referenceSource": {
+      "type": "string",
+      "title": "参考范围来源",
+      "nullable": true,
+      "description": "本次参考范围的报告来源或适用说明，不是个人目标。"
+    },
+    "observationGroupId": {
+      "type": "string",
+      "title": "观测分组",
+      "nullable": true,
+      "description": "同一次导入的多个结果共享的分组标识；应用生成，不要猜测。"
+    },
+    "sourceDocumentId": {
+      "type": "record",
+      "title": "来源文档",
+      "nullable": true,
+      "targetModel": "health_document",
+      "description": "从某份已保存报告提取时引用该健康资料；无文档证据时留空。"
+    },
+    "notes": {
+      "type": "text",
+      "title": "备注",
+      "nullable": true
+    }
+  },
+  "query": {
+    "filterable": [
+      "subjectPersonId",
+      "metricId",
+      "observedDate"
+    ],
+    "sortable": [
+      "observedDate"
+    ]
+  },
+  "access": [
+    "read",
+    "write"
+  ]
+}
