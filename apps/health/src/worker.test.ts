@@ -252,7 +252,7 @@ describe('Health trusted BFF', () => {
       if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
       if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
       if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
-      if(p.endsWith('/records'))return success({items:[],nextCursor:null})
+      if(p.endsWith('/records/query'))return success({items:[],nextCursor:null})
       throw new Error('unexpected route')
     })
     const path='https://health.example.com/health/api/v1/spaces/spc_test/snapshot?models=health_document'
@@ -261,7 +261,7 @@ describe('Health trusted BFF', () => {
     const body=(await response.json()).data
     expect(Object.keys(body.models)).toEqual(['health_document'])
     expect(body.presentation).toEqual({items:[]})
-    expect(seen.filter(x=>x.endsWith('/records'))).toHaveLength(1)
+    expect(seen.filter(x=>x.endsWith('/records/query'))).toHaveLength(1)
     expect(stub.fetch).not.toHaveBeenCalled()
     const injected=await handleHealthApi(make(path.replace('health_document','admin')),env,f)
     expect(injected.status).toBe(422)
@@ -279,9 +279,13 @@ describe('Health trusted BFF', () => {
       if(p.endsWith('/members'))return success([
         {userId:'usr_self',personId:'per_self'}, {userId:'usr_other',personId:'per_other'},
       ])
-      if(p.endsWith('/records')) {
+      if(p.endsWith('/records/query')) {
         const model=p.split('/')[6]
-        expect(new URL(String(input)).searchParams.get('limit')).toBe('100')
+        expect(init?.method).toBe('POST')
+        const query=JSON.parse(String(init?.body))
+        expect(query.page).toEqual({limit:200,cursor:null})
+        if(model==='health_metric')expect(query.filter).toBeUndefined()
+        else expect(query.filter).toEqual({field:'subjectPersonId',op:'contains',value:'per_self'})
         if(model==='health_metric')return success({items:[{
           id:'rec_metric',name:'synthetic metric',version:1,
         }],nextCursor:null})
