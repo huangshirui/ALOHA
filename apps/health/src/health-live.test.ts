@@ -51,9 +51,15 @@ describe('LifeSpace Health projection (synthetic only)', () => {
       name:'每周示例',status:'active'}))
     expect(loaded).toMatchObject({recurrence:'weekly',version:3})
   })
-  it('rejects fake file references rather than claiming upload success', () => {
-    expect(()=>encodeHealthFields('document',{title:'Fake',fileName:'fake.pdf'},'per_fake'))
-      .toThrow(/文件/)
+  it('allows document metadata edits but never fabricates or replaces the immutable File reference', () => {
+    expect(encodeHealthFields('document',{
+      title:'Synthetic report',documentType:'lab_report',issuedDate:'',issuerName:'',
+      fileName:'fake.pdf',artifactRef:'fil_client_supplied_should_be_ignored',
+      eventId:'',notes:'sample',
+    },'per_synthetic')).toEqual({
+      title:'Synthetic report',documentType:'lab_report',issuedDate:null,
+      issuerName:null,eventId:null,notes:'sample',
+    })
   })
 
   it('round-trips Instant event dates/times across different local timezones',()=>{
