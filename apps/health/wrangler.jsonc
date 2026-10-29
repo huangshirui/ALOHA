@@ -12,5 +12,13 @@
       "/health/api/*"
     ]
   },
+  "durable_objects": {
+    "bindings": [
+      { "name": "HEALTH_PRESENTATION", "class_name": "HealthPresentationState" }
+    ]
+  },
+  "migrations": [
+    { "tag": "health-presentation-v1", "new_sqlite_classes": ["HealthPresentationState"] }
+  ],
   "main": "./src/worker.ts"
 }
