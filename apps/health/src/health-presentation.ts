@@ -6,15 +6,6 @@
 import { BODY_MAP_ASSET_IDS, isPointOnBody, type BodyMapBinding, type BodyView } from './body-map'
 import { concernAttentionOptions, type ConcernAttention } from './concern-attention'
 
-export interface PresentationStatement {
-  bind(...values:(string|number|null)[]):PresentationStatement
-  all<T>():Promise<{results:T[]}>
-  first<T>():Promise<T|null>
-  run():Promise<{success:boolean}>
-}
-export interface PresentationDatabase {
-  prepare(sql:string):PresentationStatement
-}
 export interface ConcernPresentation {
   concernId:string
   attention:ConcernAttention
@@ -29,7 +20,7 @@ export interface PresentationScope {
   personId:string
   userId:string
 }
-type Row = {
+export type PresentationRow = {
   concern_id:string;attention:string;view:string|null;asset_id:string|null
   x:number|null;y:number|null
 }
@@ -39,7 +30,7 @@ const levels=new Set<string>(concernAttentionOptions.map(option=>option.value))
 const keys=(value:Record<string,unknown>,allowed:string[]) =>
   Object.keys(value).every(key=>allowed.includes(key))
 
-/** Validation mirrors BodyOverview's input boundary. Invalid points never enter D1. */
+/** Validation mirrors BodyOverview's input boundary. Invalid points never enter private presentation storage. */
 export function parsePresentationPatch(value:unknown,concernId:string):PresentationPatch {
   if(!isObject(value) || !keys(value,['attention','placement']) || !Object.keys(value).length)
     throw new Error('展示设置格式不正确')
@@ -69,7 +60,7 @@ export function parsePresentationPatch(value:unknown,concernId:string):Presentat
   }
   return patch
 }
-function convertRow(row:Row):ConcernPresentation {
+export function presentationFromRow(row:PresentationRow):ConcernPresentation {
   const view=row.view
   const placement:BodyMapBinding|null=view==='front'||view==='back'
     ? row.asset_id===BODY_MAP_ASSET_IDS[view] && typeof row.x==='number' &&
@@ -81,50 +72,4 @@ function convertRow(row:Row):ConcernPresentation {
   return {concernId:row.concern_id,
     attention:levels.has(row.attention)?row.attention as ConcernAttention:'unset',
     placement}
-}
-export async function listConcernPresentations(
-  db:PresentationDatabase,scope:PresentationScope,
-):Promise<ConcernPresentation[]> {
-  const result=await db.prepare(
-    'SELECT concern_id,attention,view,asset_id,x,y FROM health_concern_presentation WHERE space_id=? AND user_id=? AND person_id=?'
-  ).bind(scope.spaceId,scope.userId,scope.personId).all<Row>()
-  return result.results.map(convertRow)
-}
-export async function setConcernPresentation(
-  db:PresentationDatabase,scope:PresentationScope,concernId:string,patch:PresentationPatch,
-):Promise<ConcernPresentation> {
-  // Flags allow an atomic partial upsert: updating a dot cannot erase a concurrently saved attention.
-  // Explicit placement:null removes the dot without removing the attention.
-  const hasAttention=patch.attention!==undefined
-  const hasPlacement=patch.placement!==undefined
-  const position=patch.placement
-  const result=await db.prepare(
-    'INSERT INTO health_concern_presentation '+
-    '(space_id,user_id,person_id,concern_id,attention,view,asset_id,x,y) VALUES (?,?,?,?,?,?,?,?,?) '+
-    'ON CONFLICT(space_id,user_id,person_id,concern_id) DO UPDATE SET '+
-    'attention=CASE WHEN ?=1 THEN excluded.attention ELSE health_concern_presentation.attention END, '+
-    'view=CASE WHEN ?=1 THEN excluded.view ELSE health_concern_presentation.view END, '+
-    'asset_id=CASE WHEN ?=1 THEN excluded.asset_id ELSE health_concern_presentation.asset_id END, '+
-    'x=CASE WHEN ?=1 THEN excluded.x ELSE health_concern_presentation.x END, '+
-    'y=CASE WHEN ?=1 THEN excluded.y ELSE health_concern_presentation.y END, '+
-    'updated_at=CURRENT_TIMESTAMP'
-  ).bind(scope.spaceId,scope.userId,scope.personId,concernId,
-    patch.attention??'unset',position?.view??null,position?.assetId??null,
-    position?.point.x??null,position?.point.y??null,
-    hasAttention?1:0,hasPlacement?1:0,hasPlacement?1:0,hasPlacement?1:0,hasPlacement?1:0,
-  ).run()
-  if(!result.success) throw new Error('展示设置写入失败')
-  const row=await db.prepare(
-    'SELECT concern_id,attention,view,asset_id,x,y FROM health_concern_presentation WHERE space_id=? AND user_id=? AND person_id=? AND concern_id=?'
-  ).bind(scope.spaceId,scope.userId,scope.personId,concernId).first<Row>()
-  if(!row) throw new Error('展示设置读取失败')
-  return convertRow(row)
-}
-export async function removeConcernPresentation(
-  db:PresentationDatabase,scope:PresentationScope,concernId:string,
-):Promise<void> {
-  const result=await db.prepare(
-    'DELETE FROM health_concern_presentation WHERE space_id=? AND user_id=? AND person_id=? AND concern_id=?'
-  ).bind(scope.spaceId,scope.userId,scope.personId,concernId).run()
-  if(!result.success) throw new Error('展示设置清理失败')
 }
