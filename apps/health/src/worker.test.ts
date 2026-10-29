@@ -67,7 +67,7 @@ describe('Health trusted BFF', () => {
     expect((f.mock.calls[1]![1] as RequestInit).redirect).toBe('manual')
   })
   it('fails closed on upstream redirects without following authorization headers', async () => {
-    const f = vi.fn(async () => new Response(null, {
+    const f = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, {
       status: 302, headers: { Location: 'https://another.example.com/' },
     }))
     const response = await handleHealthApi(make(url), env, f)
