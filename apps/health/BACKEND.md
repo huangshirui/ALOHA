@@ -11,14 +11,14 @@
 
 ## 部署配置（不提交真实值）
 
-在对应的 Health Worker Preview / Production 分开设置：
+在**同一个 Health Worker 项目**的 Production 与命名 `staging` Preview 中分别设置；Preview 与 Production 不共享运行时 Secrets 或 DO 数据：
 
 - `LIFESPACE_IDENTITY_BASE_URL` — 对应环境 HTTPS Identity origin
 - `LIFESPACE_CORE_BASE_URL` — 对应环境 HTTPS Core origin
-- `LIFESPACE_APPLICATION_CREDENTIAL` — 同一个 ALOHA LifeSpace Application 颁发的 Health BFF 专用 `lsa_*` Secret。独立凭证不代表新增 Application。
+- `LIFESPACE_APPLICATION_CREDENTIAL` — 对应 LifeSpace 环境中 ALOHA Application 颁发的 Health BFF 专用 `lsa_*` Secret。Staging 与 Production 的 Application 和 Credential 不同；同环境内多个 PWA 可共用 Application，但应各自使用可撤销的 Credential。
 - Health 路由外部须由 Cloudflare Access 保护，且所用 Access audience 已登记给同一个 ALOHA Application。
 
-LifeSpace Console 配置该 Application 的七模型 read/write Access；用户须具备 Space Membership/Grant 和 `profile:read/spaces:read/resources:read/resources:write` Scope。应用侧仅声明这批预期 Scope，不会越过 Identity/ Core 当前授权。
+LifeSpace Console 分别在对应环境的 ALOHA Application 配置七模型 read/write Access；用户须具备 Space Membership/Grant 和 `profile:read/spaces:read/resources:read/resources:write` Scope。应用侧仅声明这批预期 Scope，不会越过 Identity/ Core 当前授权。
 
 ## 验收
 
@@ -32,7 +32,7 @@ LifeSpace Console 配置该 Application 的七模型 read/write Access；用户�
 
 ## 开启 Staging Live 模式
 
-1. 用 LifeSpace Console 在 **Staging** 注册七个普通模型并为**现有 ALOHA Application**授权 read/write，不修改 LifeSpace 仓库。
+1. 在 LifeSpace **Staging** 确认七个普通模型已发布，为该环境统一的 ALOHA Preview Application 单独授权 read/write，不修改 LifeSpace 仓库。
 2. Staging Health Worker 配置 Identity/Core HTTPS Origin、专用 `LIFESPACE_APPLICATION_CREDENTIAL` Secret；确认受 Cloudflare Access 保护且 audience 归属同一个 ALOHA Application。
 3. 构建 Health 前端时设置 `VITE_HEALTH_DATA_MODE=live`；这个变量是公开的功能开关，不是权限或安全边界。
 4. 登录后明确选择个人 Space；本人 Person 由 BFF 从已认证 user 及该 Space 成员关系解析，不允许切换他人。空间选择只影响 UI 请求范围，权限仍由 Identity/Core 每次判定。
@@ -49,14 +49,19 @@ LifeSpace Console 配置该 Application 的七模型 read/write Access；用户�
 - 读取七个 Health 模型时并行读取 DO，按当前实际 Concern ID 交集显示；切换 Space 清除旧坐标；存储失败就报错，不回退 Demo 假数据。
 - 与 Assistant 的 Conversation/Run DO 互不依赖。Finance/Things 出现真实共享需求之前，不提前建立统一 ALOHA State Worker。
 
-### Staging Preview 配置与验收
+### Production / named staging Preview：同一个 Worker 项目
 
-1. 手工 Workflow **Deploy Health PWA Preview** 选择 `data_mode=live`；DO Binding 和 Migration 随 `aloha-app-health` Worker 一起发布。`demo` 模式同样配置 DO Class，但不会向其写入真实展示状态。无需 Cloudflare D1 新建/迁移流程。
-2. Staging Worker 仍需服务端 `LIFESPACE_IDENTITY_BASE_URL`、`LIFESPACE_CORE_BASE_URL`、`LIFESPACE_APPLICATION_CREDENTIAL` 和受 Cloudflare Access 保护的 audience。通过 LifeSpace Console 在 Staging 发布七个 Health 普通模型，为现有 ALOHA Application 配置 Model Access，不修改 LifeSpace 仓库。
-3. Production 以后必须使用独立 Worker/DO namespace，不能将已供 Staging 使用的同一 Worker/DO Namespace 改绑到 Production；不要把展示数据存储合并到 LifeSpace D1 或 Assistant Agent Control DO。
-4. 在线验收：刷新/跨设备恢复、不同 User/Space/Person 隔离、非法点位/素材 422、无 Core Model 权限 403、清除点位保留关注度、删除后无孤点、DO 不可用时明确 503。
+Health 使用一个 Cloudflare Worker 项目 `aloha-app-health`：Production 接 LifeSpace Production / 正式 ALOHA Application；命名 `staging` 的真正 **Worker Preview** 接 LifeSpace Staging / ALOHA Preview Application。两者不是两个 Worker 项目，也不是根据请求 URL/查询参数动态切换后端。
 
-**当前状态**：功能仍在 Draft PR #37，尚未完成 Staging 模型发布、Access 配置及端到端验收；没有创建新 D1。Demo 模式只用虚构内存数据。真实文件上传、Semantic Relations 与 Task 完成仍未接入。
+- Staging **只通过** `wrangler preview --name staging` 更新命名 Preview，生产版本只能通过单独审批后的 `wrangler deploy` 更新。现有 GitHub 手工 Workflow 强制构建 `VITE_HEALTH_DATA_MODE=live`；它是公开的 UI 功能模式，不承担环境边界。
+- `wrangler.jsonc` 的顶层 Durable Object Class / SQLite Migration 保持不变；`previews.durable_objects.bindings` 声明 Preview 的 `HEALTH_PRESENTATION`。Cloudflare 每个 Preview 自动获得**独立的 SQLite-backed Durable Object Namespace**。不能把 Preview DO 重新绑定到生产 DO。
+- Preview Worker Secrets **不继承** Production。使用 Cloudflare Preview 的独立 Secret 配置：`LIFESPACE_APPLICATION_CREDENTIAL`、`LIFESPACE_IDENTITY_BASE_URL`、`LIFESPACE_CORE_BASE_URL`。后两项也可作为非敏感的 Preview-scoped Vars 由平台配置；源代码不提交实际环境地址或私有配置。设置前 BFF 应返回 503，而不是回退 Production。
+- **在第一次创建 Preview 前**，保护 Preview 主机名或 Preview 通配域名的 Cloudflare Access；为它在 LifeSpace Staging 注册相应 Access Audience，并确认它属于 Staging 的 ALOHA Preview Application。Preview URL 默认可能公开，不可在未设 Access 时开展健康数据联调。
+- 首次 Preview 上传后用安全终端或 Cloudflare Preview 设置页面添加独立 Preview Secrets。示例命令（仅传名称，实际值应在安全终端交互输入，不进入 GitHub 日志）：`npx wrangler@4.135.0 preview secret put LIFESPACE_APPLICATION_CREDENTIAL --name staging`。其它敏感配置同理。
+- Staging Model Registry 七模型的存在不等于 Application Model Access 已授予；需单独配置 read/write，并核对用户的 Space/Data Grant。DO、BFF、Access 均完成后用**完全合成记录**验证刷新/跨设备恢复、User/Space/Person 隔离、非法坐标 422、权限拒绝、清除点位、删除后无孤点、后端失效明确报错，不修改 Production。
+- Production 只在已通过 Staging 验收、显式批准并配置自己的 Access Audience、`lsa_*`、DO 和发布路由后上线。不要把已有 Worker 的 Production 版本或 Workers.dev 端点当作 Staging Preview。
+
+**当前状态**：功能仍在 Draft PR #37，七个 Health 模型已在 LifeSpace Staging 注册；本分支只修正命名 Preview 的部署与环境隔离，没有执行 Preview / Production 部署或在线 E2E 验收。真实文件上传、Semantic Relations 与 Task 完成仍未接入。
 
 ## Workers Runtime 本地集成测试（PR #37）
 
