@@ -181,6 +181,79 @@ describe('Health trusted BFF', () => {
     expect(f).toHaveBeenCalledTimes(1)
   })
 
+  it('loads all Health models using one Identity exchange, keeping current Person isolation', async()=>{
+    const stub={fetch:vi.fn(async()=>success({items:[]}))}
+    const namespace={idFromName:vi.fn((name:string)=>name),get:vi.fn(()=>stub)}
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'server_token'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([
+        {userId:'usr_self',personId:'per_self'}, {userId:'usr_other',personId:'per_other'},
+      ])
+      if(p.endsWith('/records')) {
+        const model=p.split('/')[6]
+        expect(new URL(String(input)).searchParams.get('limit')).toBe('100')
+        if(model==='health_metric')return success({items:[{
+          id:'rec_metric',name:'synthetic metric',version:1,
+        }],nextCursor:null})
+        if(model==='health_observation')return success({items:[
+          {id:'rec_own',subjectPersonId:'per_self',valueNumber:42},
+          {id:'rec_other',subjectPersonId:'per_other',valueNumber:99},
+        ],nextCursor:null})
+        return success({items:[],nextCursor:null})
+      }
+      throw new Error('Unexpected synthetic request '+p)
+    })
+    const snapshot='https://health.example.com/health/api/v1/spaces/spc_test/snapshot'
+    const result=await handleHealthApi(make(snapshot),{...env,HEALTH_PRESENTATION:namespace},f)
+    expect(result.status).toBe(200)
+    const payload=(await result.json()).data
+    expect(payload.personId).toBe('per_self')
+    expect(payload.models.health_observation.map((x:{id:string})=>x.id)).toEqual(['rec_own'])
+    expect(payload.models.health_metric).toHaveLength(1)
+    expect(Object.keys(payload.models)).toHaveLength(7)
+    expect(result.headers.get('server-timing')).toContain('identity;dur=')
+    expect(result.headers.get('cache-control')).toContain('no-store')
+    expect(f.mock.calls.filter(c=>new URL(String(c[0])).pathname==='/internal/v1/access/tokens')).toHaveLength(1)
+    expect(f).toHaveBeenCalledTimes(10)
+    expect(stub.fetch).toHaveBeenCalledTimes(1)
+  })
+  it('fails closed when snapshot has no matching verified Person', async()=>{
+    const stub={fetch:vi.fn(async()=>success({items:[]}))}
+    const namespace={idFromName:vi.fn((x:string)=>x),get:vi.fn(()=>stub)}
+    const f=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'test'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_other',personId:'per_other'}])
+      return success({items:[],nextCursor:null})
+    })
+    const snapshot='https://health.example.com/health/api/v1/spaces/spc_test/snapshot'
+    const result=await handleHealthApi(make(snapshot),{...env,HEALTH_PRESENTATION:namespace},f)
+    expect(result.status).toBe(409)
+    expect(stub.fetch).not.toHaveBeenCalled()
+  })
+  it('validates complete Observation PATCH without refetching the old record',async()=>{
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'token'})
+      if(p.endsWith('/health_metric/records/rec_metric'))return success({
+        id:'rec_metric',valueType:'number',
+      })
+      if(p.endsWith('/health_observation/records/rec_observation') && init?.method==='PATCH')
+        return success({id:'rec_observation',version:4,valueNumber:41})
+      throw new Error('Unexpected Core read '+p)
+    })
+    const observation=url.replace('health_metric','health_observation')+'/rec_observation'
+    const response=await handleHealthApi(make(observation,'PATCH',{
+      metricId:'rec_metric',observedDate:'2026-10-10',valueNumber:41,
+      valueText:null,valueBoolean:null,referenceLow:null,referenceHigh:null,version:3,
+    }),env,f)
+    expect(response.status).toBe(200)
+    expect(f).toHaveBeenCalledTimes(3)
+    expect(f.mock.calls.filter(c=>new URL(String(c[0])).pathname.endsWith('/rec_observation')&&c[1]?.method==='GET')).toHaveLength(0)
+  })
   it('requires a DO binding for presentation, without affecting normal Core CRUD',async()=>{
     const f=fetcher()
     const p='https://health.example.com/health/api/v1/spaces/spc_test/presentation/concerns'
