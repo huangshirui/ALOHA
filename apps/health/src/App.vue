@@ -136,8 +136,16 @@ const nameOfMetric = (id: string) => demo.metrics.find(x => x.id === id)?.name ?
 const nameOfDocument = (id: string) => demo.documents.find(x => x.id === id)?.title ?? '未找到资料'
 const nameOfConcern = (id: string) => demo.concerns.find(x => x.id === id)?.name ?? '健康问题'
 const getList = (kind: HealthKind): any[] => demo[kindCollection[kind]] as any[]
+const sectionKinds:Record<BodyTab,HealthKind[]>={
+  focus:['concern'],metrics:['metric','observation'],
+  timeline:['metric','observation','event','assessment'],
+  documents:['document'],regimens:['regimen'],
+}
+const loadedKinds=new Set<HealthKind>()
 let liveLoadSequence=0
 function clearLiveRecords() {
+  ++liveLoadSequence
+  loadedKinds.clear()
   for(const kind of healthKinds) getList(kind).splice(0)
   // Never retain another Space/Person's coordinates or attention when switching.
   bodyBindings.value=[]
@@ -146,37 +154,50 @@ function clearLiveRecords() {
   selected.value=null
   routeStack.value=[]
 }
-async function loadLiveRecords() {
+async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   if(!selectedSpaceId.value)return
+  if(refresh)clearLiveRecords()
+  const requested=section==='detail'?[...healthKinds]:sectionKinds[section]
+  const missing=requested.filter(kind=>!loadedKinds.has(kind))
+  if(!missing.length&&subjectPersonId.value) {
+    liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return
+  }
   const requestId=++liveLoadSequence
   const spaceId=selectedSpaceId.value
-  liveStatus.value='loading';liveMessage.value='正在读取健康档案…'
+  liveStatus.value='loading'
+  liveMessage.value='正在加载'+(section==='focus'?'关注事项':section==='metrics'?'健康指标':section==='timeline'?'健康时间线':section==='documents'?'健康资料':section==='regimens'?'健康方案':'关联记录')+'…'
   try {
-    const snapshot=await getHealthSnapshot(spaceId)
+    const snapshot=await getHealthSnapshot(spaceId,missing.map(kind=>healthModelKey[kind]))
     if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
-    clearLiveRecords()
-    subjectPersonId.value=snapshot.personId
-    for(const kind of healthKinds) {
-      getList(kind).push(...snapshot.models[healthModelKey[kind]]
-        .map(r=>decodeHealthRecord(kind,r)))
+    if(subjectPersonId.value&&subjectPersonId.value!==snapshot.personId) {
+      clearLiveRecords()
+      throw new Error('当前身份发生变化，请重新连接健康档案')
     }
-    const ids=new Set(demo.concerns.map(concern=>concern.id))
-    attentionByConcern.value=Object.fromEntries(snapshot.presentation.items
-      .filter(p=>ids.has(p.concernId)).map(p=>[p.concernId,p.attention]))
-    bodyBindings.value=snapshot.presentation.items
-      .filter(p=>ids.has(p.concernId)&&p.placement!==null)
-      .map(p=>p.placement!)
+    subjectPersonId.value=snapshot.personId
+    for(const kind of missing) {
+      const records=snapshot.models[healthModelKey[kind]]
+      if(!records)throw new Error('健康档案响应不完整')
+      const rows=getList(kind)
+      rows.splice(0,rows.length,...records.map(r=>decodeHealthRecord(kind,r)))
+      loadedKinds.add(kind)
+    }
+    if(missing.includes('concern')) {
+      const ids=new Set(demo.concerns.map(concern=>concern.id))
+      attentionByConcern.value=Object.fromEntries(snapshot.presentation.items
+        .filter(p=>ids.has(p.concernId)).map(p=>[p.concernId,p.attention]))
+      bodyBindings.value=snapshot.presentation.items
+        .filter(p=>ids.has(p.concernId)&&p.placement!==null)
+        .map(p=>p.placement!)
+    }
     liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'
-  }catch(e){
-    if(requestId!==liveLoadSequence)return
-    clearLiveRecords()
-    subjectPersonId.value=''
+  }catch(e) {
+    if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
+    if(!subjectPersonId.value)clearLiveRecords()
     liveStatus.value='error'
     liveMessage.value=e instanceof Error?e.message:'健康档案读取失败'
   }
 }
 async function chooseLiveSpace(spaceId:string) {
-  ++liveLoadSequence
   clearLiveRecords()
   subjectPersonId.value=''
   if(!liveSpaces.value.some(s=>s.id===spaceId)) {
@@ -184,7 +205,7 @@ async function chooseLiveSpace(spaceId:string) {
   }
   selectedSpaceId.value=spaceId
   localStorage.setItem('aloha.health.space',spaceId)
-  await loadLiveRecords()
+  await loadLiveRecords(bodyTab.value)
 }
 async function initializeLive() {
   liveStatus.value='loading'; liveMessage.value='正在验证访问权限…'
@@ -261,11 +282,13 @@ function location(): HealthLocation {
 function navigate(tab: Tab) {
   routeStack.value=[]
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
+  if(liveMode&&selectedSpaceId.value)void loadLiveRecords('focus')
   window.scrollTo({top:0,behavior:'smooth'})
 }
-function openBody(tab: BodyTab) { navigate('body');bodyTab.value=tab }
+function openBody(tab: BodyTab) { navigate('body');changeBodyTab(tab) }
 function changeBodyTab(tab:BodyTab) {
   selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value=''
+  if(liveMode&&selectedSpaceId.value)void loadLiveRecords(tab)
 }
 function show(kind: HealthKind,id: string) {
   if (selected.value?.kind === kind && selected.value.id===id) return
@@ -273,6 +296,7 @@ function show(kind: HealthKind,id: string) {
     timelineScrollPosition.value=window.scrollY
   routeStack.value.push(location())
   activeTab.value='body'; selected.value=saveDestination(kind,id);sheet.value='';search.value=''
+  if(liveMode&&selectedSpaceId.value)void loadLiveRecords('detail')
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function back() {
@@ -281,6 +305,7 @@ function back() {
     activeTab.value=previous.tab
     bodyTab.value=previous.section
     selected.value=previous.record
+    if(liveMode&&selectedSpaceId.value)void loadLiveRecords(previous.record?'detail':previous.section)
   } else selected.value=null
   if(previous?.tab==='body' && previous.section==='timeline' && !previous.record)
     nextTick(()=>window.scrollTo({top:timelineScrollPosition.value,behavior:'auto'}))
@@ -621,7 +646,7 @@ function detailName(kind: HealthKind,record:any) {
             </select>
           </label>
           <span :class="['health-live-status',{'health-live-error':liveStatus==='error'}]" role="status">{{ liveMessage }}</span>
-          <button type="button" class="quiet-button" @click="subjectPersonId?loadLiveRecords():initializeLive()">刷新</button>
+          <button type="button" class="quiet-button" @click="selectedSpaceId?loadLiveRecords(selected?'detail':bodyTab,true):initializeLive()">刷新</button>
         </div>
         <section v-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
@@ -840,6 +865,7 @@ function detailName(kind: HealthKind,record:any) {
                 <label class="search-field"><Search :size="17"/><input v-model="search"
                   aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
               </div>
+              <div v-if="liveMode&&liveStatus==='loading'" class="save-progress" role="status"><span class="saving-spinner" aria-hidden="true"/>正在加载当前页面的数据…</div>
               <div class="list-panel">
                 <template v-if="bodyTab==='metrics'">
                   <div class="metric-reference-filters" role="group" aria-label="按参考范围筛选健康指标">
@@ -863,9 +889,9 @@ function detailName(kind: HealthKind,record:any) {
                 </template>
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
-                <div v-if="(bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length)" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
+                <div v-if="liveStatus!=='loading'&&((bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
               </div>
-              <p v-if="bodyTab==='documents'" class="below-hint"><ShieldCheck :size="16"/> {{ liveMode?'真实文件上传尚未接入；不能用文件名代替 LifeSpace File。':'上传演示只模拟整理过程，不会读取或发送文件内容。' }}</p>
+              <p v-if="bodyTab==='documents'&&!liveMode" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
             </template>
           </template>
         </section>
