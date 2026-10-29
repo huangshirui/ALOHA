@@ -244,20 +244,22 @@ async function handlePresentation(
   verifiedUserId:string|null=null,
 ):Promise<Response> {
   if(!env.HEALTH_PRESENTATION) return json('presentation_storage_not_configured',503)
-  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!,verifiedUserId)
-  if(scope instanceof Response) return scope
-  const corePath='/api/v1/spaces/'+scope.spaceId+'/models/health_concern/records'
-  if(route.path==='@presentation-list' || request.method==='DELETE') {
-    // Current LifeSpace Core read authorization is required for application-owned data.
-    const authorization=await send(fetchImpl,core+corePath+'?limit=1',{
+  const corePath='/api/v1/spaces/'+route.spaceId+'/models/health_concern/records'
+  // Membership verification and independent Core concern authorization are
+  // read-only. Run them concurrently; DO mutation is still blocked until both
+  // checks succeed and the concern owner matches the verified Space Person.
+  const scopePromise=resolveOwnIdentity(fetchImpl,core,bearer,route.spaceId!,verifiedUserId)
+  const listOrDelete=route.path==='@presentation-list'||request.method==='DELETE'
+  const corePromise=listOrDelete
+    ?send(fetchImpl,core+corePath+'?limit=1',{
       method:'GET',headers:{Authorization:`Bearer ${bearer}`,Accept:'application/json'},
     })
-    if(!authorization.ok) return proxyResponse(authorization)
-  } else {
-    const concern=await getRecord(fetchImpl,core,bearer,corePath+'/'+route.recordId)
-    if(concern instanceof Response) return concern
-    if(concern.subjectPersonId!==scope.personId) return json('concern_not_owned',403)
-  }
+    :getRecord(fetchImpl,core,bearer,corePath+'/'+route.recordId)
+  const [scope,checked]=await Promise.all([scopePromise,corePromise])
+  if(scope instanceof Response)return scope
+  if(checked instanceof Response){
+    if(!checked.ok)return proxyResponse(checked)
+  }else if(checked.subjectPersonId!==scope.personId)return json('concern_not_owned',403)
   if(route.path==='@presentation-list')return callPresentationState(env,scope,'list')
   if(request.method==='DELETE')
     return callPresentationState(env,scope,'delete',route.recordId!)
