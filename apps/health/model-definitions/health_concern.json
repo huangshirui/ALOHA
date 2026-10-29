@@ -1,7 +1,7 @@
 {
   "definitionVersion": 1,
   "key": "health_concern",
-  "description": "记录需要持续跟踪的健康问题、伤病或风险，如左膝伤病、血脂管理。用于汇集相关记录，不等同于医生诊断或一次就诊。",
+  "description": "记录需要持续跟踪的健康问题、症状或风险，用于汇集相关健康事实并跟踪变化；不等同于医学确诊或一次就诊。",
   "display": {
     "singular": "健康关注",
     "plural": "健康关注"
@@ -20,7 +20,7 @@
       "required": true,
       "minLength": 1,
       "maxLength": 160,
-      "description": "概括问题或管理主题，如“左膝伤病”“血脂管理”。"
+      "description": "概括持续管理的主题，例如“症状随访”或“健康风险追踪”。"
     },
     "summary": {
       "type": "text",
