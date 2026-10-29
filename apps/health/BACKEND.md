@@ -28,7 +28,7 @@ LifeSpace Console 配置该 Application 的七模型 read/write Access；用户�
 4. 依赖模型发布后，合成 Metric/Observation 测量 CRUD，更新版本冲突 409、跨用户/跨 Space 禁止 403，观测类型不符 422。
 5. 第一批资料上传/复杂语义关联/Task 完成需进一步接 LifeSpace 专用 API，不允许把虚构文件名作为稳定 `fil_*` 写入。
 
-当前实现状态：仅在独立 ALOHA 功能分支，未部署或通过在线端到端验收。真实文件上传/File 引用的创建、Semantic Relation 关系维护、Task 完成、人体位置及关注度持久化尚未接入；Live 模式不能把这些演示操作当作真实数据写入。HealthEvent 的有时刻记录暂按浏览器本地时区转换为绝对 Instant，需在实测中核对用户所在地与 Space 时区不同的情况。
+当前实现状态：仅在独立 ALOHA 功能分支，未部署或通过在线端到端验收。真实文件上传/File 引用的创建、Semantic Relation 关系维护、Task 完成尚未接入；人体位置及关注度已在 DO 代码中实现，但尚未完成 Staging 在线验收；Live 模式不能把这些演示操作当作真实数据写入。HealthEvent 的有时刻记录暂按浏览器本地时区转换为绝对 Instant，需在实测中核对用户所在地与 Space 时区不同的情况。
 
 ## 开启 Staging Live 模式
 
@@ -38,24 +38,22 @@ LifeSpace Console 配置该 Application 的七模型 read/write Access；用户�
 4. 登录后明确选择个人 Space；本人 Person 由 BFF 从已认证 user 及该 Space 成员关系解析，不允许切换他人。空间选择只影响 UI 请求范围，权限仍由 Identity/Core 每次判定。
 5. 用虚构合成记录验证七模型列表、普通 CRUD、版本冲突和拒绝路径；文件、关系和任务不通过前不宣布完整 Health 业务验收。
 
-## ALOHA-owned Health 展示偏好 D1（本分支新增）
+## ALOHA-owned Health 展示偏好：SQLite-backed Durable Object（本分支）
 
-这是一份 **ALOHA 私有展示数据**，不是 LifeSpace 的第八个 Health 模型，也不应新增 `health_concern` 的字段。固定坐标含 `view`（正/背面）、`assetId`（人体素材版本）及归一化 `x,y ∈ [0,1]`；`attention` 仅表示用户自定关注级别，不是病情严重度。清除定位仅清除点位，不删除 HealthConcern。
+人体图定位属于 ALOHA 的 Presentation Projection，不是 LifeSpace 的第八个健康模型，也不写入 `health_concern`。一条记录包括正/背面、人体素材 `assetId`、归一化坐标 `x/y ∈ [0,1]`，以及四档主观关注度（**不是**医学严重程度）。清除点位不删除 HealthConcern，也不清除关注度。
 
-- 迁移：`apps/health/migrations/0001_concern_presentation.sql`；D1 binding：`PRESENTATION_DB`。
-- D1 唯一主键：`(space_id,user_id,person_id,concern_id)`，隔离不同用户和不同 Space 的展示偏好，不存放身份令牌或健康资料原文。
-- `GET /health/api/v1/spaces/:spaceId/presentation/concerns`：读取当前用户/Person 的偏好列表。
-- `PATCH /health/api/v1/spaces/:spaceId/presentation/concerns/:concernId`：原子合并 `{attention? ,placement?}`，使用 `placement:null` 清除定位；拒绝非法坐标、未知素材和非法关注度。
-- `DELETE` 同一详情路径：在 LifeSpace Concern 删除成功后清理用户偏好；清理失败不反向撤销 LifeSpace 的业务删除，残留点位由于无对应 Concern 不会显示。
-- BFF 必须先使用已验证的 Access assertion → Identity 用户 token → Core 当前 user 与 Space member 的 personId；读取时验证 `health_concern` 模型读权限，写入时额外读取目标 Concern，强制 `subjectPersonId===ownPersonId`，不接受客户端自报的用户/人员 ID。
-- UI 在读取七模型时并行读取偏好，按实际 Concern ID 交集复原；切换 Space 清空原状态，加载失败不回退至演示数据。
+- `apps/health/src/health-presentation-do.ts` 导出 `HealthPresentationState` Durable Object 类；`apps/health/wrangler.jsonc` 包含 `HEALTH_PRESENTATION` Binding 和 `health-presentation-v1` 的 `new_sqlite_classes` Migration。首次部署时 Cloudflare 为该 Worker 自动创建 SQLite-backed DO Namespace，**无需新建 D1，也无需 D1 数据库 ID Secret**。
+- Health BFF 以 LifeSpace Identity/Core 验证的 `usr_*` 计算 `idFromName('user:'+userId)`，每个用户是独立 DO 实例。DO 内 SQLite 表主键 `(space_id, person_id, concern_id)`；不能从浏览器自报的 User ID 派发对象。DO 不拥有公开的独立 HTTP 路由。
+- 浏览器 API 保持：`GET /health/api/v1/spaces/:spaceId/presentation/concerns`、`PATCH /health/api/v1/spaces/:spaceId/presentation/concerns/:concernId` 和相同详情地址的 `DELETE`。BFF 先校验 Core `health_concern` 读取权限；修改时再校验目标 Concern 的 `subjectPersonId` 为当前 Space 用户的 Person。
+- DO 使用单条 SQLite `ON CONFLICT ... DO UPDATE` 实现部分字段原子更新。`placement:null` 只删除点位，不清除关注度；成功删除 Concern 后 UI 通过 `DELETE` 清理展示数据。
+- 读取七个 Health 模型时并行读取 DO，按当前实际 Concern ID 交集显示；切换 Space 清除旧坐标；存储失败就报错，不回退 Demo 假数据。
+- 与 Assistant 的 Conversation/Run DO 互不依赖。Finance/Things 出现真实共享需求之前，不提前建立统一 ALOHA State Worker。
 
-### Staging Preview 配置
+### Staging Preview 配置与验收
 
-1. 在 Cloudflare 为 ALOHA Health 创建独立 **Staging D1**，将其 `database_id` 作为 GitHub Secret `ALOHA_HEALTH_PRESENTATION_STAGING_D1_ID`；不在公开仓库提交真实 ID。
-2. 在现有 **Deploy Health PWA Preview** 手工 workflow 中选择 `data_mode=live`，会在 CI 临时将 `PRESENTATION_DB` D1 binding 注入 Wrangler 配置，执行远程 migration，再打包 Live 前端、部署 Health Worker；默认 `demo` 不需要 D1，且不暴露任何真实记录。
-3. Live 部署还要求配置同一 ALOHA Application 的 BFF Secret `LIFESPACE_APPLICATION_CREDENTIAL`、Identity/Core HTTPS 地址和受保护的 Cloudflare Access audience。它们仍分别在 Staging 与 Production 维护。
-4. Production 尚未开放路由。以后发布 Production 必须使用单独 D1、单独身份凭证/环境绑定与迁移流程，不得复用 Staging D1。
-5. 验收：刷新/跨设备恢复点位和关注度、换 Space 不串数据、非法定位 422、无成员关系/无模型权限 403、伪造另一 Person Concern 403、删除后无孤点，以及 D1 不可用时明确报 503。
+1. 手工 Workflow **Deploy Health PWA Preview** 选择 `data_mode=live`；DO Binding 和 Migration 随 `aloha-app-health` Worker 一起发布。`demo` 模式同样配置 DO Class，但不会向其写入真实展示状态。无需 Cloudflare D1 新建/迁移流程。
+2. Staging Worker 仍需服务端 `LIFESPACE_IDENTITY_BASE_URL`、`LIFESPACE_CORE_BASE_URL`、`LIFESPACE_APPLICATION_CREDENTIAL` 和受 Cloudflare Access 保护的 audience。通过 LifeSpace Console 在 Staging 发布七个 Health 普通模型，为现有 ALOHA Application 配置 Model Access，不修改 LifeSpace 仓库。
+3. Production 以后必须使用独立 Worker/DO namespace，不能将已供 Staging 使用的同一 Worker/DO Namespace 改绑到 Production；不要把展示数据存储合并到 LifeSpace D1 或 Assistant Agent Control DO。
+4. 在线验收：刷新/跨设备恢复、不同 User/Space/Person 隔离、非法点位/素材 422、无 Core Model 权限 403、清除点位保留关注度、删除后无孤点、DO 不可用时明确 503。
 
-**状态**：以上为 PR #37 的代码与部署准备，不代表真实 Staging D1 已建立、模型已发布、Cloudflare Access 已配置或端到端验收已通过。原型模式仍使用纯内存虚构数据。真实文件上传、Semantic Relation 与 Task 完成仍未接入。
+**当前状态**：功能仍在 Draft PR #37，尚未完成 Staging 模型发布、Access 配置及端到端验收；没有创建新 D1。Demo 模式只用虚构内存数据。真实文件上传、Semantic Relations 与 Task 完成仍未接入。
