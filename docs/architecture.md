@@ -84,7 +84,7 @@ The following must be decided explicitly when a domain is implemented:
 
 Do not infer these choices from the Assistant architecture.
 
-The current Health implementation intentionally stops before these decisions: it proves only the independent PWA workspace, `/health/` scope and release unit.
+The Health prototype is merged; Draft PR #37 adds a same-origin trusted LifeSpace BFF for seven Console-published domain models, and a separate per-user SQLite-backed Durable Object for ALOHA-only body-point/attention presentation state. Neither the Live integration nor Production routing has passed staging acceptance.
 
 ## Gateway（网关）
 
@@ -181,7 +181,7 @@ PWA scopes must not overlap. The root path is not a fifth installable PWA in the
 - `apps/web` has been retired.
 - `apps/assistant` owns the existing Assistant UI.
 - Assistant still uses the transitional root-scope manifest and is physically served with the Gateway Worker in production. This remains until the current LifeSpace-dependent Assistant upgrade/cutover is ready.
-- `apps/health` owns the Health scaffold with `/health/` PWA identity and an independent preview Worker deployment unit.
+- `apps/health` owns Health UI and the `/health/` PWA identity with an independent Preview Worker; Draft PR #37 adds trusted LifeSpace BFF and a separate per-user DO state class.
 - the production `/health/*` route is not activated yet.
 
 This staged state is deliberate: repository ownership can be corrected without forcing a production routing migration at the same time.
@@ -194,7 +194,7 @@ ALOHA Assistant PWA and its first-party Agent interaction experience.
 
 ### `apps/health`
 
-ALOHA Health PWA. Currently scaffold-only; no health domain/data contract is implied by the UI shell.
+ALOHA Health PWA. Interactive prototype merged; trusted seven-model LifeSpace BFF and user-owned SQLite DO display state are staged in Draft PR #37, not Production.
 
 ### future `apps/<surface>`
 
@@ -223,7 +223,7 @@ ALOHA-managed capability registry/adapters. Do not use this package as a generic
 ## Current implementation order
 
 1. Keep existing Assistant M0-M3 behavior stable while the required LifeSpace upgrade is completed.
-2. Continue Health in parallel only from the established independent PWA scaffold; decide health product/domain contracts before adding real data behavior.
+2. Keep the independently deployed Health PWA boundary. Publish the seven ordinary Health models through LifeSpace Console; validate the Draft BFF and DO integration in Staging before production cutover.
 3. When LifeSpace-dependent Assistant work is ready, finish Assistant integration and separately cut Assistant production from root/Gateway static hosting to its independent `/assistant/` PWA Worker.
 4. Activate Health production routing only when Health has a release-ready UI, final icon assets and an explicitly designed trusted data/API boundary.
 5. Add Finance or other surfaces only when their product scope is concrete; reuse the same independent-PWA pattern rather than copying Assistant internals.
