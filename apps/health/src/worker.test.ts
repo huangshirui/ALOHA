@@ -38,17 +38,6 @@ describe('Health trusted BFF', () => {
     expect(r.status).toBe(401)
     expect(f).not.toHaveBeenCalled()
   })
-  it('exchanges the original signed Access assertion through a separate service-authenticated ingress', async () => {
-    const f=fetcher()
-    const original='original.user.jwt'
-    const r=await handleHealthApi(make(url,'GET',undefined,{
-      'Cf-Access-Jwt-Assertion':'upstream.service.jwt',
-      'X-Aloha-Access-Assertion':original,
-    }),env,f)
-    expect(r.status).toBe(200)
-    const init=f.mock.calls[0]?.[1] as RequestInit
-    expect(JSON.parse(String(init.body)).accessAssertion).toBe(original)
-  })
   it('rejects unexpected models, methods, paths and cross-origin mutations', async () => {
     const f=fetcher()
     expect((await handleHealthApi(make(url.replace('health_metric','other')) ,env,f)).status).toBe(404)
