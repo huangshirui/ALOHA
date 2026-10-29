@@ -320,6 +320,35 @@ describe('Health trusted BFF', () => {
     const injected=await handleHealthApi(make(path.replace('health_document','admin')),env,f)
     expect(injected.status).toBe(422)
   })
+  it('preserves opaque Core query cursors and never returns another Person in any page',async()=>{
+    const cursors:(string|null)[]=[]
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'legacy_token'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.endsWith('/health_observation/records/query')){
+        const query=JSON.parse(String(init?.body))
+        cursors.push(query.page.cursor)
+        expect(query.filter).toEqual({field:'subjectPersonId',op:'contains',value:'per_self'})
+        return query.page.cursor
+          ?success({items:[
+            {id:'rec_second',subjectPersonId:'per_self'},
+            {id:'rec_other',subjectPersonId:'per_other'},
+          ],nextCursor:null})
+          :success({items:[{id:'rec_first',subjectPersonId:'per_self'}],nextCursor:'opaque_cursor'})
+      }
+      throw new Error('unexpected Core request '+p)
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/snapshot?models=health_observation'
+    const res=await handleHealthApi(make(url),env,f)
+    expect(res.status).toBe(200)
+    const body=(await res.json()).data
+    expect(body.models.health_observation.map((record:{id:string})=>record.id)).toEqual([
+      'rec_first','rec_second',
+    ])
+    expect(cursors).toEqual([null,'opaque_cursor'])
+  })
   it('loads all Health models using one Identity exchange, keeping current Person isolation', async()=>{
     // Use a real DO-shaped response, including a persisted synthetic presentation.
     const stub={fetch:vi.fn(async()=>success({items:[
