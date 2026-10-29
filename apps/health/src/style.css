@@ -606,3 +606,12 @@
 .saving-spinner { display:inline-block; width:16px; height:16px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:health-saving-rotate .7s linear infinite; flex:none; }
 @keyframes health-saving-rotate {to {transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.saving-spinner {animation:none;border-right-color:currentColor}}
+
+/* Upload percentage is real browser->Health BFF byte progress, never a synthetic timer. */
+.upload-progress { display:flex;flex-direction:column;gap:.45rem;padding:.75rem .85rem;border-radius:var(--health-radius-control);border:1px solid var(--health-border);background:var(--health-brand-subtle);color:var(--health-brand-strong);font-size:.8rem; }
+.upload-progress-text { display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-weight:650; }
+.upload-progress-text span { display:inline-flex;align-items:center;gap:.35rem; }
+.upload-progress progress { display:block;width:100%;height:.55rem;overflow:hidden;border:0;border-radius:var(--health-radius-pill);accent-color:var(--health-brand); }
+.upload-progress progress::-webkit-progress-bar { background:var(--health-border-soft);border-radius:var(--health-radius-pill); }
+.upload-progress progress::-webkit-progress-value { background:var(--health-brand);border-radius:var(--health-radius-pill); }
+.upload-progress progress::-moz-progress-bar { background:var(--health-brand);border-radius:var(--health-radius-pill); }
