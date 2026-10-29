@@ -600,3 +600,9 @@
 .metric-reference-filters button:hover:not(.active) {background:var(--health-surface-secondary);color:var(--health-ink)}
 .metric-reference-filters button:focus-visible {outline:2px solid var(--health-brand);outline-offset:2px}
 .metric-reference-empty {padding:1.2rem .65rem}
+
+/* Health live mutations must acknowledge the click immediately, before slow network saves. */
+.save-progress { display:flex; align-items:center; gap:.6rem; margin:0; padding:.65rem .8rem; border-radius:var(--health-radius-control); background:var(--health-brand-subtle); color:var(--health-brand-strong); font-size:.8rem; font-weight:650; }
+.saving-spinner { display:inline-block; width:16px; height:16px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:health-saving-rotate .7s linear infinite; flex:none; }
+@keyframes health-saving-rotate {to {transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.saving-spinner {animation:none;border-right-color:currentColor}}
