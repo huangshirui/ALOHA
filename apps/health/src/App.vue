@@ -12,6 +12,7 @@ import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   listAuthorizedSpaces, patchConcernPresentation,
   getHealthSnapshot, updateHealthRecord, uploadHealthDocument, downloadHealthDocument,
+  type FileUploadProgress,
   type HealthRecord } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
 import AlohaHub from './components/AlohaHub.vue'
@@ -100,6 +101,7 @@ const editId = ref('')
 const draft = ref<Record<string,any>>({})
 const formError = ref('')
 const saving=ref(false)
+const uploadProgress=ref<FileUploadProgress|null>(null)
 const downloading=ref(false)
 const uploadFile=shallowRef<File|null>(null)
 const search = ref('')
@@ -346,6 +348,7 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if (id && !record) {notice.value='这条记录已不存在，请刷新后重试。';return}
   const d=record ? editableSnapshot(record) : makeEmpty(kind,today)
   uploadFile.value=null
+  uploadProgress.value=null
   if(kind==='concern') d.attention=attentionByConcern.value[id]??'unset'
   if(kind==='metric'||kind==='observation'){
     d.referenceLow=d.referenceLow??''
@@ -407,6 +410,7 @@ async function formSave() {
       return
     }
     saving.value=true
+    uploadProgress.value=null
     notice.value=''
     try {
       const fields=kind==='document' && !editId.value
@@ -415,7 +419,8 @@ async function formSave() {
       const previous=editId.value ? rows.find(r=>r.id===editId.value) : null
       if(previous && fields) delete fields.subjectPersonId // immutable model ownership field
       const saved=kind==='document' && !previous
-        ? await uploadHealthDocument(selectedSpaceId.value,uploadFile.value!,payload)
+        ? await uploadHealthDocument(selectedSpaceId.value,uploadFile.value!,payload,
+            state=>{uploadProgress.value=state})
         : previous
           ? await updateHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],
               previous.id,previous.version,fields!)
@@ -440,7 +445,7 @@ async function formSave() {
         : '已保存至 LifeSpace。'
       if(selected.value?.kind!==kind || selected.value.id!==saved.id) show(kind,saved.id)
     } catch(e) {formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
-    finally {saving.value=false;if(sheet.value!=='edit')uploadFile.value=null}
+    finally {saving.value=false;uploadProgress.value=null;if(sheet.value!=='edit')uploadFile.value=null}
     return
   }
   const rows=getList(kind)
@@ -1008,7 +1013,16 @@ function detailName(kind: HealthKind,record:any) {
           </template>
           <fieldset v-if="!liveMode&&editKind!=='metric'&&editKind!=='concern'" class="check-group"><legend>相关健康问题（可多选）</legend><label v-for="c in demo.concerns" :key="c.id" class="checkbox-line"><input v-model="draft.concernIds" type="checkbox" :value="c.id"/>{{ c.name }}</label><p v-if="!demo.concerns.length" class="helper-copy">可以先创建健康问题，后续再关联。</p></fieldset>
           <p v-if="formError" class="form-error" role="alert"><Info :size="16"/>{{ formError }}</p>
-          <p v-if="saving" class="save-progress" role="status" aria-live="polite"><span class="saving-spinner" aria-hidden="true"/>{{ editKind==='document'&&!editId?'正在上传文件并保存资料…':'正在保存至 LifeSpace…' }} 请勿重复提交。</p>
+          <div v-if="saving && uploadProgress" class="upload-progress" role="status" aria-live="polite" aria-label="文档上传状态">
+            <div class="upload-progress-text">
+              <span>{{ uploadProgress.phase==='uploading'?'正在上传文件':'文件已发送，正在保存资料' }}</span>
+              <strong v-if="uploadProgress.phase==='uploading' && uploadProgress.percent!==null">{{ uploadProgress.percent }}%</strong>
+              <span v-else-if="uploadProgress.phase==='processing'"><Check :size="15"/> 已传输 100%</span>
+            </div>
+            <progress v-if="uploadProgress.phase==='uploading' && uploadProgress.percent!==null" :value="uploadProgress.percent" max="100" aria-label="文件传输百分比"/>
+            <progress v-else-if="uploadProgress.phase==='processing'" value="100" max="100" aria-label="文件已传输，正在保存"/>
+            <p v-else class="helper-copy">正在传输文件，等待浏览器报告字节进度…</p>
+          </div>
           <div class="form-actions"><button type="button" class="quiet-button" :disabled="saving" @click="closeSheet">取消</button><button type="submit" class="primary-button" :disabled="saving" :aria-busy="saving"><span v-if="saving" class="saving-spinner" aria-hidden="true"/><Check v-else :size="17"/> {{ saving?'正在保存…':editId?'保存修改':'保存记录' }}</button></div>
           <p v-if="!liveMode" class="privacy-note"><ShieldCheck :size="15"/> 当前是演示数据，刷新后将恢复示例。</p>
         </form>
