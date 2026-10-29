@@ -2,7 +2,7 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "aloha-app-health",
   "compatibility_date": "2026-10-03",
-  "workers_dev": true,
+  "workers_dev": false,
   "keep_vars": true,
   "assets": {
     "directory": "./dist",
