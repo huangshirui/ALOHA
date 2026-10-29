@@ -55,7 +55,7 @@ Health 使用一个 Cloudflare Worker 项目 `aloha-app-health`：Production 接
 
 - Staging **只通过** `wrangler preview --name staging` 更新命名 Preview，生产版本只能通过单独审批后的 `wrangler deploy` 更新。现有 GitHub 手工 Workflow 强制构建 `VITE_HEALTH_DATA_MODE=live`；它是公开的 UI 功能模式，不承担环境边界。
 - `wrangler.jsonc` 的顶层 Durable Object Class / SQLite Migration 保持不变；`previews.durable_objects.bindings` 声明 Preview 的 `HEALTH_PRESENTATION`。Cloudflare 每个 Preview 自动获得**独立的 SQLite-backed Durable Object Namespace**。不能把 Preview DO 重新绑定到生产 DO。
-- Preview Worker Secrets **不继承** Production。使用 Cloudflare Preview 的独立 Secret 配置：`LIFESPACE_APPLICATION_CREDENTIAL`、`LIFESPACE_IDENTITY_BASE_URL`、`LIFESPACE_CORE_BASE_URL`。后两项也可作为非敏感的 Preview-scoped Vars 由平台配置；源代码不提交实际环境地址或私有配置。设置前 BFF 应返回 503，而不是回退 Production。
+- Preview Worker Secrets **不继承** Production。使用 Cloudflare Preview 的独立 Secret 配置：`LIFESPACE_APPLICATION_CREDENTIAL`、`LIFESPACE_IDENTITY_BASE_URL`、`LIFESPACE_CORE_BASE_URL`。这两个 URL 虽不是机密，也可作为 Secret 由 Cloudflare Web 配置：Secret 在后续 Preview 部署时会保留，而未写入 Wrangler Preview 配置的 Dashboard Text Variable 可能被下次部署覆盖。源代码不提交实际环境地址或私有配置。部署工作流会核对必需 Binding 名称（不读取其值）；缺少配置时不应进行在线联调。
 - **认证入口与路由**：Staging 直接使用当前 Worker 的命名 Preview URL (`staging-<worker>.<account>.workers.dev/health/`)，不设置额外共享 Staging 入口或 Worker-to-Worker Service Token。必须验证 Preview 直连地址的 Cloudflare Access 拦截未授权用户，并确认当前 Audience 已注册至 LifeSpace Staging。
 - 首次 Preview 上传后用安全终端或 Cloudflare Preview 设置页面添加独立 Preview Secrets。示例命令（仅传名称，实际值应在安全终端交互输入，不进入 GitHub 日志）：`npx wrangler@4.135.0 preview secret put LIFESPACE_APPLICATION_CREDENTIAL --name staging`。其它敏感配置同理。
 - Staging Model Registry 七模型的存在不等于 Application Model Access 已授予；需单独配置 read/write，并核对用户的 Space/Data Grant。DO、BFF、Access 均完成后用**完全合成记录**验证刷新/跨设备恢复、User/Space/Person 隔离、非法坐标 422、权限拒绝、清除点位、删除后无孤点、后端失效明确报错，不修改 Production。
