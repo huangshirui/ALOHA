@@ -301,7 +301,9 @@ async function handleSnapshot(
   async function pageThrough(model:SnapshotModelKey,personId:string):Promise<JsonObject[]|Response> {
     const records:JsonObject[]=[]
     let cursor:string|null=null
-    for(let index=0;index<20;index++){
+    // Preserve the previous 2,000-record safety ceiling while halving the
+    // maximum number of Core page round trips (10 x 200 instead of 20 x 100).
+    for(let index=0;index<10;index++){
       const query=healthSnapshotQuery(model,personId,cursor)
       const response=await send(fetchImpl,core+'/api/v1/spaces/'+spaceId+
         '/models/'+model+'/records/query',{method:'POST',
