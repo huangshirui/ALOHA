@@ -1,7 +1,7 @@
 {
   "definitionVersion": 1,
   "key": "health_observation",
-  "description": "记录某人在某日的一次健康指标结果，如体重 78.5 kg、血脂检验值。引用已有指标，只填与其值类型匹配的一种结果；报告参考范围可单独保留。",
+  "description": "记录某人在某日的一次健康指标结果，例如体温或心率测量。引用已有指标，只填与其值类型匹配的一种结果；本次参考范围可单独保留。",
   "display": {
     "singular": "健康观测",
     "plural": "健康观测"
