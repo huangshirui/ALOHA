@@ -324,10 +324,14 @@ async function handleSnapshot(
   }
   // Determine the current Space Person from Core before constructing a scoped
   // Query. Never accept a browser-selected Person as a filter/authority.
+  const scopeStarted=performance.now()
   const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,verifiedUserId)
   if(scope instanceof Response)return scope
+  const scopeMs=performance.now()-scopeStarted
+  const queryStarted=performance.now()
   const collections=await Promise.all(chosen.map(model=>
     pageThrough(model as SnapshotModelKey,scope.personId)))
+  const queryMs=performance.now()-queryStarted
   const error=collections.find(item=>item instanceof Response)
   if(error instanceof Response)return error
   const coreMs=performance.now()-started
@@ -356,6 +360,7 @@ async function handleSnapshot(
   }},{headers:{
     'Cache-Control':'private, no-store','Server-Timing':
       'identity;dur='+duration(identityMs)+', core;dur='+duration(coreMs)+
+      ', person;dur='+duration(scopeMs)+', query;dur='+duration(queryMs)+
       ', presentation;dur='+duration(totalMs-coreMs)+
       ', total;dur='+duration(identityMs+totalMs),
   }})
