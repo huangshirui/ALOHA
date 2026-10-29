@@ -66,6 +66,14 @@ Each PWA keeps **one Cloudflare Worker project** with two isolated deployments:
 
 This is the target policy for every independently released ALOHA PWA. The Health BFF Preview is the first implementation; other PWA deployment workflows should adopt the same split before handling staging data. The Assistant's temporary Gateway hosting remains a separate migration constraint.
 
+## Optional one-time runtime bootstrap for an existing assets-only Worker
+
+Some Workers were originally deployed with static assets only. When a Preview later adds an actual runtime entrypoint and bindings, the dashboard may still present the old assets-only settings view. For this migration, the Health deployment workflow includes an **explicitly confirmed one-time Production runtime bootstrap** that publishes the complete Worker bundle but does **not** activate any production hostname or route.
+
+This exception is intentionally limited: the Worker configuration must set `workers_dev: false`, `preview_urls: true`, have a runtime `main` entrypoint and no production `route`, `routes` or `vars`. The bootstrap must pass typechecks/tests and a Wrangler dry-run before deploying. Do not install Preview credentials on Production or treat the bootstrap as a release of the Health product. The existing named `staging` Preview and its isolated storage are separate.
+
+**Dashboard caveat:** This bootstrap may allow the Dashboard to recognize a script-based Worker. It does not guarantee that Cloudflare's current UI can edit secrets scoped to an already-created individual Preview. The Dashboard documents **Previews Base** configuration; Base changes apply to newly created Previews, not existing ones. Always confirm the selected environment and whether the change targets an existing Preview or only the Base template.
+
 ## Current deployment state
 
 - **Assistant:** workspace is `apps/assistant`, but production remains on the legacy root-scope assets attached to `workers/gateway` until the LifeSpace-dependent migration is ready.
