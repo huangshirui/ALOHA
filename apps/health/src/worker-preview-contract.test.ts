@@ -25,6 +25,12 @@ describe('one Worker project / isolated staging Preview release contract', () =>
     })
   }
 
+  it('Health workspace has no implicit production deploy script', () => {
+    const packageConfig = JSON.parse(read('apps/health/package.json'))
+    expect(packageConfig.scripts.deploy).toBeUndefined()
+    expect(packageConfig.scripts['deploy:staging']).toContain('wrangler preview --name staging')
+  })
+
   it('Health Preview binds its own SQLite Durable Object class', () => {
     const config = JSON.parse(read('apps/health/wrangler.jsonc'))
     expect(config.durable_objects.bindings).toEqual([
