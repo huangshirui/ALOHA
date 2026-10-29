@@ -79,12 +79,17 @@ export async function uploadHealthDocument(
     (form.get('issuerName') && issuerName===null) || (form.get('notes') && notes===null))
     return error('document_invalid',422)
   const root=core+filePath(spaceId)
+  const timing:Record<string,number>={}
+  const measure=async<T>(name:string,operation:()=>Promise<T>):Promise<T>=>{
+    const started=performance.now()
+    try{return await operation()}finally{timing[name]=Math.round(performance.now()-started)}
+  }
   let createdFileId:string|null=null
   try {
-    const init=await fromCore(fetcher,root+'/file-uploads',bearer,'POST',{
+    const init=await measure('upload_init',()=>fromCore(fetcher,root+'/file-uploads',bearer,'POST',{
       modelKey:'health_document',fieldKey:'artifactRef',
       name:file.name,contentType:mime,size:file.size,
-    })
+    }))
     if(!init.ok)return error('file_upload_not_available',init.status>=400&&init.status<500?init.status:502)
     const session=await responseData(init)
     const upload=session?.upload
@@ -93,24 +98,29 @@ export async function uploadHealthDocument(
       return error('invalid_file_session',502)
     const transfer=upload as Record<string,unknown>
     if(transfer.method!=='PUT'||!safeSignedR2Url(transfer.url))return error('invalid_file_session',502)
-    const put=await fetcher(new URL(transfer.url),{
+    const put=await measure('r2_put',()=>fetcher(new URL(transfer.url),{
       method:'PUT',redirect:'manual',headers:{'Content-Type':mime},body:file,
-    })
+    }))
     if(!put.ok)return error('file_transfer_failed',502)
-    const completed=await fromCore(fetcher,root+'/file-uploads/'+session.id+'/complete',bearer,'POST')
+    const completed=await measure('file_complete',()=>fromCore(fetcher,root+'/file-uploads/'+session.id+'/complete',bearer,'POST'))
     if(!completed.ok)return error('file_finalize_failed',502)
     const result=await responseData(completed)
     if(typeof result?.id!=='string'||!pattern.test(result.id))return error('invalid_file_reference',502)
     createdFileId=result.id
-    const saved=await fromCore(fetcher,root+'/models/health_document/records',bearer,'POST',{
+    const saved=await measure('record_create',()=>fromCore(fetcher,root+'/models/health_document/records',bearer,'POST',{
       subjectPersonId:personId,title,documentType,issuedDate:issuedDate||null,
       issuerName:issuerName||null,eventId:eventId||null,notes:notes||null,artifactRef:createdFileId,
-    })
+    }))
     if(!saved.ok)return error('document_create_failed',saved.status>=400&&saved.status<500?saved.status:502)
     const document=await responseData(saved)
     if(!document || typeof document.id!=='string')return error('document_invalid_response',502)
     createdFileId=null
-    return Response.json({data:document},{status:201,headers:{'Cache-Control':'no-store'}})
+    // Numbers only: never expose R2 signed URL, File IDs, health data or credentials.
+    const report=Object.entries(timing).map(([key,ms])=>key+';dur='+ms).join(', ')
+    console.log(JSON.stringify({event:'health_document_upload_timing',durations_ms:timing}))
+    return Response.json({data:document},{status:201,headers:{
+      'Cache-Control':'no-store','Server-Timing':report,
+    }})
   }catch{
     return error('file_upload_unavailable',503)
   }finally{
