@@ -10,14 +10,23 @@ export interface HealthPresentationNamespace {
   get(id:unknown):{fetch(request:Request):Promise<Response>}
 }
 
+type HealthServiceFetcher = { fetch(request: Request): Promise<Response> }
+
 export interface HealthEnv {
   HEALTH_PRESENTATION?: HealthPresentationNamespace
   ASSETS?: { fetch(request: Request): Promise<Response> }
+  // Optional Worker-to-Worker transport; the receiving LifeSpace service still checks credentials.
+  LIFESPACE_IDENTITY?: HealthServiceFetcher
+  LIFESPACE_CORE?: HealthServiceFetcher
   LIFESPACE_IDENTITY_BASE_URL?: string
   LIFESPACE_CORE_BASE_URL?: string
   LIFESPACE_APPLICATION_CREDENTIAL?: string
 }
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+// Route directly to a trusted Worker when bound, avoiding public-zone fetch routing.
+// Fall back to HTTPS for local tests and deployments without Service Bindings.
+const withServiceBinding = (service: HealthServiceFetcher | undefined, fallback: Fetcher): Fetcher =>
+  service ? (input, init) => service.fetch(new Request(input, init)) : fallback
 type JsonObject = Record<string, unknown>
 const modelKeys = new Set([
   'health_concern', 'health_metric', 'health_observation', 'health_event',
@@ -268,11 +277,13 @@ export async function handleHealthApi(
   const assertion = request.headers.get('Cf-Access-Jwt-Assertion') ?? ''
   if (assertion.length > 32768 || !assertionPattern.test(assertion))
     return json('access_assertion_required', 401)
-  const bearer = await exchange(fetchImpl, identity, credential, assertion)
+  const identityFetch = withServiceBinding(env.LIFESPACE_IDENTITY, fetchImpl)
+  const coreFetch = withServiceBinding(env.LIFESPACE_CORE, fetchImpl)
+  const bearer = await exchange(identityFetch, identity, credential, assertion)
   if (bearer instanceof Response) return bearer
-  if(route.path==='@own-person') return ownPerson(fetchImpl,core,bearer,route.spaceId!)
+  if(route.path==='@own-person') return ownPerson(coreFetch,core,bearer,route.spaceId!)
   if(route.path.startsWith('@presentation-'))
-    return handlePresentation(request,env,fetchImpl,core,bearer,route)
+    return handlePresentation(request,env,coreFetch,core,bearer,route)
   let body: string | undefined
   let parsed: JsonObject | undefined
   if (request.method === 'POST' || request.method === 'PATCH' || request.method === 'DELETE') {
@@ -286,13 +297,13 @@ export async function handleHealthApi(
         (!Number.isInteger(parsed.version) || (parsed.version as number) <= 0))
       return json('version_required', 400)
     if (request.method === 'POST' || request.method === 'PATCH') {
-      const error = await validateMutation(fetchImpl, core, bearer, route, request.method, parsed)
+      const error = await validateMutation(coreFetch, core, bearer, route, request.method, parsed)
       if (error) return error
     }
   }
   const outbound = new URL(route.path, core)
   if (request.method === 'GET') outbound.search = url.search
-  const response = await send(fetchImpl, outbound.toString(), {
+  const response = await send(coreFetch, outbound.toString(), {
     method: request.method,
     headers: {
       Authorization: `Bearer ${bearer}`,
