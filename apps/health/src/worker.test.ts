@@ -32,6 +32,41 @@ describe('Health trusted BFF', () => {
     expect(r.status).toBe(503)
     expect(f).not.toHaveBeenCalled()
   })
+  it('distinguishes transport failures from safe Identity HTTP and verifier failures', async () => {
+    const cases: Array<[string, () => Promise<Response>, string]> = [
+      ['network exception', async () => { throw new Error('synthetic backend connection failure') },
+        'identity_transport_unavailable'],
+      ['verifier unavailable', async () => Response.json({
+        error:{code:'ACCESS_VERIFIER_UNAVAILABLE',message:'synthetic private upstream detail'},
+      },{status:503}), 'identity_access_verifier_unavailable'],
+      ['identity internal error', async () => Response.json({
+        error:{code:'INTERNAL_ERROR',message:'synthetic private upstream detail'},
+      },{status:500}), 'identity_internal_error'],
+      ['wrong route', async () => Response.json({
+        error:{code:'NOT_FOUND',message:'synthetic private upstream detail'},
+      },{status:404}), 'identity_route_not_found'],
+      ['edge error HTML', async () => new Response('synthetic private edge body',
+        {status:530,headers:{'Content-Type':'text/html'}}), 'identity_upstream_http_530'],
+    ]
+    for (const [name, handler, expected] of cases) {
+      const fetcher = vi.fn(async () => handler())
+      const response = await handleHealthApi(make(url), env, fetcher)
+      expect(response.status, name).toBe(503)
+      const serialized = JSON.stringify(await response.json())
+      expect(serialized, name).toBe(JSON.stringify({error:expected}))
+      expect(serialized, name).not.toContain('private')
+      expect(fetcher, name).toHaveBeenCalledTimes(1)
+    }
+  })
+  it('does not leak Identity denial details or application credentials', async () => {
+    const fetcher = vi.fn(async () => Response.json({
+      error:{code:'INVALID_ACCESS_ASSERTION',message:'synthetic private payload'},
+    },{status:401}))
+    const response = await handleHealthApi(make(url), env, fetcher)
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({error:'not_authenticated'})
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
   it('requires raw Access proof and does not forward client credentials', async () => {
     const f=fetcher()
     const r=await handleHealthApi(make(url,'GET',undefined,{'Cf-Access-Jwt-Assertion':''}),env,f)
