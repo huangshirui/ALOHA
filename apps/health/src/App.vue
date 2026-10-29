@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, shallowRef } from 'vue'
+import { editableSnapshot } from './health-editor'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, ClipboardCheck, ClipboardList, Clock3, FileHeart,
@@ -10,7 +11,8 @@ import {
 import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   listAuthorizedSpaces, listConcernPresentation, listHealthRecords, patchConcernPresentation,
-  getOwnSpacePerson, updateHealthRecord, type HealthRecord } from './health-api'
+  getOwnSpacePerson, updateHealthRecord, uploadHealthDocument, downloadHealthDocument,
+  type HealthRecord } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
 import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
@@ -97,6 +99,9 @@ const editKind = ref<HealthKind>('concern')
 const editId = ref('')
 const draft = ref<Record<string,any>>({})
 const formError = ref('')
+const saving=ref(false)
+const downloading=ref(false)
+const uploadFile=shallowRef<File|null>(null)
 const search = ref('')
 const timelineKind = ref<TimelineFilter>('all')
 const metricReferenceFilter=ref<MetricReferenceFilter>('all')
@@ -358,9 +363,11 @@ async function clearConcernPoint(id:string) {
   } catch(e) {notice.value=e instanceof Error?e.message:'移除定位失败'}
 }
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
+  if(saving.value)return
   const record=id ? getList(kind).find(r=>r.id===id) : null
-  if (id && !record) return
-  const d=record ? structuredClone({...record}) : makeEmpty(kind,today)
+  if (id && !record) {notice.value='这条记录已不存在，请刷新后重试。';return}
+  const d=record ? editableSnapshot(record) : makeEmpty(kind,today)
+  uploadFile.value=null
   if(kind==='concern') d.attention=attentionByConcern.value[id]??'unset'
   if(kind==='metric'||kind==='observation'){
     d.referenceLow=d.referenceLow??''
@@ -373,11 +380,15 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
 async function formSave() {
+  if(saving.value)return
   formError.value=''
   const v=draft.value, kind=editKind.value
   const mandatory: Record<HealthKind,string[]> = {
     concern:['name'],metric:['name'],observation:['metricId','observedDate'],event:['summary','date'],
-    document:['title','fileName'],assessment:['title','content','assessedDate'],regimen:['name','instructions'],
+    document:['title'],assessment:['title','content','assessedDate'],regimen:['name','instructions'],
+  }
+  if(kind==='document' && !editId.value && !uploadFile.value && liveMode) {
+    formError.value='请先选择要上传的文件';return
   }
   for(const key of mandatory[kind]) {
     if(typeof v[key]!=='boolean' && !String(v[key]??'').trim()) {
@@ -417,16 +428,22 @@ async function formSave() {
       formError.value='关联记录需要通过 LifeSpace Semantic Relation 保存，该功能尚未接入。请先单独保存记录。'
       return
     }
+    saving.value=true
+    notice.value=''
     try {
-      const fields=encodeHealthFields(kind,payload,subjectPersonId.value)
+      const fields=kind==='document' && !editId.value
+        ? null : encodeHealthFields(kind,payload,subjectPersonId.value)
       const rows=getList(kind)
       const previous=editId.value ? rows.find(r=>r.id===editId.value) : null
-      if(previous) delete fields.subjectPersonId // immutable model ownership field
-      const saved=previous
-        ? await updateHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],
-            previous.id,previous.version,fields)
-        : await createHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],fields)
+      if(previous && fields) delete fields.subjectPersonId // immutable model ownership field
+      const saved=kind==='document' && !previous
+        ? await uploadHealthDocument(selectedSpaceId.value,uploadFile.value!,payload)
+        : previous
+          ? await updateHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],
+              previous.id,previous.version,fields!)
+          : await createHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],fields!)
       const mapped=decodeHealthRecord(kind,saved)
+      if(kind==='document' && !previous) mapped.fileName=uploadFile.value?.name??'已上传原始资料'
       if(previous) rows.splice(rows.indexOf(previous),1,mapped)
       else rows.unshift(mapped)
       let presentationError=''
@@ -445,6 +462,7 @@ async function formSave() {
         : '已保存至 LifeSpace。'
       if(selected.value?.kind!==kind || selected.value.id!==saved.id) show(kind,saved.id)
     } catch(e) {formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
+    finally {saving.value=false;uploadFile.value=null}
     return
   }
   const rows=getList(kind)
@@ -510,19 +528,26 @@ async function removeCurrent() {
     :'已从演示页面移除。'
   back()
 }
+async function downloadDocument(id:string) {
+  if(!liveMode||!selectedSpaceId.value||downloading.value)return
+  downloading.value=true;notice.value='正在准备文件下载…'
+  try {await downloadHealthDocument(selectedSpaceId.value,id);notice.value='文件下载已开始。'}
+  catch(e){notice.value=e instanceof Error?e.message:'文件下载失败'}
+  finally {downloading.value=false}
+}
 function togglePlan(id: string) {
   if(liveMode){notice.value='真实任务完成状态需要由 LifeSpace Task/Recurrence 管理，尚未接入。';return}
   completedPlanIds.value=completedPlanIds.value.includes(id) ? completedPlanIds.value.filter(x=>x!==id) : [...completedPlanIds.value,id]
 }
-function closeSheet() { sheet.value='';formError.value='' }
+function closeSheet() { if(saving.value)return;sheet.value='';formError.value='';uploadFile.value=null }
 function pickFile(e: Event) {
   const file=(e.target as HTMLInputElement).files?.[0]
   // Never read file contents; filename is held only in component memory.
-  if(sheet.value==='edit') draft.value.fileName=file?.name ?? ''
+  if(sheet.value==='edit') {uploadFile.value=file??null;draft.value.fileName=file?.name ?? ''}
   else uploadedName.value=file?.name ?? ''
 }
 function openImport(concernId='') {
-  if(liveMode){notice.value='真实资料上传须先获取 LifeSpace File 引用，当前尚未接入。';return}
+  if(liveMode){openEditor('document','',concernId);return}
   sheet.value='import';uploadStage.value=1;uploadedName.value='';uploadTitle.value='';uploadType.value='lab_report';uploadConcernId.value=concernId;uploadIncludeResult.value=false
 }
 function importNext() {
