@@ -186,19 +186,29 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
       liveMessage.value='当前身份发生变化，请重新连接健康档案'
       return
     }
+    // Validate the full selected-page contract before mutating any reactive rows.
+    // An older/incompatible BFF must not render partial data and then throw a raw
+    // JavaScript TypeError (e.g. when presentation.items is missing).
+    const decoded=missing.map(kind=>{
+      const records=snapshot.models?.[healthModelKey[kind]]
+      if(!Array.isArray(records))throw new Error('健康档案响应不完整，请刷新后重试')
+      return {kind,records:records.map(record=>decodeHealthRecord(kind,record))}
+    })
+    if(missing.includes('concern')&&!Array.isArray(snapshot.presentation?.items))
+      throw new Error('健康关注配置响应不完整，请刷新后重试')
+    const presentationItems=Array.isArray(snapshot.presentation?.items)
+      ?snapshot.presentation.items:[]
     subjectPersonId.value=snapshot.personId
-    for(const kind of missing) {
-      const records=snapshot.models[healthModelKey[kind]]
-      if(!records)throw new Error('健康档案响应不完整')
+    for(const {kind,records} of decoded) {
       const rows=getList(kind)
-      rows.splice(0,rows.length,...records.map(r=>decodeHealthRecord(kind,r)))
+      rows.splice(0,rows.length,...records)
       loadedKinds.add(kind)
     }
     if(missing.includes('concern')) {
       const ids=new Set(demo.concerns.map(concern=>concern.id))
-      attentionByConcern.value=Object.fromEntries(snapshot.presentation.items
+      attentionByConcern.value=Object.fromEntries(presentationItems
         .filter(p=>ids.has(p.concernId)).map(p=>[p.concernId,p.attention]))
-      bodyBindings.value=snapshot.presentation.items
+      bodyBindings.value=presentationItems
         .filter(p=>ids.has(p.concernId)&&p.placement!==null)
         .map(p=>p.placement!)
     }
