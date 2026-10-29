@@ -17,6 +17,7 @@
 - `LIFESPACE_CORE_BASE_URL` — 对应环境 HTTPS Core origin
 - `LIFESPACE_APPLICATION_CREDENTIAL` — 对应 LifeSpace 环境中 ALOHA Application 颁发的 Health BFF 专用 `lsa_*` Secret。Staging 与 Production 的 Application 和 Credential 不同；同环境内多个 PWA 可共用 Application，但应各自使用可撤销的 Credential。
 - Health 的登录入口采用 ALOHA 产品级共享 Cloudflare Access（Production / Staging 各自的统一入口），而不是每个 PWA 自建 Access Application。相应环境的 Access Audience 必须登记给该环境的 ALOHA LifeSpace Application；独立 Worker Preview 的直连 URL 也必须有防绕过保护。
+- 命名 Preview 与共享 Staging 网关跨两个 Cloudflare Access 保护边界：共享网关携带下游 Preview 专用 Service Token，保留用户原始签名的 Access JWT 于 `X-Aloha-Access-Assertion`；Health BFF 仅将它交给 LifeSpace Identity 验签、检查 Audience 并交换当前用户短 Token。直接访问 Health Preview 时仍使用其正常的 `Cf-Access-Jwt-Assertion`。所有权限仍由 Identity/Core 决定，不能把 Worker Service Token 当成用户身份。
 
 LifeSpace Console 分别在对应环境的 ALOHA Application 配置七模型 read/write Access；用户须具备 Space Membership/Grant 和 `profile:read/spaces:read/resources:read/resources:write` Scope。应用侧仅声明这批预期 Scope，不会越过 Identity/ Core 当前授权。
 
