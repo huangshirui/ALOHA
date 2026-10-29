@@ -1,0 +1,91 @@
+{
+  "definitionVersion": 1,
+  "key": "health_assessment",
+  "description": "记录医生、AI 或规则基于既有健康事实形成的分析、总结或建议。应关联判断依据，不能将推断当成测量事实或确诊。",
+  "display": {
+    "singular": "健康评估",
+    "plural": "健康评估"
+  },
+  "fields": {
+    "subjectPersonId": {
+      "type": "person",
+      "title": "健康主体",
+      "required": true,
+      "immutable": true
+    },
+    "title": {
+      "type": "string",
+      "title": "标题",
+      "required": true,
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "content": {
+      "type": "text",
+      "title": "评估正文",
+      "required": true,
+      "minLength": 1,
+      "description": "明确写出判断及不确定性；不得把分析结果冒充原始测量值。"
+    },
+    "assessedDate": {
+      "type": "date",
+      "title": "评估日期",
+      "required": true,
+      "description": "作出该判断的日期，不是依据资料的采样日期。"
+    },
+    "status": {
+      "type": "enum",
+      "title": "状态",
+      "required": true,
+      "values": [
+        "preliminary",
+        "final",
+        "corrected",
+        "entered_in_error"
+      ],
+      "description": "final 仅表示该评估已定稿，不表示医生认可或医学确诊。"
+    },
+    "sourceNote": {
+      "type": "text",
+      "title": "来源说明",
+      "nullable": true,
+      "description": "评估来源的文字说明，如医生陈述或 AI 建议；实际写入者由平台记录。"
+    },
+    "notes": {
+      "type": "text",
+      "title": "备注",
+      "nullable": true,
+      "description": "仅记录补充背景；判断依据应使用 based_on 关系关联事实。"
+    }
+  },
+  "defaults": {
+    "status": "final"
+  },
+  "referenceLabel": {
+    "field": "title"
+  },
+  "semanticRelations": {
+    "outgoing": [
+      "based_on"
+    ]
+  },
+  "query": {
+    "searchable": [
+      "title",
+      "content"
+    ],
+    "filterable": [
+      "subjectPersonId",
+      "assessedDate",
+      "status"
+    ],
+    "sortable": [
+      "assessedDate",
+      "title"
+    ]
+  },
+  "access": [
+    "read",
+    "write"
+  ]
+}
