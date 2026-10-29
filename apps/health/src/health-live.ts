@@ -27,6 +27,17 @@ const dateOnly = (date: string): string => {
   d.setUTCDate(d.getUTCDate() + 1)
   return d.toISOString().slice(0,10)
 }
+// Core Instant values are UTC instants. Display them in the viewer's local
+// timezone and convert back on save. Never slice UTC ISO strings for form time.
+function localDateAndTime(instant:string):{date:string;time:string} {
+  const date=new Date(instant)
+  if(!Number.isFinite(date.getTime()))throw new Error('事件时间无效')
+  const pad=(n:number)=>String(n).padStart(2,'0')
+  return {
+    date:`${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}`,
+    time:`${pad(date.getHours())}:${pad(date.getMinutes())}`,
+  }
+}
 const recurrenceKind = (v: unknown): Regimen['recurrence'] => {
   const r = record(v)
   return r.mode === 'calendar' && (r.frequency === 'daily' || r.frequency === 'weekly')
@@ -53,9 +64,11 @@ export function decodeHealthRecord(kind: HealthKind, r: HealthRecord): DemoData[
       const when = record(r.when)
       const stamp = str(when.start)
       const instant = when.kind === 'instant'
+      const localStart=instant?localDateAndTime(stamp):null
+      const localEnd=instant?localDateAndTime(str(when.endExclusive)):null
       return { ...extra, eventType:str(r.eventType), summary:str(r.summary),
-        date:instant ? stamp.slice(0,10) : stamp,
-        timeStart:instant ? stamp.slice(11,16) : '', timeEnd:instant ? str(when.endExclusive).slice(11,16) : '',
+        date:localStart?.date??stamp,
+        timeStart:localStart?.time??'', timeEnd:localEnd?.time??'',
         location:str(record(r.location).name), description:str(r.description), status:r.status as 'active'|'cancelled' }
     }
     case 'document':
