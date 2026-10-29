@@ -8,8 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "deploy": "npm run build && wrangler deploy",
-    "test": "vitest run src && vitest run --config vitest.workers.config.ts"
+    "test": "vitest run src && vitest run --config vitest.workers.config.ts",
+    "deploy:staging": "wrangler preview --name staging"
   },
   "dependencies": {
     "@aloha/design-tokens": "*",
