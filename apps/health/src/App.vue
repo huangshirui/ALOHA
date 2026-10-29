@@ -181,7 +181,10 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
     if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
     if(subjectPersonId.value&&subjectPersonId.value!==snapshot.personId) {
       clearLiveRecords()
-      throw new Error('当前身份发生变化，请重新连接健康档案')
+      subjectPersonId.value=''
+      liveStatus.value='error'
+      liveMessage.value='当前身份发生变化，请重新连接健康档案'
+      return
     }
     subjectPersonId.value=snapshot.personId
     for(const kind of missing) {
