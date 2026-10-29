@@ -87,7 +87,7 @@ export function signedTokenSubject(token:string):string|null{
   const segments=token.split('.')
   if(segments.length!==3||!segments[1]||segments[1].length>8192)return null
   try {
-    const claims:unknown=JSON.parse(decoder.decode(segments[1]))
+    const claims:unknown=JSON.parse(decoder.decode(decode(segments[1])))
     if(!claims||typeof claims!=='object'||!('sub' in claims))return null
     const subject=(claims as {sub:unknown}).sub
     return typeof subject==='string'&&/^usr_[A-Za-z0-9_-]+$/.test(subject)?subject:null
