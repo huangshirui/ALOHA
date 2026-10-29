@@ -258,14 +258,19 @@ describe('Health trusted BFF', () => {
     const path='https://health.example.com/health/api/v1/spaces/spc_test/snapshot?models=health_document'
     const response=await handleHealthApi(make(path),{...env,HEALTH_PRESENTATION:namespace},f)
     expect(response.status).toBe(200)
-    expect(Object.keys((await response.json()).data.models)).toEqual(['health_document'])
+    const body=(await response.json()).data
+    expect(Object.keys(body.models)).toEqual(['health_document'])
+    expect(body.presentation).toEqual({items:[]})
     expect(seen.filter(x=>x.endsWith('/records'))).toHaveLength(1)
     expect(stub.fetch).not.toHaveBeenCalled()
     const injected=await handleHealthApi(make(path.replace('health_document','admin')),env,f)
     expect(injected.status).toBe(422)
   })
   it('loads all Health models using one Identity exchange, keeping current Person isolation', async()=>{
-    const stub={fetch:vi.fn(async()=>success({items:[]}))}
+    // Use a real DO-shaped response, including a persisted synthetic presentation.
+    const stub={fetch:vi.fn(async()=>success({items:[
+      {concernId:'rec_own_concern',attention:'watch',placement:null},
+    ]}))}
     const namespace={idFromName:vi.fn((name:string)=>name),get:vi.fn(()=>stub)}
     const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
       const p=new URL(String(input)).pathname
@@ -296,6 +301,9 @@ describe('Health trusted BFF', () => {
     expect(payload.models.health_observation.map((x:{id:string})=>x.id)).toEqual(['rec_own'])
     expect(payload.models.health_metric).toHaveLength(1)
     expect(Object.keys(payload.models)).toHaveLength(7)
+    expect(payload.presentation).toEqual({items:[
+      {concernId:'rec_own_concern',attention:'watch',placement:null},
+    ]})
     expect(result.headers.get('server-timing')).toContain('identity;dur=')
     expect(result.headers.get('cache-control')).toContain('no-store')
     expect(f.mock.calls.filter(c=>new URL(String(c[0])).pathname==='/internal/v1/access/tokens')).toHaveLength(1)
