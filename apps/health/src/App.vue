@@ -10,8 +10,8 @@ import {
 } from 'lucide-vue-next'
 import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
-  listAuthorizedSpaces, listConcernPresentation, listHealthRecords, patchConcernPresentation,
-  getOwnSpacePerson, updateHealthRecord, uploadHealthDocument, downloadHealthDocument,
+  listAuthorizedSpaces, patchConcernPresentation,
+  getHealthSnapshot, updateHealthRecord, uploadHealthDocument, downloadHealthDocument,
   type HealthRecord } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
 import AlohaHub from './components/AlohaHub.vue'
@@ -145,43 +145,30 @@ function clearLiveRecords() {
   routeStack.value=[]
 }
 async function loadLiveRecords() {
-  if(!selectedSpaceId.value || !subjectPersonId.value) return
+  if(!selectedSpaceId.value)return
   const requestId=++liveLoadSequence
-  const spaceId=selectedSpaceId.value,personId=subjectPersonId.value
-  liveStatus.value='loading'; liveMessage.value='正在读取健康档案…'
+  const spaceId=selectedSpaceId.value
+  liveStatus.value='loading';liveMessage.value='正在读取健康档案…'
   try {
-    const [records,presentation]=await Promise.all([
-      Promise.all(healthKinds.map(async kind => {
-        const collected: HealthRecord[]=[]
-        let cursor: string|null=null
-        for(let pageIndex=0;pageIndex<20;pageIndex++) {
-          const params=new URLSearchParams({limit:'100'})
-          if(cursor) params.set('cursor',cursor)
-          const page=await listHealthRecords<HealthRecord>(spaceId,healthModelKey[kind],params)
-          collected.push(...page.items)
-          cursor=page.nextCursor
-          if(!cursor) return {kind,items:collected}
-        }
-        throw new Error('记录超过本次读取上限，请缩小查询范围')
-      })),
-      listConcernPresentation(spaceId),
-    ])
-    if(requestId!==liveLoadSequence || spaceId!==selectedSpaceId.value || personId!==subjectPersonId.value)return
+    const snapshot=await getHealthSnapshot(spaceId)
+    if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
     clearLiveRecords()
-    for(const {kind,items} of records) {
-      const visible=kind==='metric'?items:items.filter(r=>r.subjectPersonId===personId)
-      getList(kind).push(...visible.map(r=>decodeHealthRecord(kind,r)))
+    subjectPersonId.value=snapshot.personId
+    for(const kind of healthKinds) {
+      getList(kind).push(...snapshot.models[healthModelKey[kind]]
+        .map(r=>decodeHealthRecord(kind,r)))
     }
     const ids=new Set(demo.concerns.map(concern=>concern.id))
-    attentionByConcern.value=Object.fromEntries(presentation.items
+    attentionByConcern.value=Object.fromEntries(snapshot.presentation.items
       .filter(p=>ids.has(p.concernId)).map(p=>[p.concernId,p.attention]))
-    bodyBindings.value=presentation.items
+    bodyBindings.value=snapshot.presentation.items
       .filter(p=>ids.has(p.concernId)&&p.placement!==null)
       .map(p=>p.placement!)
-    liveStatus.value='ready'; liveMessage.value='已连接 LifeSpace'
-  } catch(e) {
+    liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'
+  }catch(e){
     if(requestId!==liveLoadSequence)return
     clearLiveRecords()
+    subjectPersonId.value=''
     liveStatus.value='error'
     liveMessage.value=e instanceof Error?e.message:'健康档案读取失败'
   }
@@ -195,16 +182,7 @@ async function chooseLiveSpace(spaceId:string) {
   }
   selectedSpaceId.value=spaceId
   localStorage.setItem('aloha.health.space',spaceId)
-  liveStatus.value='loading';liveMessage.value='正在核对当前用户的档案人员…'
-  try {
-    const self=await getOwnSpacePerson(spaceId)
-    if(selectedSpaceId.value!==spaceId)return
-    subjectPersonId.value=self.personId
-    await loadLiveRecords()
-  } catch(e) {
-    if(selectedSpaceId.value!==spaceId)return
-    liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法确定当前用户的档案人员'
-  }
+  await loadLiveRecords()
 }
 async function initializeLive() {
   liveStatus.value='loading'; liveMessage.value='正在验证访问权限…'
