@@ -6,7 +6,7 @@ import { parsePresentationPatch, presentationFromRow, type PresentationRow } fro
 
 type SqlValue = string | number | null
 export interface PresentationSql {
-  exec<T extends Record<string, unknown> = Record<string, unknown>>(sql:string,...values:SqlValue[]):{toArray():T[]}
+  exec<T extends object = Record<string, unknown>>(sql:string,...values:SqlValue[]):{toArray():T[]}
 }
 export interface PresentationObjectState { storage:{sql:PresentationSql} }
 const schema=[
