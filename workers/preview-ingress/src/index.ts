@@ -19,7 +19,7 @@ function upstream(value:string|undefined):URL|null {
     const u=new URL(value)
     if(u.protocol!=='https:'||u.username||u.password||u.port||
        u.pathname!=='/'||u.search||u.hash||
-       !u.hostname.endsWith('.workers.dev'))return null
+       !/^staging-[a-z0-9-]+\.[a-z0-9-]+\.workers\.dev$/u.test(u.hostname))return null
     return u
   } catch {return null}
 }
