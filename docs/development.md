@@ -164,18 +164,17 @@ Assistant Browser
 
 `workers/gateway/wrangler.jsonc` points its static-assets directory at `apps/assistant/dist`. This keeps production behavior stable after the repository rename from `apps/web`.
 
-### Health independent preview deployment
+### Health independent staging Preview deployment
 
-`.github/workflows/deploy-health.yml` is manually dispatched and independently:
+`.github/workflows/deploy-health.yml` is manually dispatched on the reviewed Health BFF branch. It installs dependencies, checks the required `worker.ts` runtime entry and Preview DO binding, typechecks/tests Health, builds in Live mode, compiles a **dry-run Worker bundle** and uploads only the named `staging` Worker Preview with `wrangler preview --name staging`. This does **not** update the existing `aloha-app-health` Production deployment.
 
-1. installs repository dependencies;
-2. typechecks only `@aloha/health`;
-3. builds only Health;
-4. deploys `apps/health/wrangler.jsonc` as the `aloha-app-health` Worker.
+The generic `npm run deploy` entry was removed from Health because it previously invoked `wrangler deploy` (Production). The explicit `npm run deploy:staging` only uploads already-built Preview assets and must not be used until the protected Preview environment is ready. Do not trigger the old `main` deployment workflow (which uses `wrangler deploy`) as a substitute.
 
-The Health Worker currently exposes only its Worker preview endpoint. The workflow intentionally does not configure `aloha.aisr.online/health/*`.
+The independent Preview URL requires protection at the Cloudflare Worker Preview/Access layer before handling private data. A shared product-level staging Access login and a shared origin/path router are separate tasks: a named Worker Preview does not automatically appear under the shared staging domain, and Service Bindings from a Preview normally reach the downstream Worker's Production deployment. Do not configure an unsupported Preview-to-Preview binding or expose a direct URL as a replacement for shared login.
 
-This preview path validates independent development/release mechanics without creating a production routing dependency.
+Once the Preview has been created and security protection confirmed, set Preview-scoped LifeSpace Identity/Core URL variables and a Health-only `LIFESPACE_APPLICATION_CREDENTIAL` secret in Cloudflare's named `staging` Preview. Credentials never belong in GitHub source or logs. The BFF deliberately returns `backend_not_configured` until these are present. Cloudflare's **Production** settings for the existing static-only Worker are not the place to install these values.
+
+Production path routing remains inactive until the independent release gate has been accepted.
 
 ### Target production deployment
 
