@@ -40,6 +40,14 @@ export const listAuthorizedSpaces = () =>
 // Person is resolved by the trusted BFF from current verified Principal + membership.
 export const getOwnSpacePerson = (spaceId:string) =>
   api<{personId:string}>(`/spaces/${encodeURIComponent(spaceId)}/own-person`)
+/** One bounded response; Core authorization is checked independently for all 7 models. */
+export interface HealthSnapshot {
+  personId:string
+  models:Record<HealthModelKey,HealthRecord[]>
+  presentation:{items:import('./health-presentation').ConcernPresentation[]}
+}
+export const getHealthSnapshot = (spaceId:string) =>
+  api<HealthSnapshot>(`/spaces/${encodeURIComponent(spaceId)}/snapshot`)
 const recordsPath = (spaceId:string, model:HealthModelKey) =>
   `/spaces/${encodeURIComponent(spaceId)}/models/${model}/records`
 export const listHealthRecords = <T extends HealthRecord>(
