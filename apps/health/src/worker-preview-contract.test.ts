@@ -31,6 +31,8 @@ describe('one Worker project / isolated staging Preview release contract', () =>
   it('one-time production bootstrap cannot activate public routing or receive Preview credentials', () => {
     const config = JSON.parse(read('apps/health/wrangler.jsonc'))
     expect(config.workers_dev).toBe(false)
+    expect(config.compatibility_flags).toContain('global_fetch_strictly_public')
+    // Public front-door fetch must reach the Staging Identity/Core Worker custom domains.
     expect(config.preview_urls).toBe(true)
     expect(config.route).toBeUndefined()
     expect(config.routes).toBeUndefined()
