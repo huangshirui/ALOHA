@@ -51,10 +51,24 @@ Each surface independently owns:
 
 A PWA split does not imply a backend split. Gateway and Agent Control remain shared only where their responsibilities apply. Structured domain PWAs must not be routed through Agent Control by default.
 
+## Worker Production and named staging Preview
+
+ALOHA uses one LifeSpace Application per environment: the production application for all production surfaces, and a shared Preview application for all staging surfaces. PWA deployments do not create additional LifeSpace Application identities.
+
+Each PWA keeps **one Cloudflare Worker project** with two isolated deployments:
+
+- **Production**: `wrangler deploy`, production-only bindings and secrets, released through an explicit production approval flow.
+- **Staging**: `wrangler preview --name staging`, a named Worker Preview under the same Worker project, with staging-only credentials, Access audience, and backend settings. The Preview workflow must never use `wrangler deploy`, which updates Production code.
+- **State**: Preview-specific Durable Object classes and storage are automatically isolated from the production Durable Object namespace. Keep DO migrations at the Worker root and declare the Preview DO bindings under `previews.durable_objects.bindings` when the Worker code needs them.
+- **Security**: Preview URLs need Cloudflare Access protection before handling live test records. A Preview does not inherit production secrets; do not share credentials or use a request URL/query parameter to choose the platform environment.
+- **Infrastructure**: Preview resources are an environment of the same Worker project, not a separately named Worker or a second LifeSpace Application. Any required binding to an external Worker must point explicitly to a staging service.
+
+This is the target policy for every independently released ALOHA PWA. The Health BFF Preview is the first implementation; other PWA deployment workflows should adopt the same split before handling staging data. The Assistant's temporary Gateway hosting remains a separate migration constraint.
+
 ## Current deployment state
 
 - **Assistant:** workspace is `apps/assistant`, but production remains on the legacy root-scope assets attached to `workers/gateway` until the LifeSpace-dependent migration is ready.
-- **Health:** `apps/health`, scope `/health/`, `aloha-app-health` Preview Worker. Draft branch adds same-origin LifeSpace BFF and separately bound, user-scoped SQLite-backed DO presentation data; no production route or online acceptance yet.
+- **Health:** `apps/health`, scope `/health/`, a single Worker project with a named `staging` Preview. Draft branch adds same-origin LifeSpace BFF and separately bound, user-scoped SQLite-backed DO presentation data; no production route or online acceptance yet.
 - **Finance:** `apps/finance`, scope `/finance/`, assets-only Worker `aloha-app-finance`, manual preview deployment available; no production route yet.
 - **Things:** `apps/things`, scope `/things/`, assets-only Worker `aloha-app-things`, manual preview deployment available; no production route yet.
 
