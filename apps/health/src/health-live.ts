@@ -139,7 +139,11 @@ export function encodeHealthFields(
       ...subject,eventType:v.eventType,summary:v.summary,when:eventWhen(v),status:v.status,
       location:v.location ? {name:v.location} : null,description:optional(v.description),
     }
-    case 'document':throw new Error('真实文件上传尚未接入，不能只保存文件名作为健康资料')
+    case 'document':return {
+      title:v.title,documentType:v.documentType,issuedDate:optional(v.issuedDate),
+      issuerName:optional(v.issuerName),eventId:optional(v.eventId),notes:optional(v.notes),
+      // artifactRef is immutable; existing document PATCH must never replace the file.
+    }
     case 'assessment':return {
       ...subject,title:v.title,content:v.content,assessedDate:v.assessedDate,
       status:v.status,sourceNote:optional(v.sourceNote),notes:optional(v.notes),
