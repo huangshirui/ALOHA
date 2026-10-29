@@ -20,6 +20,19 @@
 
 LifeSpace Console 分别在对应环境的 ALOHA Application 配置七模型 read/write Access；用户须具备 Space Membership/Grant 和 `profile:read/spaces:read/resources:read/resources:write` Scope。应用侧仅声明这批预期 Scope，不会越过 Identity/ Core 当前授权。
 
+## Identity 交换失败的安全诊断
+
+Health BFF 遇到来自 Identity 的未知 5xx、边缘错误或网络异常时，只返回固定错误代号，不在浏览器、CI 或公开日志中传递 LifeSpace 原始响应体、访问断言、`lsa_*` 或用户数据。
+
+- `identity_transport_unavailable`：BFF 发起 HTTPS 子请求失败，需检查跨 Worker 连接/域名路由。
+- `identity_upstream_http_<status>`：Identity/Cloudflare 入口返回非预期 HTTP 状态，需进一步核对公开端点与 Worker 运行状态。
+- `identity_access_verifier_unavailable`：Identity 无法获取 Cloudflare Access 验签密钥。
+- `identity_access_not_configured` / `identity_not_configured` / `identity_internal_error`：上游身份服务配置或运行时异常。
+- `identity_route_not_found`：Identity 目标 endpoint 不存在。
+- `not_authenticated`、`access_not_linked_or_forbidden`：继续保留现有 401/403 授权语义。
+
+配置正确并不自动意味着连接成功；只有用户通过 Access 登录后成功读取只读 Spaces API，才能宣称首个在线端到端验收通过。
+
 ## 验收
 
 1. 缺少任一服务端配置或 Access Assertion → 503/401，且不发 Core 请求。
