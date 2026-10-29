@@ -181,6 +181,89 @@ describe('Health trusted BFF', () => {
     expect(f).toHaveBeenCalledTimes(1)
   })
 
+  it('reuses an encrypted LifeSpace bearer only after fresh Identity session-check',async()=>{
+    const encoded=btoa(JSON.stringify({sub:'usr_synthetic'}))
+      .replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_')
+    const signed='header.'+encoded+'.signature'
+    let exchanges=0,checks=0,reads=0
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens'){
+        exchanges++
+        return success({accessToken:signed,expiresIn:600})
+      }
+      if(p==='/internal/v1/access/session-check'){
+        checks++
+        expect(init?.method).toBe('POST')
+        return success({userId:'usr_synthetic'})
+      }
+      if(p==='/api/v1/me/spaces'){
+        reads++
+        expect((init?.headers as Record<string,string>).Authorization).toBe('Bearer '+signed)
+        return success([{id:'spc_synthetic'}])
+      }
+      throw new Error('unexpected synthetic route '+p)
+    })
+    const spaces='https://health.example.com/health/api/v1/spaces'
+    const first=await handleHealthApi(make(spaces),env,f)
+    expect(first.status).toBe(200)
+    const cookie=first.headers.get('set-cookie')
+    expect(cookie).toContain('__Host-aloha_health_session=')
+    expect(cookie).toContain('HttpOnly')
+    expect(cookie).not.toContain(signed)
+    const second=await handleHealthApi(make(spaces,'GET',undefined,{
+      Cookie:cookie!.split(';')[0]!,
+    }),env,f)
+    expect(second.status).toBe(200)
+    expect(second.headers.get('set-cookie')).toBeNull()
+    expect(exchanges).toBe(1)
+    expect(checks).toBe(1)
+    expect(reads).toBe(2)
+  })
+  it('rejects a changed Access identity and never reuses the former bearer',async()=>{
+    const encoded=btoa(JSON.stringify({sub:'usr_synthetic'})).replace(/=/g,'')
+    const signed='header.'+encoded+'.signature'
+    let checks=0,exchanges=0
+    const f=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens'){
+        exchanges++;return success({accessToken:signed,expiresIn:600})
+      }
+      if(p==='/internal/v1/access/session-check'){
+        checks++;return success({userId:'usr_other'})
+      }
+      if(p==='/api/v1/me/spaces')return success([])
+      throw new Error('Unexpected synthetic route '+p)
+    })
+    const spaces='https://health.example.com/health/api/v1/spaces'
+    const first=await handleHealthApi(make(spaces),env,f)
+    const old=first.headers.get('set-cookie')!.split(';')[0]!
+    const second=await handleHealthApi(make(spaces,'GET',undefined,{Cookie:old}),env,f)
+    expect(second.status).toBe(401)
+    expect(exchanges).toBe(1)
+    expect(checks).toBe(1)
+  })
+  it('reads only explicitly requested models from Core, not seven by default',async()=>{
+    const stub={fetch:vi.fn(async()=>success({items:[]}))}
+    const namespace={idFromName:vi.fn((x:string)=>x),get:vi.fn(()=>stub)}
+    const seen:string[]=[]
+    const f=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname;seen.push(p)
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.endsWith('/records'))return success({items:[],nextCursor:null})
+      throw new Error('unexpected route')
+    })
+    const path='https://health.example.com/health/api/v1/spaces/spc_test/snapshot?models=health_document'
+    const response=await handleHealthApi(make(path),{...env,HEALTH_PRESENTATION:namespace},f)
+    expect(response.status).toBe(200)
+    expect(Object.keys((await response.json()).data.models)).toEqual(['health_document'])
+    expect(seen.filter(x=>x.endsWith('/records'))).toHaveLength(1)
+    expect(stub.fetch).not.toHaveBeenCalled()
+    const injected=await handleHealthApi(make(path.replace('health_document','admin')),env,f)
+    expect(injected.status).toBe(422)
+  })
   it('loads all Health models using one Identity exchange, keeping current Person isolation', async()=>{
     const stub={fetch:vi.fn(async()=>success({items:[]}))}
     const namespace={idFromName:vi.fn((name:string)=>name),get:vi.fn(()=>stub)}
