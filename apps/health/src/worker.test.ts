@@ -58,6 +58,39 @@ describe('Health trusted BFF', () => {
       expect(fetcher, name).toHaveBeenCalledTimes(1)
     }
   })
+  it('uses Workers-supported manual redirects for Identity and Core', async () => {
+    const f = fetcher()
+    const response = await handleHealthApi(make(url), env, f)
+    expect(response.status).toBe(200)
+    expect(f).toHaveBeenCalledTimes(2)
+    expect((f.mock.calls[0]![1] as RequestInit).redirect).toBe('manual')
+    expect((f.mock.calls[1]![1] as RequestInit).redirect).toBe('manual')
+  })
+  it('fails closed on upstream redirects without following authorization headers', async () => {
+    const f = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, {
+      status: 302, headers: { Location: 'https://another.example.com/' },
+    }))
+    const response = await handleHealthApi(make(url), env, f)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ error: 'identity_upstream_http_502' })
+    expect(f).toHaveBeenCalledTimes(1)
+    expect((f.mock.calls[0]![1] as RequestInit).redirect).toBe('manual')
+  })
+  it('does not log sensitive upstream exception contents', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const f = vi.fn(async (): Promise<Response> => {
+        throw new Error('synthetic private URL, JWT and credential')
+      })
+      const response = await handleHealthApi(make(url), env, f)
+      expect(response.status).toBe(503)
+      expect(await response.json()).toEqual({ error: 'identity_transport_unavailable' })
+      expect(warn).toHaveBeenCalledWith('[Health BFF] upstream fetch failed', 'Error')
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('synthetic private')
+    } finally {
+      warn.mockRestore()
+    }
+  })
   it('does not leak Identity denial details or application credentials', async () => {
     const fetcher = vi.fn(async () => Response.json({
       error:{code:'INVALID_ACCESS_ASSERTION',message:'synthetic private payload'},

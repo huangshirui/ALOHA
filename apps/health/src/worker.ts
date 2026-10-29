@@ -65,8 +65,18 @@ function routeFor(url: URL, method: string): Route | null {
   }
 }
 async function send(fetchImpl: Fetcher, url: string, init: RequestInit): Promise<Response> {
-  try { return await fetchImpl(new URL(url), { ...init, redirect: 'error' }) }
-  catch { return json('backend_unavailable', 503) }
+  try {
+    // Cloudflare Workers does not implement redirect: 'error' (it throws TypeError).
+    // 'manual' also prevents forwarding server-only Authorization to another origin.
+    const response = await fetchImpl(new URL(url), { ...init, redirect: 'manual' })
+    if (response.status >= 300 && response.status < 400)
+      return json('backend_redirect_blocked', 502)
+    return response
+  } catch (error) {
+    // Never log request URLs, response bodies, assertions, tokens or credentials.
+    console.warn('[Health BFF] upstream fetch failed', error instanceof Error ? error.name : 'unknown')
+    return json('backend_unavailable', 503)
+  }
 }
 function tokenOf(value: unknown): string | null {
   if (!object(value) || !object(value.data)) return null
