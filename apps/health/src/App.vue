@@ -141,6 +141,15 @@ const sectionKinds:Record<BodyTab,HealthKind[]>={
   timeline:['metric','observation','event','assessment'],
   documents:['document'],regimens:['regimen'],
 }
+const detailKinds:Record<HealthKind,HealthKind[]>={
+  concern:[...healthKinds],
+  metric:['metric','observation'],
+  observation:['observation','metric','document'],
+  event:['event','document'],
+  document:['document','observation','event'],
+  regimen:['regimen','document'],
+  assessment:['assessment','observation','document'],
+}
 const loadedKinds=new Set<HealthKind>()
 let liveLoadSequence=0
 function clearLiveRecords() {
@@ -157,7 +166,8 @@ function clearLiveRecords() {
 async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   if(!selectedSpaceId.value)return
   if(refresh)clearLiveRecords()
-  const requested=section==='detail'?[...healthKinds]:sectionKinds[section]
+  const requested=section==='detail'
+    ? detailKinds[selected.value?.kind??'concern'] : sectionKinds[section]
   const missing=requested.filter(kind=>!loadedKinds.has(kind))
   if(!missing.length&&subjectPersonId.value) {
     liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return
@@ -311,9 +321,13 @@ function back() {
     nextTick(()=>window.scrollTo({top:timelineScrollPosition.value,behavior:'auto'}))
   else window.scrollTo({top:0,behavior:'smooth'})
 }
-function startCreate(kind: HealthKind) {
+async function startCreate(kind: HealthKind) {
   if(liveMode && (!selectedSpaceId.value || !subjectPersonId.value || liveStatus.value!=='ready')) {
     notice.value='请先连接 Space 并选择档案人员。';return
+  }
+  if(liveMode && kind==='observation' && !loadedKinds.has('metric')){
+    await loadLiveRecords('metrics')
+    if(liveStatus.value!=='ready')return
   }
   if(kind==='document') openImport(selected.value?.kind==='concern' ? selected.value.id : '')
   else openEditor(kind,'', selected.value?.kind==='concern' ? selected.value.id : '')
