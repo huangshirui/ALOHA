@@ -43,11 +43,13 @@ export const getOwnSpacePerson = (spaceId:string) =>
 /** One bounded response; Core authorization is checked independently for all 7 models. */
 export interface HealthSnapshot {
   personId:string
-  models:Record<HealthModelKey,HealthRecord[]>
+  models:Partial<Record<HealthModelKey,HealthRecord[]>>
   presentation:{items:import('./health-presentation').ConcernPresentation[]}
 }
-export const getHealthSnapshot = (spaceId:string) =>
-  api<HealthSnapshot>(`/spaces/${encodeURIComponent(spaceId)}/snapshot`)
+export const getHealthSnapshot = (spaceId:string,models:HealthModelKey[]) =>{
+  const params=new URLSearchParams({models:models.join(',')})
+  return api<HealthSnapshot>(`/spaces/${encodeURIComponent(spaceId)}/snapshot?${params}`)
+}
 const recordsPath = (spaceId:string, model:HealthModelKey) =>
   `/spaces/${encodeURIComponent(spaceId)}/models/${model}/records`
 export const listHealthRecords = <T extends HealthRecord>(
