@@ -97,8 +97,9 @@ export async function uploadHealthDocument(
         !upload||typeof upload!=='object'||Array.isArray(upload))
       return error('invalid_file_session',502)
     const transfer=upload as Record<string,unknown>
-    if(transfer.method!=='PUT'||!safeSignedR2Url(transfer.url))return error('invalid_file_session',502)
-    const put=await measure('r2_put',()=>fetcher(new URL(transfer.url),{
+    const signedUploadUrl=transfer.url
+    if(transfer.method!=='PUT'||!safeSignedR2Url(signedUploadUrl))return error('invalid_file_session',502)
+    const put=await measure('r2_put',()=>fetcher(new URL(signedUploadUrl),{
       method:'PUT',redirect:'manual',headers:{'Content-Type':mime},body:file,
     }))
     if(!put.ok)return error('file_transfer_failed',502)
