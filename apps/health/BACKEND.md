@@ -28,7 +28,7 @@ LifeSpace Console 配置该 Application 的七模型 read/write Access；用户�
 4. 依赖模型发布后，合成 Metric/Observation 测量 CRUD，更新版本冲突 409、跨用户/跨 Space 禁止 403，观测类型不符 422。
 5. 第一批资料上传/复杂语义关联/Task 完成需进一步接 LifeSpace 专用 API，不允许把虚构文件名作为稳定 `fil_*` 写入。
 
-当前实现状态：仅在独立 ALOHA 功能分支，未部署或通过在线端到端验收。真实文件上传/File 引用的创建、Semantic Relation 关系维护、Task 完成尚未接入；人体位置及关注度已在 DO 代码中实现，但尚未完成 Staging 在线验收；Live 模式不能把这些演示操作当作真实数据写入。HealthEvent 的有时刻记录暂按浏览器本地时区转换为绝对 Instant，需在实测中核对用户所在地与 Space 时区不同的情况。
+当前实现状态：仅在独立 ALOHA 功能分支，未部署或通过在线端到端验收。真实文件上传/File 引用的创建、Semantic Relation 关系维护、Task 完成尚未接入；人体位置及关注度已在 DO 代码中实现，但尚未完成 Staging 在线验收；Live 模式不能把这些演示操作当作真实数据写入。HealthEvent 有时刻记录使用浏览器当前时区将本地时间转换为绝对 Instant，读取时反向转为当前浏览器本地时间，不再直接截取 UTC 时分。需在 Staging 验证 Space 时区、跨日事件和夏令时歧义；本轮暂不宣称具备独立事件时区输入。
 
 ## 开启 Staging Live 模式
 
@@ -57,3 +57,7 @@ LifeSpace Console 配置该 Application 的七模型 read/write Access；用户�
 4. 在线验收：刷新/跨设备恢复、不同 User/Space/Person 隔离、非法点位/素材 422、无 Core Model 权限 403、清除点位保留关注度、删除后无孤点、DO 不可用时明确 503。
 
 **当前状态**：功能仍在 Draft PR #37，尚未完成 Staging 模型发布、Access 配置及端到端验收；没有创建新 D1。Demo 模式只用虚构内存数据。真实文件上传、Semantic Relations 与 Task 完成仍未接入。
+
+## Workers Runtime 本地集成测试（PR #37）
+
+`npm run test -w @aloha/health` 依次运行纯 Vitest 单元测试及 `@cloudflare/vitest-plugin` 的 workerd SQLite DO 测试。后者通过 `apps/health/wrangler.test.jsonc` 装载与正式 Worker 相同的 DO 类，验证建表、写入、实例隔离和驱逐后重启读取；全部使用合成值，不调用 Staging。该通过不等于 Staging 已经配置 Access、发布模型或真实 CRUD。相关部署仍须走 Console 与 Preview 部署流程。
