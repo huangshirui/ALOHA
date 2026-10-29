@@ -55,4 +55,41 @@ describe('LifeSpace Health projection (synthetic only)', () => {
     expect(()=>encodeHealthFields('document',{title:'Fake',fileName:'fake.pdf'},'per_fake'))
       .toThrow(/文件/)
   })
+
+  it('round-trips Instant event dates/times across different local timezones',()=>{
+    const originalTimezone=process.env.TZ
+    try {
+      for(const timezone of ['UTC','America/Los_Angeles','Europe/Amsterdam','Asia/Shanghai']) {
+        process.env.TZ=timezone
+        const original={kind:'instant',start:'2026-10-28T08:15:00.000Z',
+          endExclusive:'2026-10-28T09:45:00.000Z'}
+        const dto=decodeHealthRecord('event',rec('event',{
+          eventType:'visit',summary:'Synthetic timezone test',when:original,status:'active',
+        }))
+        const fields=encodeHealthFields('event',{
+          ...dto,eventType:'visit',summary:'Synthetic timezone test',status:'active',
+        },'per_synthetic')
+        expect(fields.when).toEqual(original)
+      }
+    } finally {
+      if(originalTimezone===undefined)delete process.env.TZ
+      else process.env.TZ=originalTimezone
+    }
+  })
+  it('never displays raw UTC hours as local time in offset timezones',()=>{
+    const originalTimezone=process.env.TZ
+    try {
+      process.env.TZ='Asia/Shanghai'
+      const dto=decodeHealthRecord('event',rec('event',{
+        eventType:'visit',summary:'Synthetic',status:'active',
+        when:{kind:'instant',start:'2026-10-28T08:15:00.000Z',
+          endExclusive:'2026-10-28T09:45:00.000Z'},
+      }))
+      expect(dto).toMatchObject({date:'2026-10-28',timeStart:'16:15',timeEnd:'17:45'})
+    } finally {
+      if(originalTimezone===undefined)delete process.env.TZ
+      else process.env.TZ=originalTimezone
+    }
+  })
+
 })
