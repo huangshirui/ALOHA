@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "deploy": "npm run build && wrangler deploy",
-    "test": "vitest run src"
+    "test": "vitest run src && node --test model-definitions/*.test.mjs"
   },
   "dependencies": {
     "@aloha/design-tokens": "*",
