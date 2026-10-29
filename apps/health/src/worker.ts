@@ -5,6 +5,7 @@
 import { parsePresentationPatch, type PresentationScope } from './health-presentation'
 import { uploadHealthDocument, downloadHealthDocument } from './health-files'
 import { readHealthSession, makeHealthSessionCookie, signedTokenSubject, clearHealthSessionCookie } from './health-session'
+import { healthSnapshotQuery, snapshotModelKeys, type SnapshotModelKey } from './health-snapshot-query'
 export { HealthPresentationState } from './health-presentation-do'
 
 export interface HealthPresentationNamespace {
@@ -270,10 +271,6 @@ async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:str
   if(scope instanceof Response) return scope
   return Response.json({data:{personId:scope.personId}},{headers:{'Cache-Control':'no-store'}})
 }
-const snapshotModels = [
-  'health_metric','health_concern','health_event','health_document',
-  'health_observation','health_regimen','health_assessment',
-] as const
 
 /** One Access proof, one Identity exchange, seven concurrent Core model reads.
  * No persistent caching of health records or Identity tokens. Every Core request
@@ -285,23 +282,23 @@ async function handleSnapshot(
 ):Promise<Response> {
   const rawModels=requested.get('models')
   // Explicit allowlist. Never permit arbitrary LifeSpace route/model expansion.
-  const chosen=rawModels?rawModels.split(','):[...snapshotModels]
-  if(!chosen.length||chosen.length>snapshotModels.length||
+  const chosen=rawModels?rawModels.split(','):[...snapshotModelKeys]
+  if(!chosen.length||chosen.length>snapshotModelKeys.length||
      new Set(chosen).size!==chosen.length||
-     chosen.some(model=>!snapshotModels.some(allowed=>allowed===model)) ||
+     chosen.some(model=>!snapshotModelKeys.some(allowed=>allowed===model)) ||
      [...requested.keys()].some(k=>k!=='models'))return json('snapshot_models_invalid',422)
   const includesConcern=chosen.includes('health_concern')
   const started=performance.now()
   type Page={items:JsonObject[];nextCursor:string|null}
-  async function pageThrough(model:string):Promise<JsonObject[]|Response> {
+  async function pageThrough(model:SnapshotModelKey,personId:string):Promise<JsonObject[]|Response> {
     const records:JsonObject[]=[]
     let cursor:string|null=null
     for(let index=0;index<20;index++){
-      const params=new URLSearchParams({limit:'100'})
-      if(cursor)params.set('cursor',cursor)
+      const query=healthSnapshotQuery(model,personId,cursor)
       const response=await send(fetchImpl,core+'/api/v1/spaces/'+spaceId+
-        '/models/'+model+'/records?'+params,{method:'GET',
-        headers:{Authorization:'Bearer '+bearer,Accept:'application/json'}})
+        '/models/'+model+'/records/query',{method:'POST',
+        headers:{Authorization:'Bearer '+bearer,Accept:'application/json',
+          'Content-Type':'application/json'},body:JSON.stringify(query)})
       if(!response.ok)return proxyResponse(response)
       const payload:unknown=await response.json().catch(()=>null)
       if(!object(payload)||!object(payload.data)||
@@ -315,11 +312,12 @@ async function handleSnapshot(
     }
     return json('snapshot_page_limit',413)
   }
-  const [scope,...collections]=await Promise.all([
-    resolveOwnIdentity(fetchImpl,core,bearer,spaceId),
-    ...chosen.map(model=>pageThrough(model)),
-  ])
+  // Determine the current Space Person from Core before constructing a scoped
+  // Query. Never accept a browser-selected Person as a filter/authority.
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId)
   if(scope instanceof Response)return scope
+  const collections=await Promise.all(chosen.map(model=>
+    pageThrough(model as SnapshotModelKey,scope.personId)))
   const error=collections.find(item=>item instanceof Response)
   if(error instanceof Response)return error
   const coreMs=performance.now()-started
@@ -336,6 +334,8 @@ async function handleSnapshot(
   const filtered:Record<string,JsonObject[]>={}
   chosen.forEach((model,index)=>{
     const items=collections[index] as JsonObject[]
+    // The Core query enforces the Person predicate. Keep a response-boundary
+    // check as defense in depth against a broken upstream query projection.
     filtered[model]=model==='health_metric' ? items :
       items.filter(record=>record.subjectPersonId===scope.personId)
   })
