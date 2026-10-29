@@ -79,30 +79,61 @@ export const patchConcernPresentation = (
 export const deleteConcernPresentation = (spaceId:string,concernId:string) =>
   api<void>(presentationPath(spaceId)+'/'+encodeURIComponent(concernId),{method:'DELETE',body:'{}'})
 
-/** Raw bytes are sent to the same-origin Health BFF; the BFF alone handles signed R2 URLs. */
-export async function uploadHealthDocument(
+/** Bytes travel only to the same-origin BFF. Browser progress measures this
+ * hop exactly; the BFF->R2/finalization phase is shown as 'processing', never
+ * as a fabricated 100%-complete saved document.
+ */
+export type FileUploadProgress =
+  | {phase:'uploading';percent:number|null}
+  | {phase:'processing';percent:100}
+export function uploadHealthDocument(
   spaceId:string,file:File,fields:Record<string,unknown>,
+  onProgress:(progress:FileUploadProgress)=>void=()=>{},
 ):Promise<HealthRecord> {
   const form=new FormData()
   form.append('file',file,file.name)
   for(const key of ['title','documentType','issuedDate','issuerName','eventId','notes'])
     form.append(key,typeof fields[key]==='string'?String(fields[key]):'')
-  const response=await fetch(base+'/spaces/'+encodeURIComponent(spaceId)+'/documents/upload',{
-    method:'POST',credentials:'same-origin',body:form,
+  return new Promise<HealthRecord>((resolve,reject)=>{
+    const xhr=new XMLHttpRequest()
+    xhr.open('POST',base+'/spaces/'+encodeURIComponent(spaceId)+'/documents/upload')
+    xhr.withCredentials=true
+    xhr.timeout=180000
+    let transferred=false
+    onProgress({phase:'uploading',percent:0})
+    xhr.upload.onprogress=(event:ProgressEvent)=>{
+      if(transferred)return
+      const percent=event.lengthComputable && event.total>0
+        ?Math.min(99,Math.max(0,Math.round(event.loaded/event.total*100)))
+        :null
+      onProgress({phase:'uploading',percent})
+    }
+    xhr.upload.onload=()=>{
+      transferred=true
+      onProgress({phase:'processing',percent:100})
+    }
+    xhr.onerror=()=>reject(new Error('文件上传连接失败，请重试'))
+    xhr.ontimeout=()=>reject(new Error('上传超时，请检查网络后重试'))
+    xhr.onabort=()=>reject(new Error('上传已取消'))
+    xhr.onload=()=>{
+      if(xhr.status<200||xhr.status>=300){
+        const detail=xhr.status===413?'文件大小超过 15 MB 限制':
+          xhr.status===415?'请上传有效的 PDF、PNG、JPEG 或 WebP 文件':
+          xhr.status===403?'没有上传该资料的权限':
+          xhr.status===503?'文件服务暂不可用，请稍后重试':
+          xhr.status===422?'请检查资料类型和日期':
+          '上传失败（HTTP '+xhr.status+'），请重试'
+        reject(new Error(detail));return
+      }
+      try {
+        const payload:unknown=JSON.parse(xhr.responseText)
+        if(!payload||typeof payload!=='object'||!('data' in payload))
+          throw new Error('文件上传响应无效')
+        resolve((payload as {data:HealthRecord}).data)
+      }catch{reject(new Error('文件上传响应无效'))}
+    }
+    xhr.send(form)
   })
-  if(!response.ok) {
-    const detail=response.status===413?'文件大小超过 15 MB 限制':
-      response.status===415?'请上传有效的 PDF、PNG、JPEG 或 WebP 文件':
-      response.status===403?'没有上传该资料的权限':
-      response.status===503?'文件服务暂不可用，请稍后重试':
-      response.status===422?'请检查资料类型和日期':
-      '上传失败（HTTP '+response.status+'），请重试'
-    throw new Error(detail)
-  }
-  const payload:unknown=await response.json()
-  if(!payload||typeof payload!=='object'||!('data' in payload))
-    throw new Error('文件上传响应无效')
-  return (payload as {data:HealthRecord}).data
 }
 export async function downloadHealthDocument(spaceId:string,recordId:string):Promise<void>{
   const url=base+'/spaces/'+encodeURIComponent(spaceId)+'/documents/'+encodeURIComponent(recordId)+'/download'
