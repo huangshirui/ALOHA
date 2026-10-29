@@ -791,7 +791,7 @@ function detailName(kind: HealthKind,record:any) {
                     <div v-else-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.reason==='unit_mismatch'"><dt>范围比较</dt><dd>单位不同，暂不比较</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 </template>
                 <template v-else-if="selected.kind==='event'"><p class="body-copy">{{ current.description || '没有补充说明' }}</p><dl class="detail-fields"><div><dt>事件类型</dt><dd>{{ eventName(current) }}</dd></div><div><dt>发生日期</dt><dd>{{ displayDate(current.date) }}</dd></div><div v-if="current.timeStart"><dt>发生时段</dt><dd>{{ current.timeStart }}—{{ current.timeEnd }}</dd></div><div><dt>地点</dt><dd>{{ current.location||'未填写' }}</dd></div></dl></template>
-                <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><small>{{ liveMode?'文件引用由 LifeSpace 管理':'体验版仅保存文件名，不包含实际文件' }}</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><button v-if="liveMode && current.artifactRef" type="button" class="soft-button" :disabled="downloading" @click="downloadDocument(current.id)"><FileText :size="16"/>{{ downloading?'正在准备…':'下载原始文件' }}</button><small v-if="liveMode">文件安全保存于 LifeSpace</small><small v-else>体验版仅保存文件名</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
                 <template v-else-if="selected.kind==='assessment'"><p class="body-copy">{{ current.content }}</p><dl class="detail-fields"><div><dt>评估日期</dt><dd>{{ displayDate(current.assessedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'未填写' }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
                 <template v-else-if="selected.kind==='regimen'"><p class="body-copy">{{ current.instructions }}</p><dl class="detail-fields"><div><dt>方案类型</dt><dd>{{ labelFrom(regimenTypes,current.regimenType) }}</dd></div><div><dt>安排</dt><dd>{{ current.recurrence==='daily'?'每日':current.recurrence==='weekly'?'每周':'不重复' }}</dd></div><div><dt>首次执行</dt><dd>{{ displayDate(current.firstDueDate) }}</dd></div><div><dt>开始日期</dt><dd>{{ displayDate(current.startDate) }}</dd></div><div><dt>结束日期</dt><dd>{{ displayDate(current.endDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
                 <div class="relation-tags" v-if="current.concernIds?.length"><span class="mini-label">相关健康问题</span><button v-for="cid in current.concernIds" :key="cid" type="button" class="relation-pill" @click="show('concern',cid)"><Link2 :size="13"/>{{ nameOfConcern(cid) }}</button></div>
@@ -940,7 +940,7 @@ function detailName(kind: HealthKind,record:any) {
     <div v-if="sheet" class="modal-backdrop" @click.self="closeSheet">
       <section class="drawer" role="dialog" aria-modal="true" :aria-label="sheet==='edit'?'编辑健康记录':'整理报告'">
         <div class="drawer-handle"></div>
-        <header class="drawer-heading"><div><span class="eyebrow">{{ sheet==='edit'?'健康记录':'整理一份健康资料' }}</span><h2>{{ sheet==='edit'?(editId?'修改':'添加')+kindLabel[editKind]:'整理健康报告' }}</h2></div><button class="icon-button" aria-label="关闭" type="button" @click="closeSheet"><X :size="20"/></button></header>
+        <header class="drawer-heading"><div><span class="eyebrow">{{ sheet==='edit'?'健康记录':'整理一份健康资料' }}</span><h2>{{ sheet==='edit'?(editId?'修改':'添加')+kindLabel[editKind]:'整理健康报告' }}</h2></div><button class="icon-button" aria-label="关闭" type="button" :disabled="saving" @click="closeSheet"><X :size="20"/></button></header>
 
         <form v-if="sheet==='edit'" class="editor-form" @submit.prevent="formSave">
           <p class="form-intro">填写你知道的内容即可，之后还可以修改。</p>
@@ -1001,7 +1001,7 @@ function detailName(kind: HealthKind,record:any) {
           <template v-else-if="editKind==='document'">
             <label><span class="field-label">资料名称 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.title" required placeholder="例如：年度检查报告"/></label>
             <label>资料类型<select v-model="draft.documentType"><option v-for="[value,name] in documentTypes" :key="value" :value="value">{{ name }}</option></select></label>
-            <label><span class="field-label">选择文件 <span class="required-mark" aria-hidden="true">*</span></span><input type="file" accept=".pdf,.png,.jpg,.jpeg" @change="pickFile"/><small>只保留文件名，不读取内容。</small></label>
+            <label v-if="!editId"><span class="field-label">原始文件 <span class="required-mark" aria-hidden="true">*</span></span><input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" @change="pickFile"/><small v-if="liveMode">支持 PDF、PNG、JPEG、WebP，单个文件最多 15 MB。保存时会安全上传到 LifeSpace。</small><small v-else>仅演示文件名。</small></label><p v-else-if="liveMode" class="helper-copy">原文件已保存，无法在修改资料时替换。如需另一份文件，请新建资料。</p>
             <p v-if="draft.fileName" class="file-picked"><FileText :size="16"/>{{ draft.fileName }}</p>
             <div class="form-two"><label>资料日期<input v-model="draft.issuedDate" type="date"/></label><label>出具机构<input v-model="draft.issuerName" placeholder="选填"/></label></div>
             <label>相关健康事件<select v-model="draft.eventId"><option value="">不关联</option><option v-for="e in demo.events" :key="e.id" :value="e.id">{{ e.summary }}</option></select></label>
@@ -1026,15 +1026,16 @@ function detailName(kind: HealthKind,record:any) {
             <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>方案来源<input v-model="draft.sourceNote" placeholder="例如：个人计划"/></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
-            <p class="helper-copy">真实版本会由平台生成待办，不会由页面自行定时。</p>
+            <p v-if="!liveMode" class="helper-copy">重复提醒尚未接入演示任务。</p>
           </template>
           <fieldset v-if="editKind!=='metric'&&editKind!=='concern'" class="check-group"><legend>相关健康问题（可多选）</legend><label v-for="c in demo.concerns" :key="c.id" class="checkbox-line"><input v-model="draft.concernIds" type="checkbox" :value="c.id"/>{{ c.name }}</label><p v-if="!demo.concerns.length" class="helper-copy">可以先创建健康问题，后续再关联。</p></fieldset>
           <p v-if="formError" class="form-error" role="alert"><Info :size="16"/>{{ formError }}</p>
-          <div class="form-actions"><button type="button" class="quiet-button" @click="closeSheet">取消</button><button type="submit" class="primary-button"><Check :size="17"/> 保存记录</button></div>
-          <p class="privacy-note"><ShieldCheck :size="15"/> 仅当前页面有效。刷新后不会保留本次修改。</p>
+          <p v-if="saving" class="save-progress" role="status" aria-live="polite"><span class="saving-spinner" aria-hidden="true"/>{{ editKind==='document'&&!editId?'正在上传文件并保存资料…':'正在保存至 LifeSpace…' }} 请勿重复提交。</p>
+          <div class="form-actions"><button type="button" class="quiet-button" :disabled="saving" @click="closeSheet">取消</button><button type="submit" class="primary-button" :disabled="saving" :aria-busy="saving"><span v-if="saving" class="saving-spinner" aria-hidden="true"/><Check v-else :size="17"/> {{ saving?'正在保存…':editId?'保存修改':'保存记录' }}</button></div>
+          <p v-if="!liveMode" class="privacy-note"><ShieldCheck :size="15"/> 当前是演示数据，刷新后将恢复示例。</p>
         </form>
 
-        <div v-else-if="sheet==='import'" class="import-flow">
+        <div v-else-if="sheet==='import' && !liveMode" class="import-flow">
           <div class="step-track"><span v-for="num in [1,2,3]" :key="num" :class="{active:uploadStage>=num}">{{ num }}</span></div>
           <template v-if="uploadStage===1">
             <div class="flow-copy"><h3>先把原始资料留下来</h3><p>选取一个示例文件并命名。演示不会打开、读取或上传文件内容。</p></div>
