@@ -159,7 +159,7 @@ Two Assistant concepts remain separate:
 
 Confirmation is an ALOHA Agent product behavior, not a substitute for LifeSpace domain authorization. High-impact confirmation enforcement must remain outside the model.
 
-## ALOHA Hub, common /settings route and AISR account (Draft / 2026-10-30)
+## ALOHA Hub, common /settings route and AISR account (implemented / 2026-10-30)
 
 The **ALOHA Hub is a shared UI component**, not a new Identity provider or
 account database. `@aloha/ui/AlohaHub.vue` is consumed by Health and Assistant.
@@ -224,7 +224,7 @@ PWA scopes must not overlap. The root path is not a fifth installable PWA in the
 - `apps/web` has been retired.
 - `apps/assistant` owns the existing Assistant UI.
 - Assistant still uses the transitional root-scope manifest and is physically served with the Gateway Worker in production. This remains until the current LifeSpace-dependent Assistant upgrade/cutover is ready.
-- `apps/health` owns Health UI and the `/health/` PWA identity with an independent Preview Worker; Draft PR #37 adds trusted LifeSpace BFF and a separate per-user DO state class.
+- `apps/health` owns Health UI and the `/health/` PWA identity with an independent Preview Worker; trusted LifeSpace BFF and the per-user DO state class are merged, with Production activation still separate.
 - the production `/health/*` route is not activated yet.
 
 This staged state is deliberate: repository ownership can be corrected without forcing a production routing migration at the same time.
