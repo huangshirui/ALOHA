@@ -20,7 +20,6 @@ import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, h
 import { concernTargetHasRelation,concernTargetModels,
   type ConcernRelation,type ConcernTargetKind } from './health-concern-relations'
 import AlohaHub from '@aloha/ui/AlohaHub.vue'
-import AlohaHubSettings from '@aloha/ui/AlohaHubSettings.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import ConcernPager from './components/ConcernPager.vue'
@@ -55,9 +54,8 @@ const alohaApps = [
   { id:'things', name:'Things', href:import.meta.env.VITE_ALOHA_THINGS_URL || undefined },
 ]
 const accountCenterUrl='https://account.aisr.online/'
-const hubSettingsUrl='/health/hub/settings'
+const hubSettingsUrl='/settings/?from=health'
 const hubProfile=ref<{displayName:string;avatarUrl:string|null}|null>(null)
-const settingsMode=ref(typeof window!=='undefined'&&window.location.pathname===hubSettingsUrl)
 const alohaPublicLinks=computed(()=>({
   accountUrl:accountCenterUrl,
   accountLabel:hubProfile.value?.displayName||'账号',
@@ -344,7 +342,6 @@ async function chooseLiveSpace(spaceId:string) {
   }
   selectedSpaceId.value=spaceId
   localStorage.setItem('aloha.space',spaceId)
-  if(settingsMode.value){liveStatus.value='ready';liveMessage.value='';return}
   await loadLiveRecords(bodyTab.value)
 }
 async function initializeLive() {
@@ -366,15 +363,7 @@ async function loadHubProfile(){
 }
 onMounted(()=>{
   if(liveMode){void initializeLive();void loadHubProfile()}
-  window.addEventListener('popstate',syncSettingsPath)
 })
-onBeforeUnmount(()=>window.removeEventListener('popstate',syncSettingsPath))
-function syncSettingsPath(){settingsMode.value=window.location.pathname===hubSettingsUrl}
-function leaveSettingsPath(){
-  if(!settingsMode.value)return
-  settingsMode.value=false
-  window.history.replaceState({},'', '/health/')
-}
 const current = computed<any | null>(() => selected.value ? getList(selected.value.kind).find(item=>item.id===selected.value?.id) ?? null : null)
 const selectedConcern = computed(() => selected.value?.kind === 'concern' ? selected.value.id : '')
 const related = (record: {concernIds?:string[]},id:string) => (record.concernIds ?? []).includes(id)
@@ -523,7 +512,6 @@ function location(): HealthLocation {
   return { tab:activeTab.value, section:bodyTab.value, record:selected.value ? {...selected.value} : null }
 }
 function navigate(tab: Tab,loadDefault=true) {
-  leaveSettingsPath()
   routeStack.value=[]
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
@@ -902,16 +890,13 @@ function detailName(kind: HealthKind,record:any) {
     </aside>
     <div class="page-frame">
       <main class="content">
-        <div v-if="liveMode&&!settingsMode&&liveStatus!=='ready'" class="health-live-bar" role="status">
+        <div v-if="liveMode&&liveStatus!=='ready'" class="health-live-bar" role="status">
           <span class="health-live-label"><ShieldCheck :size="16"/> 健康档案</span>
           <span :class="['health-live-status',{'health-live-error':liveStatus==='error'}]">{{ liveMessage||'正在连接健康档案…' }}</span>
-          <a href="/health/hub/settings" class="quiet-button">应用设置</a>
+          <a href="/settings/?from=health" class="quiet-button">应用设置</a>
           <button v-if="liveStatus==='error'" type="button" class="quiet-button" @click="initializeLive">重试</button>
         </div>
-        <AlohaHubSettings v-if="settingsMode" :spaces="liveSpaces" :selected-space-id="selectedSpaceId"
-          :busy="liveStatus==='loading'" :space-message="liveMessage" back-url="/health/"
-          :account-url="accountCenterUrl" @choose-space="chooseLiveSpace" @retry="initializeLive"/>
-        <section v-else-if="activeTab==='home'" class="home-view">
+        <section v-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
             :agent-open="agentOpen" :agent-enabled="!liveMode"
             
