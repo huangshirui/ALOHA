@@ -394,7 +394,10 @@ function show(kind: HealthKind,id: string) {
     timelineScrollPosition.value=window.scrollY
   routeStack.value.push(location())
   activeTab.value='body'; selected.value=saveDestination(kind,id);sheet.value='';search.value=''
-  if(liveMode&&selectedSpaceId.value)void loadLiveRecords('detail')
+  if(liveMode&&selectedSpaceId.value)void loadLiveRecords('detail').then(()=>{
+    if(kind==='concern'&&selected.value?.kind==='concern'&&selected.value.id===id&&liveStatus.value==='ready')
+      return refreshConcernLinks(id)
+  })
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function back() {
@@ -403,7 +406,10 @@ function back() {
     activeTab.value=previous.tab
     bodyTab.value=previous.section
     selected.value=previous.record
-    if(liveMode&&selectedSpaceId.value)void loadLiveRecords(previous.record?'detail':previous.section)
+    if(liveMode&&selectedSpaceId.value)void loadLiveRecords(previous.record?'detail':previous.section).then(()=>{
+      if(previous.record?.kind==='concern'&&liveStatus.value==='ready')
+        return refreshConcernLinks(previous.record.id)
+    })
   } else selected.value=null
   if(previous?.tab==='body' && previous.section==='timeline' && !previous.record)
     nextTick(()=>window.scrollTo({top:timelineScrollPosition.value,behavior:'auto'}))
@@ -483,7 +489,7 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
     d.referenceSource=d.referenceSource??''
   }
   if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
-  if (presetConcernId && !record && kind!=='metric' && !liveMode) d.concernIds=[presetConcernId]
+  if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
@@ -532,8 +538,8 @@ async function formSave() {
     if(!selectedSpaceId.value || !subjectPersonId.value || liveStatus.value!=='ready') {
       formError.value='尚未连接到有效的健康档案';return
     }
-    if((payload.concernIds?.length??0)>0 || (payload.basisIds?.length??0)>0) {
-      formError.value='关联记录需要通过 LifeSpace Semantic Relation 保存，该功能尚未接入。请先单独保存记录。'
+    if((payload.basisIds?.length??0)>0) {
+      formError.value='评估依据关联尚未接入，请先单独保存评估记录。'
       return
     }
     saving.value=true
@@ -566,10 +572,17 @@ async function formSave() {
           presentationError=e instanceof Error?e.message:'关注度同步失败'
         }
       }
+      let relationWarning=''
+      if(!previous && kind!=='concern' && kind!=='metric') {
+        for(const concernId of (v.concernIds||[]) as string[]) {
+          try{await linkConcernRecord(selectedSpaceId.value,concernId,kind,saved.id)}
+          catch(e){relationWarning=e instanceof Error?e.message:'关联失败'}
+        }
+      }
       sheet.value='';formError.value='';search.value=''
-      notice.value=presentationError
-        ? '健康记录已保存，但关注度未同步：'+presentationError
-        : '已保存至 LifeSpace。'
+      notice.value=relationWarning?'健康记录已保存，但关联失败：'+relationWarning
+        :presentationError?'健康记录已保存，但关注度未同步：'+presentationError
+        :'已保存至 LifeSpace。'
       if(selected.value?.kind!==kind || selected.value.id!==saved.id) show(kind,saved.id)
     } catch(e) {formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
     finally {saving.value=false;uploadProgress.value=null;if(sheet.value!=='edit')uploadFile.value=null}
