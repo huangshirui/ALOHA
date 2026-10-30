@@ -48,6 +48,7 @@ jobs:
       - name: Build staging Health
         env:
           VITE_HEALTH_DATA_MODE: live
+          VITE_ALOHA_SETTINGS_URL: ${{ vars.ALOHA_SETTINGS_STAGING_URL }}
         run: npm run build:health
 
       - name: Verify Worker bundle compiles without deploying
