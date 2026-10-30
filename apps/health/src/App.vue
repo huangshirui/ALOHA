@@ -676,7 +676,7 @@ function pickFile(e: Event) {
   else uploadedName.value=file?.name ?? ''
 }
 function openImport(concernId='') {
-  if(liveMode){openEditor('document');return}
+  if(liveMode){openEditor('document','',concernId);return}
   sheet.value='import';uploadStage.value=1;uploadedName.value='';uploadTitle.value='';uploadType.value='lab_report';uploadConcernId.value=concernId;uploadIncludeResult.value=false
 }
 function importNext() {
@@ -859,23 +859,23 @@ function detailName(kind: HealthKind,record:any) {
                   </span>
                   <ChevronRight :size="16"/>
                 </button>
-                <p v-if="concernRelated.observations.length===0" class="empty-inline">还没有关联的测量记录。</p>
+                <p v-if="concernRelated.observations.length===0&&!relationLoading" class="empty-inline">还没有关联的测量记录。</p>
                 <button class="soft-button" type="button" @click="openEditor('observation','',current.id)"><Plus :size="16"/> 添加测量</button>
               </section>
               <section class="ui-card"><div class="card-heading"><h2>正在做什么？</h2></div>
                 <button v-for="r in concernRelated.regimens" :key="r.id" class="row-link" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="18"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenStatuses,r.status) }}</small></span><ChevronRight :size="17"/></button>
-                <p v-if="!concernRelated.regimens.length" class="empty-inline">还没有关联的健康方案。</p>
+                <p v-if="!concernRelated.regimens.length&&!relationLoading" class="empty-inline">还没有关联的健康方案。</p>
                 <button class="soft-button" type="button" @click="openEditor('regimen','',current.id)"><Plus :size="16"/> 添加方案</button>
               </section>
               <section class="ui-card"><div class="card-heading"><h2>最近发生了什么？</h2></div>
                 <button v-for="e in concernRelated.events" :key="e.id" class="row-link" type="button" @click="show('event',e.id)"><span class="list-icon"><CalendarDays :size="18"/></span><span class="row-main"><b>{{ e.summary }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/></button>
-                <p v-if="!concernRelated.events.length" class="empty-inline">还没有关联的健康事件。</p>
+                <p v-if="!concernRelated.events.length&&!relationLoading" class="empty-inline">还没有关联的健康事件。</p>
                 <button class="soft-button" type="button" @click="openEditor('event','',current.id)"><Plus :size="16"/> 记录事件</button>
               </section>
               <section class="ui-card"><div class="card-heading"><h2>有哪些依据？</h2></div>
                 <button v-for="d in concernRelated.documents" :key="d.id" class="row-link" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }}</small></span><ChevronRight :size="17"/></button>
                 <button v-for="a in concernRelated.assessments" :key="a.id" class="row-link" type="button" @click="show('assessment',a.id)"><span class="list-icon"><BadgeCheck :size="18"/></span><span class="row-main"><b>{{ a.title }}</b><small>评估 · {{ displayDate(a.assessedDate) }}</small></span><ChevronRight :size="17"/></button>
-                <p v-if="!concernRelated.assessments.length&&!concernRelated.documents.length" class="empty-inline">还没有报告或评估记录。</p>
+                <p v-if="!concernRelated.assessments.length&&!concernRelated.documents.length&&!relationLoading" class="empty-inline">还没有报告或评估记录。</p>
                 <div class="action-row"><button class="soft-button" type="button" @click="openImport(current.id)"><Plus :size="16"/> 添加资料</button><button class="soft-button" type="button" @click="openEditor('assessment','',current.id)"><Plus :size="16"/> 新建评估</button></div>
               </section>
               <section v-if="liveMode" class="ui-card concern-relations">
