@@ -659,12 +659,17 @@
 .concern-pager button:disabled {color:var(--health-muted);opacity:.5}
 .concern-inline-editor {border-top:1px solid var(--health-border-soft);margin-top:.8rem;padding-top:.7rem}
 .concern-inline-editor .helper-copy {margin:0 0 .5rem;font-size:.73rem}
-.concern-inline-editor .relation-picker {grid-template-columns:minmax(0,1fr) auto;margin:.25rem 0}
-.concern-inline-editor .relation-picker:has(select:nth-of-type(2)) {grid-template-columns:minmax(6rem,.6fr) minmax(9rem,1fr) auto}
-.concern-inline-editor .relation-picker select {background:var(--health-surface);color:var(--health-ink)}
+/* Keep a full-width record selector: 3 compressed controls caused text clipping.
+   Use background-color, NOT background shorthand, or the shared select Chevron
+   background-image in ui-system.css will silently disappear. */
+.concern-inline-editor .relation-picker {grid-template-columns:minmax(0,1fr) max-content;margin:.25rem 0}
+.concern-inline-editor .relation-picker.has-kind select:first-of-type {grid-column:1/-1;max-width:13rem}
+.concern-inline-editor .relation-picker select {background-color:var(--health-surface);color:var(--health-ink);min-width:0;text-overflow:ellipsis}
 @media(max-width:720px) {
   .concern-meta {gap:.65rem 1.15rem}
-  .concern-inline-editor .relation-picker,.concern-inline-editor .relation-picker:has(select:nth-of-type(2)) {grid-template-columns:1fr}
+  .concern-inline-editor .relation-picker {grid-template-columns:minmax(0,1fr)}
+  .concern-inline-editor .relation-picker.has-kind select:first-of-type {grid-column:auto;max-width:none}
+  .concern-inline-editor .relation-picker .soft-button {width:100%}
 }
 .metric-selector-field {display:grid;gap:.45rem;min-width:0}
 .metric-picker-toggle {display:flex;align-items:center;justify-content:space-between;width:100%;min-height:var(--health-control);padding:.65rem .9rem;background:var(--health-surface);border:1px solid var(--health-border);border-radius:var(--health-radius-control);color:var(--health-ink);text-align:left}
