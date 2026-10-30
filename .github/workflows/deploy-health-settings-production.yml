@@ -1,0 +1,101 @@
+name: Deploy ALOHA Health and Settings Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Exact release confirmation"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: aloha-health-settings-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Verify and deploy Health + Settings (no public route activation)
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY_ALOHA_HEALTH_SETTINGS_PRODUCTION'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --global npm@10.9.2
+      - run: npm install --legacy-peer-deps
+      - name: Verify shared component, Health and Settings
+        run: npm run check
+
+      - name: Require independent Production LifeSpace bindings before any deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          const { CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: account } = process.env
+          if (!token || !account) throw new Error('Production Cloudflare credentials unavailable')
+          const required = ['LIFESPACE_APPLICATION_CREDENTIAL', 'LIFESPACE_IDENTITY_BASE_URL', 'LIFESPACE_CORE_BASE_URL']
+          for (const worker of ['aloha-app-health', 'aloha-app-settings']) {
+            const url = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}/secrets`
+            const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+            const payload = await response.json()
+            if (!response.ok || !payload.success || !Array.isArray(payload.result))
+              throw new Error('Cannot verify Production bindings for ' + worker)
+            const names = new Set(payload.result.map(item => item.name))
+            const missing = required.filter(name => !names.has(name))
+            if (missing.length) throw new Error(worker + ' missing Production bindings: ' + missing.join(', '))
+            console.log(worker + ': required Production binding names verified (values not logged)')
+          }
+          NODE
+
+      - name: Build production Health in live data mode
+        env:
+          VITE_HEALTH_DATA_MODE: live
+        run: npm run build:health
+      - name: Build shared Settings for the production origin
+        run: npm run build -w @aloha/settings
+
+      - name: Assert route-free deployment configuration
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          for (const name of ['health','settings']) {
+            const config = JSON.parse(fs.readFileSync(`apps/${name}/wrangler.jsonc`, 'utf8'))
+            if (config.name !== 'aloha-app-' + name || config.workers_dev !== false ||
+                config.route || config.routes || config.vars || !config.keep_vars ||
+                config.main !== './src/worker.ts') {
+              throw new Error('Unsafe Production Worker config: ' + name)
+            }
+          }
+          NODE
+
+      - name: Dry-run Health bundle
+        working-directory: apps/health
+        run: npx wrangler deploy --dry-run --outdir ../../.health-production-dry-run
+      - name: Dry-run Settings bundle
+        working-directory: apps/settings
+        run: npx wrangler deploy --dry-run --outdir ../../.settings-production-dry-run
+
+      - name: Deploy Health Production Worker
+        working-directory: apps/health
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+      - name: Deploy Settings Production Worker
+        working-directory: apps/settings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Route activation remains a separate release gate
+        run: |
+          echo "Both Worker bundles are deployed; production hostname routes are NOT changed."
+          echo "After validated production bindings and Access review, activate only /health and /settings routes."
