@@ -1,5 +1,5 @@
 import {describe,expect,it,vi} from 'vitest'
-import {handleSettingsApi,type SettingsEnv} from './worker'
+import settingsWorker,{handleSettingsApi,type SettingsEnv} from './worker'
 const env:SettingsEnv={
   LIFESPACE_IDENTITY_BASE_URL:'https://identity.example.com',
   LIFESPACE_CORE_BASE_URL:'https://core.example.com',
@@ -31,6 +31,14 @@ function fetcher(overrides:{avatarType?:string;spaceId?:string;name?:string}={})
   return {run,seen}
 }
 describe('ALOHA common Settings authenticated BFF',()=>{
+  it('canonicalizes /settings and keeps unrelated paths outside Settings',async()=>{
+    const root=await settingsWorker.fetch(new Request('https://settings.example.com/settings'),env)
+    expect(root.status).toBe(308)
+    expect(root.headers.get('Location')).toBe('https://settings.example.com/settings/')
+    const unrelated=await settingsWorker.fetch(new Request('https://settings.example.com/settings-other'),env)
+    expect(unrelated.status).toBe(404)
+  })
+
   it('exposes the verified Identity profile and bounded same-origin image path',async()=>{
     const f=fetcher()
     const r=await handleSettingsApi(request('me'),env,f.run)
