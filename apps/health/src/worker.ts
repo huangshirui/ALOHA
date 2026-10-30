@@ -6,6 +6,7 @@ import { parsePresentationPatch, type PresentationScope } from './health-present
 import { uploadHealthDocument, downloadHealthDocument } from './health-files'
 import { readHealthSession, makeHealthSessionCookie, signedTokenSubject, clearHealthSessionCookie } from './health-session'
 import { healthSnapshotQuery, snapshotModelKeys, type SnapshotModelKey } from './health-snapshot-query'
+import { concernRelationInput, concernTargetModels, isConcernRelation, isConcernTargetKind } from './health-concern-relations'
 export { HealthPresentationState } from './health-presentation-do'
 
 export interface HealthPresentationNamespace {
@@ -42,7 +43,7 @@ function configuredOrigin(value: string | undefined): string | null {
       url.pathname === '/' && !url.search && !url.hash ? url.origin : null
   } catch { return null }
 }
-type Route = { path: string; modelKey?: string; spaceId?: string; recordId?: string }
+type Route = { path: string; modelKey?: string; spaceId?: string; recordId?: string; relationId?: string }
 function routeFor(url: URL, method: string): Route | null {
   const p = url.pathname
   if (p === '/health/api/v1/spaces' && method === 'GET') return { path: '/api/v1/me/spaces' }
@@ -63,6 +64,9 @@ function routeFor(url: URL, method: string): Route | null {
   if(presentationDetail && recordPattern.test(presentationDetail[2]!) &&
     ['PATCH','DELETE'].includes(method))
     return { spaceId:presentationDetail[1],recordId:presentationDetail[2],path:'@presentation-detail' }
+  const links = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/concerns\/([A-Za-z][A-Za-z0-9_-]{2,127})\/relations(?:\/(rel_[A-Za-z0-9_-]+))?$/.exec(p)
+  if(links && (links[3] ? method==='DELETE' : ['GET','POST'].includes(method)))
+    return {spaceId:links[1],recordId:links[2],relationId:links[3],path:'@concern-relations'}
   const record = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/models\/([a-z_]+)\/records(?:\/([A-Za-z0-9_-]+))?$/.exec(p)
   if (!record || !spacePattern.test(record[1]!) || !modelKeys.has(record[2]!)) return null
   const [, spaceId, modelKey, recordId] = record
@@ -413,6 +417,89 @@ async function validateMutation(
     return json('observation_value_invalid', 422)
   return null
 }
+/** HealthConcern is the only source of this narrow UI API.
+ * Current membership, concern ownership, target ownership and Core's
+ * model/predicate authorization remain independently enforced.
+ */
+async function handleConcernRelations(
+  request:Request,fetchImpl:Fetcher,core:string,bearer:string,
+  route:Route,userId:string|null,
+):Promise<Response>{
+  const {spaceId,recordId:concernId}=route
+  const base='/api/v1/spaces/'+spaceId
+  const [scope,concern]=await Promise.all([
+    resolveOwnIdentity(fetchImpl,core,bearer,spaceId!,userId),
+    getRecord(fetchImpl,core,bearer,base+'/models/health_concern/records/'+concernId),
+  ])
+  if(scope instanceof Response)return scope
+  if(concern instanceof Response)return concern
+  if(concern.subjectPersonId!==scope.personId)return json('concern_not_owned',403)
+  const relationPath=base+'/semantic-relations'
+  const headers={Authorization:'Bearer '+bearer,Accept:'application/json'}
+  if(request.method==='GET'){
+    if(new URL(request.url).search)return json('relation_query_invalid',422)
+    const items:unknown[]=[]
+    let cursor:string|null=null
+    for(let page=0;page<10;page++){
+      const query=new URLSearchParams({
+        sourceModelKey:'health_concern',sourceRecordId:concernId!,limit:'100',
+      })
+      if(cursor)query.set('cursor',cursor)
+      const response=await send(fetchImpl,core+relationPath+'?'+query,{method:'GET',headers})
+      if(!response.ok)return proxyResponse(response)
+      const payload:unknown=await response.json().catch(()=>null)
+      if(!object(payload)||!object(payload.data)||
+        !Array.isArray(payload.data.items)||
+        !(payload.data.nextCursor===null||typeof payload.data.nextCursor==='string'))
+        return json('invalid_relation_response',502)
+      // Any unexpected edge is an upstream contract error, not data to render.
+      if(!payload.data.items.every(edge=>isConcernRelation(edge,concernId!)))
+        return json('unexpected_relation_type',502)
+      items.push(...payload.data.items)
+      cursor=payload.data.nextCursor
+      if(!cursor)return Response.json({data:{items}},{headers:{'Cache-Control':'private, no-store'}})
+    }
+    return json('relation_page_limit',413)
+  }
+  if(request.method==='POST'){
+    if(!request.headers.get('Content-Type')?.includes('application/json')||
+       Number(request.headers.get('Content-Length')??0)>4096)return json('invalid_relation_request',415)
+    const raw=await request.text()
+    if(raw.length>4096)return json('payload_too_large',413)
+    let body:unknown
+    try{body=JSON.parse(raw)}catch{return json('invalid_json',400)}
+    if(!object(body)||Object.keys(body).some(key=>!['kind','targetId'].includes(key))||
+       !isConcernTargetKind(body.kind)||typeof body.targetId!=='string'||
+       !recordPattern.test(body.targetId))return json('invalid_relation_target',422)
+    const target=await getRecord(fetchImpl,core,bearer,
+      base+'/models/'+concernTargetModels[body.kind]+'/records/'+body.targetId)
+    if(target instanceof Response)return target
+    if(body.kind!=='metric'&&target.subjectPersonId!==scope.personId)
+      return json('relation_target_not_owned',403)
+    const input=concernRelationInput(concernId!,body.kind,body.targetId)
+    const response=await send(fetchImpl,core+relationPath,{
+      method:'POST',headers:{...headers,'Content-Type':'application/json'},
+      body:JSON.stringify(input),
+    })
+    if(!response.ok)return proxyResponse(response)
+    const payload:unknown=await response.json().catch(()=>null)
+    if(!object(payload)||!isConcernRelation(payload.data,concernId!))
+      return json('invalid_relation_response',502)
+    return Response.json({data:payload.data},{headers:{'Cache-Control':'private, no-store'}})
+  }
+  const detail=await send(fetchImpl,core+relationPath+'/'+route.relationId,{
+    method:'GET',headers,
+  })
+  if(!detail.ok)return proxyResponse(detail)
+  const payload:unknown=await detail.json().catch(()=>null)
+  if(!object(payload)||!isConcernRelation(payload.data,concernId!))
+    return json('relation_not_in_concern',404)
+  const removed=await send(fetchImpl,core+relationPath+'/'+route.relationId,{
+    method:'DELETE',headers,
+  })
+  if(!removed.ok)return proxyResponse(removed)
+  return new Response(null,{status:204,headers:{'Cache-Control':'no-store'}})
+}
 export async function handleHealthApi(
   request: Request, env: HealthEnv, fetchImpl: Fetcher = fetch,
 ): Promise<Response> {
@@ -433,6 +520,8 @@ export async function handleHealthApi(
   if(session instanceof Response)return session
   const {bearer,userId}=session
   const identityMs=performance.now()-identityStarted
+  if(route.path==='@concern-relations')return withSessionCookie(
+    await handleConcernRelations(request,fetchImpl,core,bearer,route,userId),session.cookie)
   if(route.path==='@snapshot')return withSessionCookie(
     await handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs,url.searchParams,userId),session.cookie)
   if(route.path==='@own-person')return withSessionCookie(
