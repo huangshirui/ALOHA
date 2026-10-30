@@ -158,3 +158,20 @@
 - **公共设置 path**：不创建独立 Hub 域名。Health 使用 `/health/hub/settings`；Assistant（独立 PWA 激活之后）使用 `/assistant/hub/settings`。两者使用同一设置组件，但提供空间列表的 BFF 各自拥有其权限校验。Health 不再在页面顶部显示空间选择，仅在未选择/连接异常时显示小型状态提示及设置入口。
 - **空间偏好**：已授权 Space 列表由 Core `/api/v1/me/spaces` 得到；用户选中后存储 `aloha.space`（同源共享浏览器偏好），读取时兼容旧的 `aloha.health.space` 并自动迁移。此 ID 不进入令牌或 Grant，不表示授权；每次数据操作依然由 LifeSpace Core 校验。Staging PWA 分别使用 workers.dev origin，localStorage 不自动跨不同 Origin 共享；不能承诺 Staging 所有 PWA 同步选择。未激活的 Assistant PWA 仍仅显示公共设置结构，不假装已有 LifeSpace 空间能力。
 - **发布边界**：以上改动只在 ALOHA Health 集成 Draft 分支的候选 PR 中；不改变 LifeSpace 数据模型，不修改 HomeMew，不部署 Production。上线需要真实头像、名称、Profile拒绝、切换 Space 后的数据隔离、刷新恢复、直接访问 path、Mobile/Desktop，以及单独部署 Assistant PWA 之后的交叉验证。
+
+## 2026-10-30 · Architecture correction: Settings is a peer /settings route
+
+The earlier proposal `/health/hub/settings` / `/assistant/hub/settings`
+was rejected: a shared ALOHA preference UI must not be owned by Health's
+PWA path. Canonical public route is **`aloha.aisr.online/settings`**
+(redirected to `/settings/`). Health and Assistant Hub link to it; neither
+renders or deploys its own copy of the settings page. A new minimal
+`apps/settings` service provides a shared Settings UI plus authenticated
+Identity User profile and Core authorized Spaces, with an independent Worker
+and manual staging workflow. Account editing remains `account.aisr.online`.
+
+Default space is the per-origin `aloha.space` browser preference; it does
+not grant permissions and it cannot be synchronized between distinct
+`workers.dev` staging hosts. The Health client migrates its previous
+`aloha.health.space` key only when it can independently verify membership
+against Core. Production stays unchanged until route activation is approved.
