@@ -25,6 +25,58 @@ const fetcher = () => vi.fn(async (input: RequestInfo | URL, _init?: RequestInit
   if (path.endsWith('/records')) return success({ items:[],nextCursor:null })
   return success({ id:'rec_fake',valueType:'number' })
 })
+describe('ALOHA shared profile projection / 公共用户资料',()=>{
+  const url='https://health.example.com/health/api/v1/profile'
+  it('returns the Identity User name and a same-origin avatar path, never the upstream URL',async()=>{
+    const visited:string[]=[]
+    const f=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname;visited.push(p)
+      if(p==='/internal/v1/access/tokens')
+        return success({accessToken:'synthetic',expiresIn:600})
+      if(p==='/api/v1/me')return success({
+        id:'usr_synthetic',displayName:'Synthetic User',
+        avatarUrl:'https://identity.example.com/assets/users/usr_synthetic/avatar',
+      })
+      if(p==='/assets/users/usr_synthetic/avatar')
+        return new Response(new Uint8Array([137,80,78,71]),{
+          headers:{'Content-Type':'image/png'},
+        })
+      throw new Error('unexpected endpoint '+p)
+    })
+    const response=await handleHealthApi(make(url),env,f)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toEqual({
+      displayName:'Synthetic User',avatarUrl:'/health/api/v1/profile/avatar',
+    })
+    expect(response.headers.get('cache-control')).toContain('no-store')
+    const avatar=await handleHealthApi(make(url+'/avatar'),env,f)
+    expect(avatar.status).toBe(200)
+    expect(avatar.headers.get('content-type')).toBe('image/png')
+    expect(visited.filter(x=>x==='/api/v1/me')).toHaveLength(2)
+  })
+  it('rejects an unexpected profile response and never proxies arbitrary avatar content',async()=>{
+    const fetcher=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic',expiresIn:600})
+      if(p==='/api/v1/me')return success({id:'usr_synthetic',displayName:'Synthetic User',
+        avatarUrl:'https://identity.example.com/assets/users/usr_synthetic/avatar'})
+      if(p.endsWith('/avatar'))return new Response('malicious',{headers:{'Content-Type':'text/html'}})
+      throw new Error('unexpected endpoint '+p)
+    })
+    expect((await handleHealthApi(make(url+'/avatar'),env,fetcher)).status).toBe(502)
+    const invalid=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic',expiresIn:600})
+      if(p==='/api/v1/me')return success({id:'usr_synthetic',displayName:'',avatarUrl:null})
+      throw new Error('unexpected endpoint '+p)
+    })
+    expect((await handleHealthApi(make(url),env,invalid)).status).toBe(502)
+  })
+  it('requires Access even for the public Hub-facing profile endpoint',async()=>{
+    const response=await handleHealthApi(new Request(url),env,vi.fn())
+    expect(response.status).toBe(401)
+  })
+})
 describe('HealthConcern semantic relation BFF (synthetic)',()=>{
   const prefix='https://health.example.com/health/api/v1/spaces/spc_test/concerns/rec_concern/relations'
   const edge=(kind:'health_metric'|'health_document'='health_metric')=>({
