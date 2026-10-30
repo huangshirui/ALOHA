@@ -1242,7 +1242,42 @@ function detailName(kind: HealthKind,record:any) {
             <p class="helper-copy">同一种指标只需建一次，之后可以持续记录。</p>
           </template>
           <template v-else-if="editKind==='observation'">
-            <label><span class="field-label">记录哪一项 <span class="required-mark" aria-hidden="true">*</span></span><select v-model="draft.metricId"><option v-for="m in demo.metrics" :key="m.id" :value="m.id">{{ m.name }}</option></select></label>
+            <div class="metric-selector-field">
+              <span class="field-label">记录哪一项 <span class="required-mark" aria-hidden="true">*</span></span>
+              <button type="button" class="metric-picker-toggle" :aria-expanded="metricPickerOpen" aria-controls="health-metric-options"
+                :disabled="quickMetricSaving" @click="metricPickerOpen=!metricPickerOpen;quickMetricOpen=false">
+                <span>{{ demo.metrics.find(m=>m.id===draft.metricId)?.name||'选择健康指标' }}</span><ChevronDown :size="17"/>
+              </button>
+              <div v-if="metricPickerOpen" id="health-metric-options" class="metric-picker-panel">
+                <label class="metric-picker-search"><Search :size="16"/><input v-model="metricSearch" type="search" autocomplete="off"
+                  placeholder="搜索指标名称" aria-label="搜索健康指标" @keydown.enter.prevent/></label>
+                <div class="metric-picker-scroll">
+                  <template v-if="!metricSearch.trim()&&recentMetrics.length">
+                    <div class="metric-picker-heading">最近使用 · 最多 5 项</div>
+                    <button v-for="m in recentMetrics" :key="'recent-'+m.id" type="button" class="metric-picker-option" @click="chooseObservationMetric(m)">
+                      <Clock3 :size="15"/><span>{{ m.name }}</span><Check v-if="draft.metricId===m.id" :size="15"/>
+                    </button>
+                  </template>
+                  <div class="metric-picker-heading">{{ metricSearch.trim()?'搜索结果':'全部指标' }} · {{ metricMatches.length }}</div>
+                  <button v-for="m in metricMatches" :key="m.id" type="button" class="metric-picker-option" @click="chooseObservationMetric(m)">
+                    <Activity :size="15"/><span>{{ m.name }}</span><Check v-if="draft.metricId===m.id" :size="15"/>
+                  </button>
+                  <p v-if="!metricMatches.length" class="empty-inline">没有匹配的指标，可以直接新建。</p>
+                </div>
+                <button type="button" class="metric-create-link" @click="openQuickMetric"><Plus :size="16"/> 新建指标</button>
+              </div>
+              <div v-if="quickMetricOpen" class="quick-metric">
+                <div class="quick-metric-heading"><b>快速新建指标</b><button type="button" class="inline-link" :disabled="quickMetricSaving" @click="quickMetricOpen=false">取消</button></div>
+                <label>指标名称<input v-model="quickMetric.name" maxlength="160" placeholder="例如：静息心率" :disabled="quickMetricSaving"/></label>
+                <label>记录方式<select v-model="quickMetric.valueType" :disabled="quickMetricSaving"><option v-for="[value,name] in valueTypes" :key="value" :value="value">{{ name }}</option></select></label>
+                <label v-if="quickMetric.valueType==='number'">单位（可选）<input v-model="quickMetric.defaultUnit" placeholder="例如：次/分" :disabled="quickMetricSaving"/></label>
+                <p v-if="quickMetricError" class="form-error" role="alert">{{ quickMetricError }}</p>
+                <button type="button" class="soft-button" :disabled="quickMetricSaving" @click="saveQuickMetric">
+                  <span v-if="quickMetricSaving" class="saving-spinner" aria-hidden="true"/><Plus v-else :size="16"/>
+                  {{ quickMetricSaving?'正在创建…':'创建并选择' }}
+                </button>
+              </div>
+            </div>
             <template v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='boolean'"><label><span class="field-label">本次结果 <span class="required-mark" aria-hidden="true">*</span></span><select v-model="draft.value"><option value="">请选择</option><option value="true">是</option><option value="false">否</option></select></label></template>
             <template v-else><label><span class="field-label">记录结果 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.value" :type="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'number':'text'" :step="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'?'any':undefined" required placeholder="填写此次记录"/></label></template>
             <label v-if="demo.metrics.find(m=>m.id===draft.metricId)?.valueType==='number'">单位<input v-model="draft.unit" :placeholder="demo.metrics.find(m=>m.id===draft.metricId)?.defaultUnit||'选填'"/></label>
