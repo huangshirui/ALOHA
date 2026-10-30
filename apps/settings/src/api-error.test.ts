@@ -9,7 +9,7 @@ describe('Settings current-origin authentication errors',()=>{
       name:'SettingsApiError',status:401,code:'access_required',
     })
     try{await getSpaces()}catch(e){
-      expect((e as SettingsApiError).message).toContain('当前站点没有有效的 Access')
+      expect((e as SettingsApiError).message).toContain('缺少有效的 Cloudflare Access')
       expect((e as SettingsApiError).message).not.toContain('请先登录 ALOHA')
     }
   })
