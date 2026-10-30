@@ -42,7 +42,7 @@ describe('one Worker project / isolated staging Preview release contract', () =>
     const preview = workflow.split('\n  production:')[0]!
     const prod = workflow.split('\n  production:')[1]
     expect(prod).toBeDefined()
-    expect(preview).not.toMatch(/run: npx wrangler deploy\\s*$/mu)
+    expect(preview).not.toMatch(/run: npx wrangler deploy\s*$/mu)
     expect(prod).toContain("github.ref == 'refs/heads/main'")
     expect(prod).toContain("inputs.confirmation == 'DEPLOY_ALOHA_HEALTH_PRODUCTION'")
     expect(prod).toContain('environment: production')
@@ -50,7 +50,7 @@ describe('one Worker project / isolated staging Preview release contract', () =>
     expect(prod).toContain("config.route || config.routes || config.vars")
     expect(prod).toContain('working-directory: apps/health')
     expect(prod).toContain('npx wrangler deploy --dry-run')
-    expect(prod).toMatch(/run: npx wrangler deploy\\s*$/mu)
+    expect(prod).toMatch(/run: npx wrangler deploy\s*$/mu)
     expect(prod).not.toContain('preview --name staging')
     expect(prod).not.toContain('STAGING_LIFESPACE_APPLICATION_CREDENTIAL')
   })
