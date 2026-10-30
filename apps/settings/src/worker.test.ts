@@ -127,7 +127,7 @@ describe('ALOHA common Settings authenticated BFF',()=>{
   it('never follows upstream redirects with credentials',async()=>{
     const f=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>new Response(null,{status:302,headers:{Location:'https://evil.example/'}}))
     const r=await handleSettingsApi(request('me'),env,f)
-    expect(r.status).toBe(403)
+    expect(r.status).toBe(503)
     expect(f.mock.calls[0]?.[1]?.redirect).toBe('manual')
   })
 })
