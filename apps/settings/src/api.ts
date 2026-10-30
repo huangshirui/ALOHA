@@ -46,11 +46,13 @@ export function selectedSpace(spaces:Space[],storage:Pick<Storage,'getItem'>):st
  */
 export const safeReturn=(from:string|null)=>{
   const host=typeof window==='undefined'?'':window.location.hostname
-  const match=/^staging-aloha-app-settings\\.([a-z0-9-]+\\.workers\\.dev)$/.exec(host)
+  const prefix='staging-aloha-app-settings.'
+  const suffix=host.startsWith(prefix)?host.slice(prefix.length):''
+  const siblingPreview=/^[a-z0-9-]+[.]workers[.]dev$/.test(suffix)
   const health=import.meta.env.VITE_ALOHA_HEALTH_URL||
-    (match?`https://staging-aloha-app-health.${match[1]}/health/`:'/health/')
+    (siblingPreview?`https://staging-aloha-app-health.${suffix}/health/`:'/health/')
   const assistant=import.meta.env.VITE_ALOHA_ASSISTANT_URL||
-    (match?'https://aloha.aisr.online/':'/assistant/')
+    (siblingPreview?'https://aloha.aisr.online/':'/assistant/')
   return from==='assistant'?assistant:from==='finance'?'/finance/':
     from==='things'?'/things/':health
 }
