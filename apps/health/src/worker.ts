@@ -543,7 +543,7 @@ export async function handleHealthApi(
       method:'GET',headers:{Accept:'image/png,image/jpeg,image/webp'},
     })
     if(!image.ok)return withSessionCookie(proxyResponse(image),session.cookie)
-    const type=(image.headers.get('Content-Type')||'').split(';')[0]?.trim().toLowerCase()
+    const type=((image.headers.get('Content-Type')||'').split(';')[0]??'').trim().toLowerCase()
     if(!['image/png','image/jpeg','image/webp'].includes(type))return json('invalid_avatar_type',502)
     return withSessionCookie(new Response(image.body,{
       status:200,headers:{'Content-Type':type,'Cache-Control':'private, max-age=60','X-Content-Type-Options':'nosniff'},
