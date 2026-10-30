@@ -352,8 +352,9 @@ async function initializeLive() {
   liveStatus.value='loading'; liveMessage.value='正在验证访问权限…'
   try {
     liveSpaces.value=await listAuthorizedSpaces()
-    // Adopt the former Health-only preference once, then use a single
-    // per-origin ALOHA setting. A Space ID is never an authorization grant.
+    // Only Settings owns the explicit per-origin ALOHA selection.
+    // Legacy Health-only storage is not a valid current preference.
+    // A Space ID is never an authorization grant.
     const stored=selectedAuthorizedHealthSpace(liveSpaces.value,localStorage)
     if(!stored) {
       // Only Settings owns ALOHA Space selection. Navigation is same-origin
@@ -904,7 +905,7 @@ function detailName(kind: HealthKind,record:any) {
           <template v-if="liveStatus==='error'">
             <h2>健康档案暂时无法加载</h2>
             <p>{{ liveMessage }}</p>
-            <button type="button" class="quiet-button" @click="initializeLive">重新连接</button>
+            <button type="button" class="quiet-button" @click="initializeLive">重新检查</button>
           </template>
           <p v-else>正在连接健康档案…</p>
         </div>

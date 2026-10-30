@@ -14,6 +14,31 @@ export interface HealthPage<T extends HealthRecord> {
   nextCursor: string | null
 }
 const base = '/health/api/v1'
+/** Only known, bounded Core/BFF error codes affect user-facing messaging.
+ * Never display upstream messages, response bodies, tokens or record IDs.
+ */
+export class HealthApiError extends Error {
+  constructor(public readonly status:number,public readonly code:string|null) {
+    super(code==='MODEL_NOT_FOUND'
+      ? 'LifeSpace 当前环境尚未发布健康模型；请管理员完成模型发布及 ALOHA 模型访问配置。'
+      :code==='own_person_not_linked'
+        ? '当前空间尚未关联你的人员档案，请到 LifeSpace 检查成员关联。'
+        :status===401?'请先通过 Access 登录'
+        :status===403?'当前用户没有该空间或模型的访问权限'
+        :status===404?'所请求的空间、记录或服务不存在'
+        :status===409?'记录已被更新，请刷新后重试'
+        :status===503?'后台暂不可用，请稍后重试'
+        :'健康档案请求失败')
+    this.name='HealthApiError'
+  }
+}
+function safeErrorCode(payload:unknown):string|null {
+  if(!payload||typeof payload!=='object'||!('error' in payload))return null
+  const error=payload.error
+  const code=error&&typeof error==='object'&&'code' in error?error.code:error
+  return typeof code==='string'&&['MODEL_NOT_FOUND','own_person_not_linked'].includes(code)
+    ?code:null
+}
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(base + path, {
     ...init,
@@ -24,8 +49,8 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     },
   })
   if (!response.ok) {
-    const message = response.status === 401 ? '请先通过 Access 登录' : response.status === 403 ? '当前用户没有该空间或模型的访问权限' : response.status === 404 ? '健康模型尚未发布，或记录不存在' : response.status === 409 ? '记录已被更新，请刷新后重试' : response.status === 503 ? '后台尚未配置或暂不可用' : '请求失败'
-    throw new Error('Health API ' + response.status + ': ' + message)
+    const payload:unknown=await response.json().catch(()=>null)
+    throw new HealthApiError(response.status,safeErrorCode(payload))
   }
   if (response.status === 204) return undefined as T
   const payload: unknown = await response.json()

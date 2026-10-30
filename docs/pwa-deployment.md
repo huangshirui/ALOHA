@@ -134,6 +134,50 @@ This constraint applies even while Assistant is temporarily hosted by Gateway.
 General CI may validate the whole repository on every PR or push, but CI
 verification is not a Production deployment. Rollback remains per Worker.
 
+## Health production model readiness / 健康模型上线门禁
+
+Deploying the Health Worker does **not** publish LifeSpace models or grant the
+ALOHA Application model access. These are separate Core control-plane changes
+and must be reviewed through the LifeSpace **Production Console** before
+declaring Health Production ready.
+
+For the Health UI, the Production Core registry must have published definitions
+for all seven native models:
+
+- `health_concern`, `health_metric`, `health_observation`,
+  `health_event`, `health_document`, `health_assessment`,
+  `health_regimen`.
+
+The Production ALOHA Application must then have the appropriate
+**Application × Model Access** policy for all seven. The Health editor needs
+`write` (which also enables reading); grants are not inferred from the
+browser's Space choice. Validate that a verified current User has a linked
+Space Person and that the usual Space membership/Grant rules independently
+allow the intended operation.
+
+**Do not copy D1 model registry rows, staging record data or generated model
+tables directly into Production.** Publish reviewed canonical Model
+Definitions through LifeSpace Console's Platform Admin API, which also builds
+the typed storage and Model Contract. Keep Staging and Production application
+credentials, Access audiences and Scope ceilings independent.
+
+At release acceptance, separately verify:
+1. Settings returns the available Space choices and saves an explicit
+   same-origin `aloha.space` browser preference.
+2. Health without that preference navigates to Settings instead of selecting
+   an arbitrary Space or reading stale app-specific preferences.
+3. Health with a verified available Space can read the expected model snapshot
+   (including an **empty** personal record set) without HTTP 404/403.
+4. Health create/read/write still respects both ALOHA Application policy and
+   LifeSpace's current Space/Person authority. No synthetic data is shown
+   when the Production backend is unavailable.
+
+A zero-model Production Registry or missing Application × Model Access is a
+**failed platform-readiness check**, not a reason to redeploy Health or
+circumvent the Core BFF. The Health UI must report missing model publication
+separately from a missing record/Space. The existing Health Worker Release
+remains isolated; control-plane publication is not another Health Worker deploy.
+
 ## Worker Production and named staging Preview
 
 ALOHA uses one LifeSpace Application per environment: the production application for all production surfaces, and a shared Preview application for all staging surfaces. PWA deployments do not create additional LifeSpace Application identities.
