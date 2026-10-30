@@ -17,6 +17,9 @@ in the repository or workflow output.
 | `deploy-finance.yml` | manual dispatch | Finance-only named Preview, no Production job |
 | `deploy-things.yml` | manual dispatch | Things-only named Preview, no Production job |
 
+Finance and Things development scaffolds expose only explicit `deploy:staging`
+commands; neither ships an unguarded `deploy` script that publishes Production.
+
 No joint Health/Settings deployment. No Worker rename, secret generation,
 one-time runtime bootstrap or old M1/M2 fallback is run during normal releases.
 Common Hub/`@aloha/ui` code is bundled when each consuming app is explicitly
@@ -41,7 +44,10 @@ boundary without deploying any other app.
    `WRANGLER_LOG_SANITIZE=true` and `WRANGLER_SEND_METRICS=false` for
    deployment jobs. Avoid a wrapper Action when local Wrangler already
    supports the operation; pin supported first-party Actions to full
-   reviewed commit SHAs, not floating tags.
+   reviewed commit SHAs, not floating tags. While this repository has no
+   lockfile, disable setup-node v6 automatic package-manager caching, and use
+   the Wrangler package installed by the workspace rather than an ad hoc
+   `npx --yes` download.
 4. **Fail closed:** Verify the Production target Worker and required binding
    **names** before deploying. Do not initialize/replace signing keys during
    normal deployment; rotate only by an explicit operational procedure.
