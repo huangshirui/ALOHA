@@ -1459,6 +1459,6 @@ function detailName(kind: HealthKind,record:any) {
 
       </section>
     </div>
-    <div v-if="notice" role="status" class="toast"><span>{{ notice }}</span><button type="button" aria-label="关闭提示" @click="notice=''"><X :size="17"/></button></div>
+    <div v-if="notice" :role="noticeIsError?'alert':'status'" :class="['toast',{'toast-error':noticeIsError}]"><span>{{ notice }}</span><button type="button" aria-label="关闭提示" @click="notice=''"><X :size="17"/></button></div>
   </div>
 </template>
