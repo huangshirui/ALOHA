@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import {newestFirst,pageOf,pageCount,recentMetricIds} from './health-concern-view'
+import {newestFirst,pageOf,pageCount,recentMetricIds,searchMetrics} from './health-concern-view'
 
 describe('Concern section presentation and metric history',()=>{
   it('sorts newest first without mutating the source',()=>{
@@ -13,6 +13,12 @@ describe('Concern section presentation and metric history',()=>{
     expect(pageOf([1,2,3,4,5,6,7],2)).toEqual([7])
     expect(pageCount(0)).toBe(1)
     expect(pageCount(7)).toBe(3)
+  })
+  it('searches metrics in the inline chooser without mutating the catalog',()=>{
+    const metrics=[{name:'Blood Pressure'},{name:'心率'},{name:'体重'}]
+    expect(searchMetrics(metrics,'  PRESS  ')).toEqual([{name:'Blood Pressure'}])
+    expect(searchMetrics(metrics,'心')).toEqual([{name:'心率'}])
+    expect(metrics).toHaveLength(3)
   })
   it('finds five actually-used Metrics in observation date order, ignoring obsolete references',()=>{
     const metrics=Array.from({length:8},(_,i)=>({id:'m'+i}))
