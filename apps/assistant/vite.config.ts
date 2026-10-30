@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import { assistantNavigationFallbackAllowlist } from './pwa-navigation'
 
 export default defineConfig({
   plugins: [
@@ -12,7 +13,7 @@ export default defineConfig({
       // Without an allowlist, /health/ and /settings/ navigations can render
       // a cached Assistant page even when Cloudflare Routes are correct.
       workbox: {
-        navigateFallbackAllowlist: [/^\/$/],
+        navigateFallbackAllowlist: assistantNavigationFallbackAllowlist,
       },
       manifest: {
         name: 'ALOHA Assistant',
