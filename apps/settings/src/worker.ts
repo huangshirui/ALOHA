@@ -49,8 +49,24 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
     },
     body:JSON.stringify({accessAssertion:assertion,requestedScopes:['profile:read','spaces:read']}),
   })
-  if(!exchanged.ok)return denied(exchanged.status===401?'access_required':'access_denied',
-    exchanged.status===401?401:403)
+  if(!exchanged.ok){
+    // Do not confuse a missing Access header with an Identity exchange failure.
+    // Only LifeSpace's bounded machine-readable code is interpreted; never
+    // expose upstream bodies, assertions, access tokens or credentials.
+    const failure:unknown=await exchanged.json().catch(()=>null)
+    const code=object(failure)&&object(failure.error)&&typeof failure.error.code==='string'
+      ?failure.error.code:null
+    if(exchanged.status===401){
+      return denied(code==='INVALID_ACCESS_ASSERTION'?'access_assertion_invalid':'identity_application_unauthorized',
+        code==='INVALID_ACCESS_ASSERTION'?401:503)
+    }
+    if(code==='ACCESS_AUDIENCE_MISMATCH')return denied('audience_not_registered',403)
+    if(code==='ACCESS_PRINCIPAL_UNLINKED')return denied('account_link_required',409)
+    if(code==='FORBIDDEN')return denied('application_scope_forbidden',403)
+    if(exchanged.status===503||exchanged.status>=500)return denied('identity_service_unavailable',503)
+    if(exchanged.status===403)return denied('identity_exchange_forbidden',403)
+    return denied('identity_exchange_unavailable',503)
+  }
   const session=await data(exchanged)
   const bearer=session?.accessToken
   if(typeof bearer!=='string'||!bearer)return denied('invalid_exchange_response',502)
