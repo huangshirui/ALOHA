@@ -6,6 +6,7 @@
   "keep_vars": true,
   "main": "./src/worker.ts",
   "preview_urls": true,
+  "previews": {},
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
