@@ -159,44 +159,48 @@ Two Assistant concepts remain separate:
 
 Confirmation is an ALOHA Agent product behavior, not a substitute for LifeSpace domain authorization. High-impact confirmation enforcement must remain outside the model.
 
-## ALOHA Hub and AISR account boundary (Draft / 2026-10-30)
+## ALOHA Hub, common /settings route and AISR account (Draft / 2026-10-30)
 
-The **ALOHA Hub is a shared UI component**, not a separate web app, new
-Identity provider, or account database. It is available from each participating
-PWA using the same brand presentation contract in `@aloha/ui`
-(`AlohaHub.vue`, `AlohaHubSettings.vue`); Health and the Assistant scaffold
-are its first two consumers. Each surface keeps its own PWA path scope.
+The **ALOHA Hub is a shared UI component**, not a new Identity provider or
+account database. `@aloha/ui/AlohaHub.vue` is consumed by Health and Assistant.
+`@aloha/ui/AlohaHubSettings.vue` is the shared settings page presentation.
 
-- **Account center**: the external entry is `https://account.aisr.online/`
-  (the site itself is an independently developed product). Hub opens it in a
-  new tab; it does not implement account security, authorization, or profile
-  writes.
-- **Global User profile**: LifeSpace Identity `GET /api/v1/me` is the source
-  for `usr_*` `displayName` and `avatarUrl` used by HomeMew Web and
-  ALOHA. A family's Person display name/avatar is not the global User profile.
-  The Health same-origin BFF returns the verified Identity profile and proxies
-  the current user's avatar, without granting browser access to server tokens.
-  Other PWA backends must provide equivalent current-user admission before
-  claiming they display real profile data.
-- **Path-based app settings**: Health `/health/hub/settings`, Assistant target
-  `/assistant/hub/settings`, with no separate Hub hostname. These routes are
-  inside the individual PWA scopes and do not create cross-PWA deployment
-  coupling. The Assistant's independent PWA route is **not yet Production**.
-- **Default Space**: the shared component renders authorized Space options
-  provided by each PWA's trusted BFF; Health reads Core `/api/v1/me/spaces`.
-  The per-origin `aloha.space` localStorage key is merely a selection
-  preference (with legacy `aloha.health.space` migration), never a grant,
-  Identity claim, or cross-origin synchronization service. Core continues
-  current membership and grant enforcement for every read/write. Distinct
-  Staging Preview origins cannot share localStorage.
-- **Health MVP scope**: basic manual health records, files, relationships,
-  observations and health workspace form the candidate MVP pending Staging
-  release verification. AI import/Health Agent (Issue #43) and regimen
-  Task/Recurrence execution (Issue #44) are separate future work. Live Health
-  must not present demo AI as an authenticated, working Agent.
+```text
+aloha.aisr.online/
+  /assistant/*  -> ALOHA Assistant PWA (migration still pending)
+  /health/*     -> ALOHA Health PWA
+  /settings*    -> ALOHA shared Settings utility (not an installable PWA)
+```
 
-This is candidate implementation on the Health integration Draft PR; do not
-interpret this section as a Production deployment guarantee.
+- **Settings**: `aloha.aisr.online/settings` canonicalizes to `/settings/`.
+  Unlike the domain PWAs, this is a non-installable, shared, independently
+  deployable utility page, served by `apps/settings` / `aloha-app-settings`.
+  It is **not nested under** Health or Assistant; `/health/hub/settings`
+  and `/assistant/hub/settings` were superseded and are not supported URLs.
+- **Account center**: Hub and Settings open `https://account.aisr.online/`
+  in a new tab. Account editing/security belongs there, in another project.
+- **User profile**: LifeSpace Identity `GET /api/v1/me` owns the global
+  `displayName` and `avatarUrl` (same as HomeMew Web); family Person
+  nicknames/avatars are Space-scoped data and **not** account profile.
+  The Settings BFF independently authenticates signed Access evidence through
+  LifeSpace Identity and proxies only the current user's bounded profile/avatar,
+  never browser-exposed backend credentials.
+- **Default Space**: Settings reads `/api/v1/me/spaces` from Core using a
+  server-only Identity-issued user token. It stores only `aloha.space` as
+  a **per-browser, per-origin preference**, migrating any old Health-only key.
+  Health reads the preference and independently enforces Core authorization
+  for every request. No new user profile database or Space/Grant authority.
+- **Staging caveat**: each PWA/Settings named Preview has a distinct
+  `workers.dev` Origin, so preview localStorage cannot be shared by browsing
+  between them; publicly configured preview navigation URLs can link pages.
+  An actual cross-app preference round-trip needs a **same-origin** integration
+  environment, not an invented cross-origin cookie or user identity.
+- **Health MVP boundary**: manual health CRUD, observations/trends, files
+  and relationships are the baseline candidate. AI import/Agent (Issue #43)
+  and HealthRegimen ↔ Task/Recurrence (Issue #44) are later work.
+
+No Production route is automatically activated merely by checking in this code.
+
 
 ## Multi-PWA deployment boundary
 
