@@ -221,21 +221,17 @@
 }
 
 
-/* Live Health source: explicit Space/Person selection, never inferred from names. */
-.health-live-bar {
-  display:flex;flex-wrap:wrap;align-items:center;gap:.55rem .9rem;
-  padding:.7rem .9rem;margin:0 0 1rem;
-  background:var(--health-surface, #fff);border:1px solid var(--health-border, #dce5df);
-  border-radius:.7rem;font-size:.82rem;
+/* Data failures are full-page states; selecting a Space belongs to Settings. */
+.health-entry-state {
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:1rem;
+  min-height:48vh;
+  padding:2.5rem 1rem;
+  text-align:center;
+  color:var(--health-text-muted, #65728a);
 }
-.health-live-label {display:inline-flex;align-items:center;gap:.4rem;font-weight:650;white-space:nowrap}
-.health-live-select {display:inline-flex;align-items:center;gap:.35rem;min-width:0}
-.health-live-select select {min-width:8rem;max-width:15rem;padding:.35rem .65rem;border:1px solid var(--health-border, #dce5df);border-radius:.4rem;background:transparent;color:inherit}
-.health-live-status {flex:1;min-width:9rem;opacity:.75}
-.health-live-error {color:var(--health-danger, #b42318);opacity:1}
-@media (max-width: 640px) {
-  .health-live-bar {align-items:flex-start}
-  .health-live-status {flex-basis:100%;order:5}
-  .health-live-select {flex:1}
-  .health-live-select select {min-width:0;width:100%}
-}
+.health-entry-state h2 {font-size:1.2rem;color:var(--health-text, #162d46)}
+.health-entry-state p {max-width:35rem;line-height:1.6}
