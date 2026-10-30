@@ -615,3 +615,13 @@
 .upload-progress progress::-webkit-progress-bar { background:var(--health-border-soft);border-radius:var(--health-radius-pill); }
 .upload-progress progress::-webkit-progress-value { background:var(--health-brand);border-radius:var(--health-radius-pill); }
 .upload-progress progress::-moz-progress-bar { background:var(--health-brand);border-radius:var(--health-radius-pill); }
+
+/* LifeSpace Concern relation editor: responsive, compact, factual link management. */
+.concern-relations {grid-column:1 / -1}
+.relation-picker {display:grid;grid-template-columns:minmax(130px,.7fr) minmax(190px,1.5fr) auto;gap:.65rem;align-items:center;margin:.8rem 0}
+.relation-picker select {min-width:0;width:100%;min-height:2.6rem;padding:.45rem .65rem;border:1px solid var(--health-border);border-radius:.65rem;background:var(--health-surface);color:var(--health-text)}
+.relation-picker .soft-button {min-height:2.6rem;white-space:nowrap}
+.relation-row {display:flex;gap:.8rem;align-items:center;justify-content:space-between;padding:.6rem 0;border-top:1px solid var(--health-border-soft);font-size:.85rem}
+.relation-row span {min-width:0;overflow-wrap:anywhere}
+.relation-row .quiet-button {flex-shrink:0}
+@media (max-width:640px) {.relation-picker {grid-template-columns:1fr}.relation-picker .soft-button {width:100%}}
