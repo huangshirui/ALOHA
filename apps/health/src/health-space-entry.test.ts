@@ -9,8 +9,8 @@ describe('Health entry requires explicit, currently authorized ALOHA Space',()=>
   it('accepts a valid current ALOHA selection',()=>{
     expect(selectedAuthorizedHealthSpace(spaces,storage('spc_personal'))).toBe('spc_personal')
   })
-  it('honors legacy Health preference during migration only when authorized',()=>{
-    expect(selectedAuthorizedHealthSpace(spaces,storage(null,'spc_personal'))).toBe('spc_personal')
+  it('requires explicit Settings selection even if a legacy Health key exists',()=>{
+    expect(selectedAuthorizedHealthSpace(spaces,storage(null,'spc_personal'))).toBeNull()
   })
   it('never guesses a Space even if there is only one available',()=>{
     expect(selectedAuthorizedHealthSpace([spaces[0]!],storage(null))).toBeNull()
