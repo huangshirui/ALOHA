@@ -108,6 +108,65 @@ const saving=ref(false)
 const uploadProgress=ref<FileUploadProgress|null>(null)
 const downloading=ref(false)
 const uploadFile=shallowRef<File|null>(null)
+/** Searchable Metric chooser and an inline quick-create path.
+ * The Observation draft is kept intact while its Metric is created.
+ */
+const metricPickerOpen=ref(false)
+const metricSearch=ref('')
+const quickMetricOpen=ref(false)
+const quickMetricSaving=ref(false)
+const quickMetricError=ref('')
+const quickMetric=reactive({name:'',valueType:'number',defaultUnit:''})
+const recentMetrics=computed(()=>recentMetricIds(demo.observations,demo.metrics).map(id=>
+  demo.metrics.find(metric=>metric.id===id)!).filter(Boolean))
+const metricMatches=computed(()=>{
+  const query=metricSearch.value.trim().toLocaleLowerCase()
+  return demo.metrics.filter(metric=>metric.name.toLocaleLowerCase().includes(query))
+})
+function chooseObservationMetric(metric:Metric) {
+  if(draft.value.metricId!==metric.id){
+    draft.value.value=''
+    draft.value.unit=metric.defaultUnit
+    draft.value.referenceLow=''
+    draft.value.referenceHigh=''
+    draft.value.referenceSource=''
+  }
+  draft.value.metricId=metric.id
+  metricPickerOpen.value=false
+  metricSearch.value=''
+}
+function openQuickMetric(){
+  metricPickerOpen.value=false
+  quickMetricOpen.value=true
+  quickMetricError.value=''
+  Object.assign(quickMetric,{name:metricSearch.value.trim(),valueType:'number',defaultUnit:''})
+}
+async function saveQuickMetric(){
+  if(quickMetricSaving.value||saving.value)return
+  const name=quickMetric.name.trim()
+  if(!name){quickMetricError.value='请输入指标名称';return}
+  if(demo.metrics.some(metric=>metric.name.trim().toLocaleLowerCase()===name.toLocaleLowerCase())){
+    quickMetricError.value='已有同名指标，请直接选择';return
+  }
+  quickMetricSaving.value=true;quickMetricError.value=''
+  try{
+    const fields=encodeHealthFields('metric',{
+      name,valueType:quickMetric.valueType,
+      defaultUnit:quickMetric.valueType==='number'?quickMetric.defaultUnit:'',
+      referenceLow:null,referenceHigh:null,referenceSource:'',
+    },subjectPersonId.value)
+    const record=liveMode
+      ?await createHealthRecord<HealthRecord>(selectedSpaceId.value,'health_metric',fields)
+      :({id:'demo-'+(++nextRecordId),version:1,...fields} as HealthRecord)
+    const metric=decodeHealthRecord('metric',record) as Metric
+    demo.metrics.unshift(metric)
+    loadedKinds.add('metric')
+    chooseObservationMetric(metric)
+    quickMetricOpen.value=false
+    quickMetric.name=''
+  }catch(e){quickMetricError.value=e instanceof Error?e.message:'指标创建失败'}
+  finally{quickMetricSaving.value=false}
+}
 const search = ref('')
 const timelineKind = ref<TimelineFilter>('all')
 const metricReferenceFilter=ref<MetricReferenceFilter>('all')
