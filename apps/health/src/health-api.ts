@@ -65,6 +65,22 @@ export const updateHealthRecord = <T extends HealthRecord>(
 export const deleteHealthRecord = (spaceId:string,model:HealthModelKey,id:string,version:number) =>
   api<void>(recordsPath(spaceId,model)+'/'+encodeURIComponent(id),{method:'DELETE',body:JSON.stringify({version})})
 
+/** Only the trusted BFF chooses the relation predicate/direction, and Core
+ * enforces its current source/target authority. Unlink never deletes facts. */
+import type {ConcernRelation,ConcernTargetKind} from './health-concern-relations'
+const concernRelationsPath=(spaceId:string,concernId:string)=>
+  `/spaces/${encodeURIComponent(spaceId)}/concerns/${encodeURIComponent(concernId)}/relations`
+export const listConcernRelations=(spaceId:string,concernId:string)=>
+  api<{items:ConcernRelation[]}>(concernRelationsPath(spaceId,concernId))
+export const linkConcernRecord=(spaceId:string,concernId:string,kind:ConcernTargetKind,targetId:string)=>
+  api<ConcernRelation>(concernRelationsPath(spaceId,concernId),{
+    method:'POST',body:JSON.stringify({kind,targetId}),
+  })
+export const unlinkConcernRecord=(spaceId:string,concernId:string,relationId:string)=>
+  api<void>(concernRelationsPath(spaceId,concernId)+'/'+encodeURIComponent(relationId),{
+    method:'DELETE',body:'{}',
+  })
+
 /** ALOHA-owned UI projection, not canonical LifeSpace model fields. */
 import type { ConcernPresentation } from './health-presentation'
 const presentationPath = (spaceId:string) =>
