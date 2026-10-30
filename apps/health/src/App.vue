@@ -19,7 +19,7 @@ import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
 import { concernTargetHasRelation,concernTargetModels,
   type ConcernRelation,type ConcernTargetKind } from './health-concern-relations'
-import AlohaHub from './components/AlohaHub.vue'
+import AlohaHub from '@aloha/ui/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import ConcernPager from './components/ConcernPager.vue'
