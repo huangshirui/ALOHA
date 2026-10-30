@@ -4,9 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    "./styles.css": "./styles.css"
+    "./styles.css": "./styles.css",
+    "./AlohaHub.vue": "./AlohaHub.vue",
+    "./AlohaHubSettings.vue": "./AlohaHubSettings.vue"
   },
   "dependencies": {
-    "@aloha/design-tokens": "*"
+    "@aloha/design-tokens": "*",
+    "@fontsource/exo-2": "^5.3.0",
+    "lucide-vue-next": "^0.468.0",
+    "vue": "^3.5.42"
   }
 }

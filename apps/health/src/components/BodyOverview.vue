@@ -13,6 +13,7 @@ const emit=defineEmits<{
   'update:view':[view:BodyView]
   'update:selectedConcernId':[id:string|null]
   placePoint:[id:string,view:BodyView,point:BodyPoint]
+  removePoint:[id:string]
 }>()
 const imageSrc=(side:BodyView)=>import.meta.env.BASE_URL+'body-'+side+'-outline.svg'
 const sides:BodyView[]=['front','back']
@@ -91,6 +92,11 @@ function confirmPlacement(){
   emit('update:selectedConcernId',id)
   cancelPlacement()
 }
+function clearPlacement(){
+  if(!locatingConcern.value)return
+  emit('removePoint',locatingConcern.value)
+  cancelPlacement()
+}
 </script>
 
 <template>
@@ -106,6 +112,8 @@ function confirmPlacement(){
       <div v-if="locatingConcern" class="body-position-instruction" role="status">
         <span>给「{{ locatingName }}」定位：选择正/背面，在身体内点一下。</span>
         <div class="body-position-actions">
+          <button v-if="bindings.some(b=>b.concernId===locatingConcern)" type="button"
+            class="quiet-button" @click="clearPlacement">移除位置</button>
           <button type="button" class="quiet-button" @click="cancelPlacement">取消</button>
           <button type="button" class="primary-button" :disabled="!pendingPoint" @click="confirmPlacement">确认</button>
         </div>

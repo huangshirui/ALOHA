@@ -2,9 +2,45 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "aloha-app-health",
   "compatibility_date": "2026-10-03",
-  "workers_dev": true,
+  "workers_dev": false,
+  "keep_vars": true,
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
-  }
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/health/api/*"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "HEALTH_PRESENTATION",
+        "class_name": "HealthPresentationState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "health-presentation-v1",
+      "new_sqlite_classes": [
+        "HealthPresentationState"
+      ]
+    }
+  ],
+  "main": "./src/worker.ts",
+  "preview_urls": true,
+  "previews": {
+    "durable_objects": {
+      "bindings": [
+        {
+          "name": "HEALTH_PRESENTATION",
+          "class_name": "HealthPresentationState"
+        }
+      ]
+    }
+  },
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ]
 }

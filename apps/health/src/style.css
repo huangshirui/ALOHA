@@ -203,7 +203,7 @@
 .account-flow h3 { color:var(--health-ink); margin:1rem 0 .6rem; }
 .account-flow p,.account-note { color:var(--health-muted); line-height:1.8; font-size:.8rem; }
 .account-note { padding:var(--health-space-4); background:var(--health-brand-subtle); border-radius:var(--health-radius-control); }
-.toast { position:fixed; z-index:40; left:1rem; right:1rem; bottom:calc(5.6rem + env(safe-area-inset-bottom)); display:flex; align-items:center; justify-content:space-between; gap:.75rem; border-radius:var(--health-radius-control); padding:.85rem 1rem; background:var(--health-ink); color:var(--health-surface); box-shadow:var(--health-shadow-float); font-size:.78rem; line-height:1.5; }
+.toast { position:fixed; z-index:40; left:50%; right:auto; transform:translateX(-50%); bottom:calc(5.6rem + env(safe-area-inset-bottom)); display:flex; align-items:center; justify-content:space-between; gap:.75rem; border-radius:var(--health-radius-control); padding:.75rem 1rem; width:max-content; max-width:calc(100vw - 2rem); background:var(--health-ink); color:var(--health-surface); box-shadow:var(--health-shadow-float); font-size:.78rem; line-height:1.5; }
 .toast button { display:grid; place-items:center; background:none; border:0; color:inherit; }
 @media (max-width: 28rem) {
   .intro-row,.page-heading,.detail-heading { flex-direction:column; align-items:flex-start; }
@@ -243,7 +243,7 @@
   .modal-backdrop { justify-content:flex-end; align-items:stretch; }
   .drawer { width:min(100%,32rem); height:100dvh; max-height:100dvh; padding:2rem 2rem 2.4rem; border-radius:0; }
   .drawer-handle { display:none; }
-  .toast { left:auto; bottom:1.3rem; right:1.3rem; max-width:28rem; }
+  .toast { left:50%; right:auto; bottom:1.35rem; max-width:min(32rem,calc(100vw - 2rem)); }
 }
 @media (min-width: 75rem) {
   .desktop-sidebar { width:15.5rem; padding-inline:1.35rem; }
@@ -600,3 +600,90 @@
 .metric-reference-filters button:hover:not(.active) {background:var(--health-surface-secondary);color:var(--health-ink)}
 .metric-reference-filters button:focus-visible {outline:2px solid var(--health-brand);outline-offset:2px}
 .metric-reference-empty {padding:1.2rem .65rem}
+
+/* Health live mutations must acknowledge the click immediately, before slow network saves. */
+.save-progress { display:flex; align-items:center; gap:.6rem; margin:0; padding:.65rem .8rem; border-radius:var(--health-radius-control); background:var(--health-brand-subtle); color:var(--health-brand-strong); font-size:.8rem; font-weight:650; }
+.saving-spinner { display:inline-block; width:16px; height:16px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:health-saving-rotate .7s linear infinite; flex:none; }
+@keyframes health-saving-rotate {to {transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.saving-spinner {animation:none;border-right-color:currentColor}}
+
+/* Upload percentage is real browser->Health BFF byte progress, never a synthetic timer. */
+.upload-progress { display:flex;flex-direction:column;gap:.45rem;padding:.75rem .85rem;border-radius:var(--health-radius-control);border:1px solid var(--health-border);background:var(--health-brand-subtle);color:var(--health-brand-strong);font-size:.8rem; }
+.upload-progress-text { display:flex;justify-content:space-between;align-items:center;gap:.5rem;font-weight:650; }
+.upload-progress-text span { display:inline-flex;align-items:center;gap:.35rem; }
+.upload-progress progress { display:block;width:100%;height:.55rem;overflow:hidden;border:0;border-radius:var(--health-radius-pill);accent-color:var(--health-brand); }
+.upload-progress progress::-webkit-progress-bar { background:var(--health-border-soft);border-radius:var(--health-radius-pill); }
+.upload-progress progress::-webkit-progress-value { background:var(--health-brand);border-radius:var(--health-radius-pill); }
+.upload-progress progress::-moz-progress-bar { background:var(--health-brand);border-radius:var(--health-radius-pill); }
+
+/* LifeSpace Concern relation editor: responsive, compact, factual link management. */
+.concern-relations {grid-column:1 / -1}
+.relation-picker {display:grid;grid-template-columns:minmax(130px,.7fr) minmax(190px,1.5fr) auto;gap:.65rem;align-items:center;margin:.8rem 0}
+.relation-picker select {min-width:0;width:100%;min-height:2.6rem;padding:.45rem .65rem;border:1px solid var(--health-border);border-radius:.65rem;background:var(--health-surface);color:var(--health-text)}
+.relation-picker .soft-button {min-height:2.6rem;white-space:nowrap}
+.relation-row {display:flex;gap:.8rem;align-items:center;justify-content:space-between;padding:.6rem 0;border-top:1px solid var(--health-border-soft);font-size:.85rem}
+.relation-row span {min-width:0;overflow-wrap:anywhere}
+.relation-row .quiet-button {flex-shrink:0}
+@media (max-width:640px) {.relation-picker {grid-template-columns:1fr}.relation-picker .soft-button {width:100%}}
+
+/* HealthConcern four-card hierarchy: compact state and quiet management. */
+.concern-detail {align-items:start}
+.concern-status-card,.concern-business-card {min-height:0}
+.concern-summary {line-height:1.65;margin:.15rem 0 1rem;color:var(--health-ink);font-size:.88rem}
+.concern-meta {display:flex;gap:1.1rem 1.6rem;align-items:center;flex-wrap:wrap;padding:.65rem 0 .85rem;border-bottom:1px solid var(--health-border-soft)}
+.concern-attention-compact {display:flex;align-items:center;gap:.6rem;min-width:0}
+.concern-attention-compact .mini-label {white-space:nowrap}
+.concern-attention-compact .concern-attention-select {max-width:12rem;min-height:2.35rem}
+.concern-meta-date {display:inline-flex;align-items:center;gap:.5rem;font-size:.78rem;white-space:nowrap}
+.concern-meta-date b {font-weight:650;color:var(--health-ink)}
+.concern-note {margin:.6rem 0 0;overflow-wrap:anywhere}
+.concern-section-heading {display:flex;justify-content:space-between;align-items:center;gap:.8rem;margin:1rem 0 .25rem}
+.concern-section-heading h3 {display:flex;align-items:center;gap:.45rem;font-size:.83rem;font-weight:720;margin:0}
+.concern-section-heading h3 span {font-size:.7rem;font-weight:550;color:var(--health-muted)}
+.concern-section-separated {border-top:1px solid var(--health-border-soft);padding-top:1rem}
+.concern-metric-list {display:flex;flex-wrap:wrap;gap:.45rem}
+.concern-record-row {display:flex;align-items:center;gap:.25rem;min-width:0;border-bottom:1px solid var(--health-border-soft)}
+.concern-record-row:last-of-type {border-bottom:0}
+.concern-record-row>.row-link {flex:1;min-width:0}
+.concern-metric-list .concern-record-row {border:0;max-width:100%}
+.concern-metric-link {display:inline-flex;align-items:center;gap:.45rem;padding:.48rem .68rem;border:1px solid var(--health-border-soft);background:var(--health-brand-subtle);color:var(--health-brand-strong);border-radius:var(--health-radius-pill);font-size:.77rem;max-width:100%;text-align:left}
+.concern-metric-link span {white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.concern-unlink {flex:none;display:inline-grid;place-items:center;width:1.9rem;height:1.9rem;border:1px solid var(--health-border);border-radius:50%;background:var(--health-surface);color:var(--health-muted)}
+.concern-unlink:hover {color:var(--health-ink);background:var(--health-hover)}
+.concern-card-actions {display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.55rem;margin-top:.8rem}
+.concern-manage-toggle {display:inline-flex;align-items:center;gap:.35rem;border:0;background:transparent;color:var(--health-muted);font-size:.72rem;padding:.4rem .25rem}
+.concern-manage-toggle:hover {color:var(--health-brand-strong)}
+.concern-pager {display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin:.65rem 0;color:var(--health-muted);font-size:.72rem}
+.concern-pager>div {display:flex;align-items:center;gap:.2rem}
+.concern-pager button {background:transparent;color:var(--health-brand-strong);border:1px solid var(--health-border-soft);border-radius:.5rem;padding:.3rem .5rem;font-size:.72rem}
+.concern-pager button:disabled {color:var(--health-muted);opacity:.5}
+.concern-inline-editor {border-top:1px solid var(--health-border-soft);margin-top:.8rem;padding-top:.7rem}
+.concern-inline-editor .helper-copy {margin:0 0 .5rem;font-size:.73rem}
+/* Keep a full-width record selector: 3 compressed controls caused text clipping.
+   Use background-color, NOT background shorthand, or the shared select Chevron
+   background-image in ui-system.css will silently disappear. */
+.concern-inline-editor .relation-picker {grid-template-columns:minmax(0,1fr) max-content;margin:.25rem 0}
+.concern-inline-editor .relation-picker.has-kind select:first-of-type {grid-column:1/-1;max-width:13rem}
+.concern-inline-editor .relation-picker select {background-color:var(--health-surface);color:var(--health-ink);min-width:0;text-overflow:ellipsis}
+@media(max-width:720px) {
+  .concern-meta {gap:.65rem 1.15rem}
+  .concern-inline-editor .relation-picker {grid-template-columns:minmax(0,1fr)}
+  .concern-inline-editor .relation-picker.has-kind select:first-of-type {grid-column:auto;max-width:none}
+  .concern-inline-editor .relation-picker .soft-button {width:100%}
+}
+.metric-selector-field {display:grid;gap:.45rem;min-width:0}
+.metric-picker-toggle {display:flex;align-items:center;justify-content:space-between;width:100%;min-height:var(--health-control);padding:.65rem .9rem;background:var(--health-surface);border:1px solid var(--health-border);border-radius:var(--health-radius-control);color:var(--health-ink);text-align:left}
+.metric-picker-panel {border:1px solid var(--health-border);border-radius:var(--health-radius-control);background:var(--health-surface);box-shadow:var(--health-shadow-float);padding:.6rem;display:grid;gap:.4rem;max-width:100%}
+.metric-picker-search {display:flex!important;flex-direction:row!important;align-items:center;gap:.4rem;padding:0 .55rem;border:1px solid var(--health-border);border-radius:var(--health-radius-control)}
+.metric-picker-search input {border:0!important;flex:1;min-width:0;box-shadow:none!important;padding:.55rem .15rem!important}
+.metric-picker-scroll {max-height:17rem;overflow-y:auto;overscroll-behavior:contain}
+.metric-picker-heading {padding:.65rem .6rem .25rem;color:var(--health-muted);font-size:.68rem;font-weight:700}
+.metric-picker-option {display:flex;align-items:center;gap:.55rem;width:100%;padding:.58rem .65rem;border:0;background:transparent;color:var(--health-ink);text-align:left;border-radius:.5rem;font-size:.8rem}
+.metric-picker-option:hover,.metric-picker-option:focus-visible {background:var(--health-brand-subtle)}
+.metric-picker-option span {flex:1;overflow-wrap:anywhere}
+.metric-create-link {display:flex;align-items:center;justify-content:center;gap:.35rem;border:0;border-top:1px solid var(--health-border-soft);background:transparent;color:var(--health-brand-strong);font-size:.78rem;padding:.6rem}
+.quick-metric {display:grid;gap:.65rem;padding:.8rem;border:1px solid var(--health-border);border-radius:var(--health-radius-control);background:var(--health-highlight)}
+.quick-metric-heading {display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+.quick-metric-heading b {font-size:.85rem}
+.quick-metric .soft-button {justify-self:start}
+.toast-error {background:var(--health-ink);color:var(--health-surface)}

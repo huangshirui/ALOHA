@@ -9,9 +9,15 @@ Assistant is the Agent interaction surface; Health, Finance and Things provide s
 | Surface | Install name | Target path | Current state |
 | --- | --- | --- | --- |
 | ALOHA Assistant | `Assistant` | `/assistant/` | Existing product surface. Workspace is separated, but production remains on the transitional root/Gateway deployment until the required LifeSpace upgrade is complete. |
-| ALOHA Health | `Health` | `/health/` | Development scaffold ready; independently buildable and preview-deployable. Domain/data contracts intentionally TBD. |
+| ALOHA Health | `Health` | `/health/` | Interactive prototype merged; trusted LifeSpace BFF and app-owned SQLite Durable Object projection in Draft PR #37, not production-deployed. |
 | ALOHA Finance | `Finance` | `/finance/` | Development scaffold ready; independently buildable and preview-deployable. Domain/data contracts intentionally TBD. |
 | ALOHA Things | `Things` | `/things/` | Development scaffold ready; independently buildable and preview-deployable. Domain/data contracts intentionally TBD. |
+
+The shared account/application settings page is available at **`/settings/`**,
+as a non-installable public utility route (not another PWA). It reuses
+`@aloha/ui` with Health and Assistant and sends account changes to the
+separate `account.aisr.online` account center. Production route activation
+is a separate approval and deployment step.
 
 These surfaces are **not separate LifeSpace applications**. They are independently installable/releasable surfaces of the same ALOHA application.
 
@@ -83,7 +89,7 @@ Health, Finance and Things may proceed independently from their prepared PWA sca
 ```text
 apps/
   assistant/               # ALOHA Assistant PWA
-  health/                  # ALOHA Health scaffold + preview Worker
+  health/                  # ALOHA Health PWA, trusted BFF draft + per-user SQLite DO presentation state
   finance/                 # ALOHA Finance scaffold + preview Worker
   things/                  # ALOHA Things scaffold + preview Worker
 

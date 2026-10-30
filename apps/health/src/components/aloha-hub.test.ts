@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createSSRApp } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import AlohaHub from './AlohaHub.vue'
+import AlohaHub from '@aloha/ui/AlohaHub.vue'
 
 const apps = [
   { id:'assistant',name:'Assistant' },
@@ -40,6 +40,19 @@ describe('ALOHA Hub shared presentation / 公共入口', () => {
     expect(html).toContain('隐私与授权')
     expect(html).toContain('帮助')
   })
+  it('shows the ALOHA wordmark above the current app only in expanded navigation', async () => {
+    const expanded = await renderToString(createSSRApp(AlohaHub, {
+      currentApp:'health',apps,
+    }))
+    const compact = await renderToString(createSSRApp(AlohaHub, {
+      currentApp:'health',apps,compact:true,
+    }))
+    expect(expanded).toContain('aloha-hub-wordmark')
+    expect(expanded).toMatch(/<strong[^>]*>ALOHA<\/strong><small[^>]*>HEALTH<\/small>/)
+    expect(expanded).toContain('aloha-hub-chevron')
+    expect(compact).not.toContain('aloha-hub-wordmark')
+    expect(compact).toContain('aloha-hub-logo')
+  })
   it('opens configured account, application, privacy and help destinations in new tabs', async () => {
     const html = await render({
       apps:[apps[0],apps[1],{id:'finance',name:'Finance',href:'https://example.com/finance'},apps[3]],
@@ -54,4 +67,20 @@ describe('ALOHA Hub shared presentation / 公共入口', () => {
     expect((html.match(/target="_blank"/g) || [])).toHaveLength(4)
     expect((html.match(/rel="noopener noreferrer"/g) || [])).toHaveLength(4)
   })
+  it('routes common settings to a path and displays the verified Identity name/avatar',async()=>{
+    const html=await render({
+      accountUrl:'https://account.aisr.online/',
+      accountLabel:'Synthetic User',
+      avatarUrl:'/health/api/v1/profile/avatar',
+      spaceName:'Synthetic Space',
+      settingsUrl:'/settings/?from=health',
+    })
+    expect(html).toContain('href="https://account.aisr.online/"')
+    expect(html).toContain('Synthetic User')
+    expect(html).toContain('Synthetic Space')
+    expect(html).toContain('src="/health/api/v1/profile/avatar"')
+    expect(html).toContain('href="/settings/?from=health"')
+    expect(html).not.toContain('target="_blank" href="/health/hub/settings"')
+  })
+
 })

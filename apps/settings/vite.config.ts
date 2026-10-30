@@ -1,0 +1,7 @@
+import {defineConfig} from 'vite'
+import vue from '@vitejs/plugin-vue'
+export default defineConfig({
+  base:'/settings/',
+  build:{outDir:'dist/settings',emptyOutDir:true},
+  plugins:[vue()],
+})

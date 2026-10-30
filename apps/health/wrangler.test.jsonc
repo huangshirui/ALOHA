@@ -1,0 +1,22 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "aloha-health-do-runtime-test",
+  "main": "./src/worker.ts",
+  "compatibility_date": "2026-10-03",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "HEALTH_PRESENTATION",
+        "class_name": "HealthPresentationState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "health-presentation-test-v1",
+      "new_sqlite_classes": [
+        "HealthPresentationState"
+      ]
+    }
+  ]
+}

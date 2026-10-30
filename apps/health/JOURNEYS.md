@@ -125,3 +125,53 @@
 4. 数据检查：所有文件均未被读取或上传；刷新后演示数据还原；观察值互斥、来源引用与用户确认显式；不包含真实医学结论。
 
 **后端留白：** 真正的 Health File 生命周期、身份/Space/Grant、Semantic Relation、Recurring Task、Agent 对话/操作确认，仍需 LifeSpace/ALOHA 对应可信服务支持。本原型不得暗示已部署这些能力。
+
+
+## 2026-10-30 · HealthConcern 真实 Semantic Relation 接入（Staging 候选）
+
+> 本节针对 Live 模式（`VITE_HEALTH_DATA_MODE=live`）；以上 UX Prototype 的演示态说明不代表真实服务状态。本功能仅在 ALOHA Health Preview 分支候选，必须通过实际 Staging 验收后才能声明已发布。
+
+- **所有权**：HealthConcern / HealthMetric / HealthObservation / HealthEvent / HealthDocument / HealthAssessment / HealthRegimen 仍是 LifeSpace Core 普通模型；关系使用 Core 原生、同一 Space 内的有向 Semantic Relation，**不向模型添加 `concernIds`**，也不把关系存进 Health 的 Durable Object。
+- **方向与谓词**：从当前用户拥有的 `health_concern` 作为 source 指向目标记录，指标采用 `monitors`，其他五类目标采用 `relates_to`。此语义为“正在关注/相关”，绝不隐含医学因果。原有 `health_assessment --based_on--> health_observation/document` 是另外的证据关系，不由本期的 Concern UI 代替。
+- **读取**：仅进入 Concern 详情时拉取该 Concern 的有向关系；按当前 Core 成员关系验证主体，并由 Core 验证两个端点的可读权限。前端按关系中的目标 Model/Record ID 显示相关指标、测量、事件、资料、评估、方案；切换 Space / Concern 时清空旧关系，防止跨主体混用。
+- **创建关联**：在 Concern 详情通过「关联现有记录」选择目标类型和现有记录。进入当前 Concern 的各类「添加」入口时自动预选当前 Concern；先持久化原始事实，再调用关系创建。若事实成功、关联失败，**必须分别提示**，不可误报为整体成功。LifeSpace 对重复关系创建有幂等约束。
+- **解除关联**：只 DELETE 关系 ID；不修改/删除任何源或目标原始记录，Core 对关系执行独立授权。删除 Concern 时由 Core 的模型删除生命周期处理已存在的关系，Health 自己仅清理应用展示投影。
+- **安全**：浏览器不提交 source、predicate、其他用户 ID 或 Core 地址。BFF 从当前 Access Session、LifeSpace 当前 Space Person 解析拥有者，对目标记录执行 Model/Person 校验（Metric 是 Space 共享指标目录）；Core 再核验双方的 Application/Model/Grant/Policy 权限。只有指定 Concern 的关系可解除；没有授权不得从 BFF 查询、写入或删除其他人的关系。
+- **范围限制**：暂不做全应用语义关系编辑器、批量关联、关系传播、AI 自动关联，或关联不同 Space 的健康事实；普通记录详情上的关系多选与 Assessment 证据 `based_on` 留待下一项。实际多人、跨 Space 授权仍由 LifeSpace 授权契约单独处理。
+
+## 2026-10-30 · HealthConcern 详情密度和关联编辑 UX V2
+
+- **四张用途卡片**：保留「现在怎么样？」「正在做什么？」「最近发生了什么？」「有哪些依据？」四个区块；不再将低频关联操作放入独立大卡片。每张业务卡片提供弱强调的「管理关联」，只有进入管理状态时才露出「关联已有记录」选择器和逐行解除按钮；普通浏览的行只负责进入详情。
+- **现在怎么样？层次**：状态和摘要先读；关注度与起止日期用一行/自动换行的紧凑元数据，不再撑开大段空白；「追踪指标」（Metric, 看趋势）和「近期测量」（Observation, 看单次事实）明确分区，避免把指标定义与观测值混在同一层次。
+- **排序与分页**：相关测量按 observedDate、事件按发生日期、方案按 startDate、资料与评估混合按 issuedDate/assessedDate 倒序。相关指标按其最近观测日期排序。每个子列表独立展示 3 条/页，只有超过一页才出现上一页/下一页，页面切换或换关注事项时回到第一页。当前属于**客户端展示分页**，不是 LifeSpace Core cursor API；后续真实数据量达到加载瓶颈时另行补服务端分页，不能假装已无限加载。
+- **关联边安全**：展示层解关联仍只调用 LifeSpace Semantic Relation DELETE；必须明确点击「管理关联 → 对应记录的解除按钮 → 原生确认弹窗」。取消不产生请求，确认也不删除指标、观测或资料本体。
+- **测量录入**：指标选择器支持搜索名称（宽窄字符规范化与不区分大小写），历史观测按时间倒序去重得出最近使用的最多五个指标。可以在测量表单直接快速创建 Metric（名称、数值/文本/是非、可选单位）；成功后自动选择，不清空日期、参考资料、关联的 Concern；失败保持已填写草稿，不把当前 Observation 误保存。完整指标默认参考范围仍可进入指标详情后编辑。
+- **Toast 位置和时长**：采用底部居中 Snackbar，Mobile 抬高避开固定底部导航，Desktop 避开常见右下角动作按钮；成功反馈自动约 4.2 秒消失，错误约 7.5 秒，均保留主动关闭。表单中的必填/关联操作失败继续以就近 inline error 呈现，不将需要重试的关键信息仅寄托给消失的 Toast。此位置符合 Material Design Snackbar 的底部提示与不遮挡主要操作的原则。
+- **范围**：只调整 ALOHA Health UX 和前端展示，不新增 LifeSpace Model/迁移、健康诊断语义、AI 或性能策略。继续保持 Draft PR/Staging 验收流程。
+
+## 2026-10-30 · Health MVP 收口与 ALOHA Hub 公共组件 / Shared shell
+
+- **MVP 边界**：Health 的「身体」七类普通模型、真实 CRUD、健康资料上传/下载、关注配置/部位和 Semantic Relation 均已有实际 BFF/Identity/Core 链路与自动化回归。没有 AI 的健康数据手工流程构成基础 MVP；不把未上线的饮食/运动、AI 或周期任务执行误写为已闭环。真实 Staging/权限/多端验收通过之前只能称为候选。
+- **非当前迭代**：[AI 提取与 Health Agent #43](https://github.com/huangshirui/ALOHA/issues/43)、[HealthRegimen × Task/Recurrence #44](https://github.com/huangshirui/ALOHA/issues/44)。两者在独立会话设计，不阻塞当前 Health 数据 MVP。Health Live 模式隐藏尚未接入的 Demo Agent，不让用户误以为已经是带权限的 Health AI。
+- **账号唯一真相**：HomeMew Web 使用 LifeSpace Identity `GET /api/v1/me` 的 `displayName` 和 `avatarUrl`。与家庭 Space 内的 Person 昵称、头像分离。ALOHA Health Hub 也通过当前验证的 Access Session + server-only application token 读取同一 User Profile，头像由同源 Health BFF 转发本人资料，不把 Identity Token 暴露浏览器。Profile 失败时仅显示无身份含义的「账号」占位，不推断用户名。
+- **Hub 抽取**：`@aloha/ui/AlohaHub.vue` 与 `@aloha/ui/AlohaHubSettings.vue` 为跨 PWA 公共组件，由 Health 与 Assistant 两个真实代码消费者使用；此前 Health 专属 Hub 组件已移除。Hub 仅负责界面和地址/状态投影，不成为身份服务器、Space/Grant 真相源或通用授权管理器。跨应用账号中心固定打开 `https://account.aisr.online/` 新标签页，即使目标页面尚未上线也不阻断 MVP。
+- **公共设置 path**：不创建独立 Hub 域名。Health 使用 `/health/hub/settings`；Assistant（独立 PWA 激活之后）使用 `/assistant/hub/settings`。两者使用同一设置组件，但提供空间列表的 BFF 各自拥有其权限校验。Health 不再在页面顶部显示空间选择，仅在未选择/连接异常时显示小型状态提示及设置入口。
+- **空间偏好**：已授权 Space 列表由 Core `/api/v1/me/spaces` 得到；用户选中后存储 `aloha.space`（同源共享浏览器偏好），读取时兼容旧的 `aloha.health.space` 并自动迁移。此 ID 不进入令牌或 Grant，不表示授权；每次数据操作依然由 LifeSpace Core 校验。Staging PWA 分别使用 workers.dev origin，localStorage 不自动跨不同 Origin 共享；不能承诺 Staging 所有 PWA 同步选择。未激活的 Assistant PWA 仍仅显示公共设置结构，不假装已有 LifeSpace 空间能力。
+- **发布边界**：以上改动只在 ALOHA Health 集成 Draft 分支的候选 PR 中；不改变 LifeSpace 数据模型，不修改 HomeMew，不部署 Production。上线需要真实头像、名称、Profile拒绝、切换 Space 后的数据隔离、刷新恢复、直接访问 path、Mobile/Desktop，以及单独部署 Assistant PWA 之后的交叉验证。
+
+## 2026-10-30 · Architecture correction: Settings is a peer /settings route
+
+The earlier proposal `/health/hub/settings` / `/assistant/hub/settings`
+was rejected: a shared ALOHA preference UI must not be owned by Health's
+PWA path. Canonical public route is **`aloha.aisr.online/settings`**
+(redirected to `/settings/`). Health and Assistant Hub link to it; neither
+renders or deploys its own copy of the settings page. A new minimal
+`apps/settings` service provides a shared Settings UI plus authenticated
+Identity User profile and Core authorized Spaces, with an independent Worker
+and manual staging workflow. Account editing remains `account.aisr.online`.
+
+Default space is the per-origin `aloha.space` browser preference; it does
+not grant permissions and it cannot be synchronized between distinct
+`workers.dev` staging hosts. The Health client migrates its previous
+`aloha.health.space` key only when it can independently verify membership
+against Core. Production stays unchanged until route activation is approved.
