@@ -84,6 +84,23 @@ Each surface independently owns:
 
 A PWA split does not imply a backend split. Gateway and Agent Control remain shared only where their responsibilities apply. Structured domain PWAs must not be routed through Agent Control by default.
 
+## Transitional Assistant root Service Worker / 根作用域缓存隔离
+
+While the Assistant is served from the root `/`, its installable PWA has a
+root-scoped Service Worker. A default Workbox SPA navigation fallback would
+otherwise intercept requests to independently routed peer paths such as
+`/health/` and `/settings/` and return the cached Assistant page, even when
+the Cloudflare Workers Routes are correctly configured.
+
+The temporary Assistant Workbox `navigateFallbackAllowlist` therefore
+allows only `/` to use the Assistant offline shell. Health, Settings,
+Finance, Things and their API routes must reach their own independently
+deployed Workers. Keep this boundary in place until the separate
+`/assistant/` PWA scope migration is explicitly approved. Existing clients
+may need to visit/reload the Assistant root page to receive the updated
+Service Worker; an incognito window can distinguish an existing stale
+Service Worker from a server-side routing problem.
+
 ## Independent Production release pipelines / 生产独立发布
 
 Shared code is not a shared deployment unit. `packages/ui` (including ALOHA Hub)
