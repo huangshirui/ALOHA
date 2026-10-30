@@ -116,3 +116,11 @@ Before a surface is considered production-installable, create and verify platfor
 ## Change rule
 
 When a visual decision is specific to one PWA, keep it in that app. Promote it into the shared foundation only when it is clearly part of the ALOHA family language and has at least two real consumers.
+
+## Shared ALOHA Settings / 公共设置 Shell（2026-10-30）
+
+- `/settings/` is a peer, **standalone ALOHA page**, not embedded in Health/Assistant. Hub opens it in a new tab; the separate Settings page owns its own navigation.
+- Desktop: fixed ALOHA brand rail, account/avatar header and compact content cards. Mobile: full-page content, compact top bar and keyboard-dismissible navigation drawer. No Health domain tabs.
+- Wordmark uses self-hosted Exo 2; Settings uses ALOHA neutral/blue tokens and does not reuse the Health-only pink heart logo.
+- Identity User profile and Core Space list load independently. Missing Access assertion says "当前站点没有有效的 Access 登录凭证", not "ALOHA 已退出登录"; upstream failure remains inline. Do not trust browser claims as authorization.
+- Account/security/privacy management stays at `account.aisr.online`. Preview authorization and real Mobile/Desktop acceptance remain separate from CI.
