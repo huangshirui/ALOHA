@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
+// The ALOHA wordmark uses a self-hosted Latin-only font; domain labels keep the UI font.
+import '@fontsource/exo-2/latin-700.css'
 import {
   ArrowUpRight, Box, ChevronDown, CircleHelp, Heart, LayoutGrid,
   ShieldCheck, Sparkles, UserRound, Wallet,
@@ -115,14 +117,15 @@ async function closeOnEscape() {
 
 <style scoped>
 .aloha-hub { position:relative; min-width:0; }
-.aloha-hub-trigger { display:flex;align-items:center;gap:.65rem;width:100%;padding:.15rem .65rem;border:0;background:transparent;color:var(--aloha-color-text);text-align:left; }
+.aloha-hub-trigger { display:flex;align-items:center;gap:.55rem;width:100%;padding:.15rem .65rem;border:0;background:transparent;color:var(--aloha-color-text);text-align:left; }
 .aloha-hub-trigger.compact { justify-content:center;padding:.1rem; }
 .aloha-hub-logo { display:grid;place-items:center;flex:none;width:2.75rem;height:2.75rem;overflow:hidden;border-radius:var(--aloha-radius-md);background:transparent;color:var(--aloha-accent-strong); }
 .aloha-hub-logo img,.aloha-hub-app-icon img,.aloha-hub-avatar img { display:block;width:100%;height:100%;object-fit:cover; }
-.aloha-hub-wordmark { display:flex;flex:1;flex-direction:column;gap:.1rem;min-width:0; }
-.aloha-hub-wordmark strong { font-size:1.16rem;letter-spacing:-.035em; }
-.aloha-hub-wordmark small { font-size:.64rem;letter-spacing:.15em;color:var(--aloha-accent-strong);font-weight:700; }
-.aloha-hub-chevron { color:var(--aloha-color-text-muted); }
+/* ALOHA is the family wordmark; HEALTH/other surface names remain quiet sub-labels. */
+.aloha-hub-wordmark { display:flex;flex:1;flex-direction:column;gap:.25rem;min-width:0;white-space:nowrap; }
+.aloha-hub-wordmark strong { display:block;font-family:var(--aloha-font-brand);font-size:1.5rem;font-weight:700;line-height:1.05;letter-spacing:.015em; }
+.aloha-hub-wordmark small { display:block;font-family:var(--aloha-font-sans);font-size:.64rem;line-height:1.3;letter-spacing:.2em;color:var(--aloha-accent-strong);font-weight:700; }
+.aloha-hub-chevron { flex:none;margin-left:auto;color:var(--aloha-color-text-muted); }
 .aloha-hub-dismiss { position:fixed;inset:0;background:transparent;border:0;z-index:1;cursor:default; }
 .aloha-hub-popup { position:absolute;top:calc(100% + .7rem);left:0;z-index:2;width:min(23rem,calc(100vw - 1.5rem));max-height:min(82dvh,43rem);overflow-y:auto;padding:.75rem 1rem;background:var(--aloha-color-surface);border:1px solid var(--aloha-color-border);box-shadow:var(--aloha-shadow-floating);border-radius:var(--aloha-radius-lg); }
 .aloha-hub-account { display:flex;align-items:center;gap:.8rem;padding:.55rem .5rem;min-height:3.7rem;border-radius:var(--aloha-radius-md);color:var(--aloha-color-text);text-decoration:none; }

@@ -36,6 +36,12 @@ The accent differentiates surfaces; neutral colors, typography rhythm, spacing, 
 - **Modes / 适配**: Desktop uses an anchored, dismissible Popover from the sidebar ALOHA logo, preserving current workspace and Agent. Mobile continues using the bottom 「更多」 tab as a page with a two-column app grid and compact account/footer sections. The same contents and link contract drive both modes; neither mode hosts public settings detail pages.
 - **Ownership / 复用**: the first working preview remains at `apps/health/src/components/AlohaHub.vue` in Draft PR #36, consuming `--aloha-*` tokens without domain business logic. Promote this stable contract to `packages/ui` when a second real ALOHA PWA consumes it; share verified catalog/routing sources then, without forcing PWAs into a single deployment. The ALOHA public pages are a future independently owned surface, not a Health feature.
 - **Verification / 验收**: cover removal of current app, disabled unconnected destinations, new-tab security attributes, Mobile grid and Desktop collapsed/expanded sidebar, outside click/Escape, popover placement and AI side panel. CI alone does not establish visual correctness.
+## Brand wordmark / ALOHA 品牌字标
+
+- **ALOHA** is the shared family wordmark across first-party PWAs. Use the geometric **Exo 2 Bold (700)** face only for the wordmark, via `--aloha-font-brand`; load its Latin subset from a self-hosted font package in consuming apps. Keep ordinary UI and Chinese copy on `--aloha-font-sans`. This avoids a network-hosted font dependency and keeps installable PWAs usable offline.
+- **Current surface** (e.g. HEALTH) appears directly beneath ALOHA as an uppercase, tracking-spaced secondary label in the current app's accent color. The brand name is clearly larger (~24px vs ~10px in the expanded desktop rail); the app icon keeps its native palette, not the UI accent.
+- The shared wordmark is currently implemented in `apps/health/src/components/AlohaHub.vue` as the first real consumer. Apply this identity pattern in the next PWA that uses the Hub, without prematurely extracting a shared Vue component. When the rail is collapsed, show only the app icon. Keep the chevron visible and avoid clipping in the narrow desktop rail.
+
 ## Typography hierarchy / 字体层级
 
 ALOHA's four PWAs share the same framework-agnostic type scale from `packages/design-tokens/tokens.css`. This is the **only** cross-surface typography source; individual pages must not invent a new display-title scale.

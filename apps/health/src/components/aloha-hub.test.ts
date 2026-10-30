@@ -40,6 +40,19 @@ describe('ALOHA Hub shared presentation / 公共入口', () => {
     expect(html).toContain('隐私与授权')
     expect(html).toContain('帮助')
   })
+  it('shows the ALOHA wordmark above the current app only in expanded navigation', async () => {
+    const expanded = await renderToString(createSSRApp(AlohaHub, {
+      currentApp:'health',apps,
+    }))
+    const compact = await renderToString(createSSRApp(AlohaHub, {
+      currentApp:'health',apps,compact:true,
+    }))
+    expect(expanded).toContain('aloha-hub-wordmark')
+    expect(expanded).toMatch(/<strong>ALOHA<\/strong>\s*<small>HEALTH<\/small>/)
+    expect(expanded).toContain('aloha-hub-chevron')
+    expect(compact).not.toContain('aloha-hub-wordmark')
+    expect(compact).toContain('aloha-hub-logo')
+  })
   it('opens configured account, application, privacy and help destinations in new tabs', async () => {
     const html = await render({
       apps:[apps[0],apps[1],{id:'finance',name:'Finance',href:'https://example.com/finance'},apps[3]],
