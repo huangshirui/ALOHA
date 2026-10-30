@@ -25,6 +25,95 @@ const fetcher = () => vi.fn(async (input: RequestInfo | URL, _init?: RequestInit
   if (path.endsWith('/records')) return success({ items:[],nextCursor:null })
   return success({ id:'rec_fake',valueType:'number' })
 })
+describe('HealthConcern semantic relation BFF (synthetic)',()=>{
+  const prefix='https://health.example.com/health/api/v1/spaces/spc_test/concerns/rec_concern/relations'
+  const edge=(kind:'health_metric'|'health_document'='health_metric')=>({
+    id:'rel_synthetic',spaceId:'spc_test',createdAt:'2026-10-30T00:00:00Z',
+    source:{kind:'record',modelKey:'health_concern',recordId:'rec_concern'},
+    predicate:kind==='health_metric'?'monitors':'relates_to',
+    target:{kind:'record',modelKey:kind,recordId:'rec_target'},
+  })
+  function mock(overrides:{targetOwner?:string;relationConcern?:string}={}){
+    const calls:{path:string;method:string;body?:unknown}[]=[]
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const path=new URL(String(input)).pathname,method=init?.method??'GET'
+      const body=init?.body?JSON.parse(String(init.body)):undefined
+      calls.push({path,method,body})
+      if(path==='/internal/v1/access/tokens')return success({accessToken:'synthetic_token'})
+      if(path==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(path==='/api/v1/spaces/spc_test/members')
+        return success([{userId:'usr_self',personId:'per_self'}])
+      if(path.endsWith('/health_concern/records/rec_concern'))
+        return success({id:'rec_concern',subjectPersonId:'per_self'})
+      if(path.endsWith('/health_metric/records/rec_target'))
+        return success({id:'rec_target',valueType:'number'})
+      if(path.endsWith('/health_document/records/rec_target'))
+        return success({id:'rec_target',subjectPersonId:overrides.targetOwner??'per_self'})
+      if(path.endsWith('/semantic-relations')&&method==='GET')
+        return success({items:[edge()],nextCursor:null})
+      if(path.endsWith('/semantic-relations')&&method==='POST')
+        return success({...edge(body.target.modelKey),target:body.target})
+      if(path.endsWith('/semantic-relations/rel_synthetic')&&method==='GET')
+        return success({...edge(),source:{kind:'record',modelKey:'health_concern',
+          recordId:overrides.relationConcern??'rec_concern'}})
+      if(path.endsWith('/semantic-relations/rel_synthetic')&&method==='DELETE')
+        return new Response(null,{status:204})
+      throw new Error('Unexpected synthetic request '+path+' '+method)
+    })
+    return {f,calls}
+  }
+  it('queries a single current-user-owned Concern via Core semantic-relation API',async()=>{
+    const {f,calls}=mock()
+    const res=await handleHealthApi(make(prefix),env,f)
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.items).toEqual([edge()])
+    const core=calls.find(c=>c.path.endsWith('/semantic-relations'))!
+    expect(core.method).toBe('GET')
+    const url=String(f.mock.calls.find(c=>new URL(String(c[0])).pathname.endsWith('/semantic-relations'))![0])
+    expect(new URL(url).searchParams.get('sourceRecordId')).toBe('rec_concern')
+    expect(new URL(url).searchParams.get('sourceModelKey')).toBe('health_concern')
+  })
+  it('chooses monitors for Metrics and refuses browser-selected predicates',async()=>{
+    const {f,calls}=mock()
+    const res=await handleHealthApi(make(prefix,'POST',{kind:'metric',targetId:'rec_target'}),env,f)
+    expect(res.status).toBe(200)
+    const core=calls.find(c=>c.path.endsWith('/semantic-relations')&&c.method==='POST')
+    expect(core?.body).toEqual({
+      source:{kind:'record',modelKey:'health_concern',recordId:'rec_concern'},
+      predicate:'monitors',
+      target:{kind:'record',modelKey:'health_metric',recordId:'rec_target'},
+    })
+    const denied=await handleHealthApi(make(prefix,'POST',{
+      kind:'metric',targetId:'rec_target',predicate:'relates_to',
+    }),env,f)
+    expect(denied.status).toBe(422)
+    expect(calls.filter(c=>c.path.endsWith('/semantic-relations')&&c.method==='POST')).toHaveLength(1)
+  })
+  it('never links a different Space Person even with model-read authority',async()=>{
+    const {f,calls}=mock({targetOwner:'per_other'})
+    const response=await handleHealthApi(make(prefix,'POST',{
+      kind:'document',targetId:'rec_target',
+    }),env,f)
+    expect(response.status).toBe(403)
+    expect(calls.some(c=>c.path.endsWith('/semantic-relations')&&c.method==='POST')).toBe(false)
+  })
+  it('only unlinks edges owned by the specified Concern and preserves original records',async()=>{
+    const wrong=mock({relationConcern:'rec_other'})
+    expect((await handleHealthApi(make(prefix+'/rel_synthetic','DELETE',{}),env,wrong.f)).status).toBe(404)
+    expect(wrong.calls.some(c=>c.method==='DELETE'&&c.path.endsWith('rel_synthetic'))).toBe(false)
+    const own=mock()
+    expect((await handleHealthApi(make(prefix+'/rel_synthetic','DELETE',{}),env,own.f)).status).toBe(204)
+    expect(own.calls.filter(c=>c.method==='DELETE').map(c=>c.path)).toEqual([
+      '/api/v1/spaces/spc_test/semantic-relations/rel_synthetic',
+    ])
+  })
+  it('rejects cross-origin and arbitrary user-provided relation sources before Core',async()=>{
+    const {f}=mock()
+    expect((await handleHealthApi(make(prefix,'POST',{kind:'metric',targetId:'rec_target'},
+      {Origin:'https://evil.example.com'}),env,f)).status).toBe(403)
+    expect((await handleHealthApi(make(prefix+'?sourceRecordId=rec_other'),env,f)).status).toBe(422)
+  })
+})
 describe('Health trusted BFF', () => {
   it('rejects unconfigured requests without contacting a backend', async () => {
     const f=fetcher()
