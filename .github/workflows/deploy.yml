@@ -1,8 +1,15 @@
 name: Deploy Cloudflare
 
 on:
+  # Transitional Assistant/Gateway release only. Shared UI, Health, Settings,
+  # Finance and Things changes must never deploy Assistant implicitly.
   push:
     branches: [main]
+    paths:
+      - 'apps/assistant/**'
+      - 'workers/gateway/**'
+      - 'workers/agent-control/**'
+  # Explicit manual Assistant release when a shared dependency was updated.
   workflow_dispatch:
 
 permissions:

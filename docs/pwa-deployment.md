@@ -85,6 +85,39 @@ Each surface independently owns:
 
 A PWA split does not imply a backend split. Gateway and Agent Control remain shared only where their responsibilities apply. Structured domain PWAs must not be routed through Agent Control by default.
 
+## Independent Production release pipelines / 生产独立发布
+
+Shared code is not a shared deployment unit. `packages/ui` (including ALOHA Hub)
+and `packages/design-tokens` are compiled into each consuming surface at that
+surface's build time. Updating a shared component **does not** redeploy Health,
+Settings or Assistant; release each affected consumer deliberately and separately.
+
+| Unit | Staging / Preview | Production |
+| --- | --- | --- |
+| Health | `.github/workflows/deploy-health.yml` | `.github/workflows/deploy-health-production.yml` |
+| Settings (shared utility, not a PWA) | `.github/workflows/deploy-settings.yml` | `.github/workflows/deploy-settings-production.yml` |
+| Assistant / transitional Gateway | existing Assistant staging path | `.github/workflows/deploy.yml` |
+| Finance, Things | their own Preview workflows | production workflows when ready |
+
+Production Health and Settings releases are individually dispatched from
+`main` with their own confirmation and `production` environment gate.
+Each workflow checks only its Worker bindings, validates/builds only its
+workspace, and executes `wrangler deploy` in only that app directory.
+Neither workflow deploys the other app, Assistant, Gateway or Agent Control.
+Production route activation and Access are separate release steps.
+
+The transitional `deploy.yml` retains its historic automatic
+`push main` deployment **only for changes within `apps/assistant`, `workers/gateway` or
+`workers/agent-control`**. Changes confined to
+`apps/health`, `apps/settings`, `packages/ui`, design tokens, other shared packages or common
+documentation **must not** trigger it. For shared-component changes,
+perform normal CI then explicitly release only the consuming apps that
+should receive the new version; do not broadcast deployments to all consumers.
+This constraint applies even while Assistant is temporarily hosted by Gateway.
+
+General CI may validate the whole repository on every PR or push, but CI
+verification is not a Production deployment. Rollback remains per Worker.
+
 ## Worker Production and named staging Preview
 
 ALOHA uses one LifeSpace Application per environment: the production application for all production surfaces, and a shared Preview application for all staging surfaces. PWA deployments do not create additional LifeSpace Application identities.
@@ -117,7 +150,7 @@ This keeps staging deployment simple, but **staging PWAs have separate browser o
 ## Current deployment state
 
 - **Assistant:** workspace is `apps/assistant`, but production remains on the legacy root-scope assets attached to `workers/gateway` until the LifeSpace-dependent migration is ready.
-- **Health:** `apps/health`, scope `/health/`, a single Worker project with a named `staging` Preview. Draft branch adds same-origin LifeSpace BFF and separately bound, user-scoped SQLite-backed DO presentation data; no production route or online acceptance yet.
+- **Health:** `apps/health`, scope `/health/`, a single Worker project with a named `staging` Preview. The LifeSpace BFF and user-scoped SQLite-backed DO presentation data are merged into `main`; the public Production route and full same-origin acceptance remain separate activation gates.
 - **Finance:** `apps/finance`, scope `/finance/`, assets-only Worker `aloha-app-finance`, manual preview deployment available; no production route yet.
 - **Things:** `apps/things`, scope `/things/`, assets-only Worker `aloha-app-things`, manual preview deployment available; no production route yet.
 
