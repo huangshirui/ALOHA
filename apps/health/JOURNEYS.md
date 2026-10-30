@@ -148,3 +148,13 @@
 - **测量录入**：指标选择器支持搜索名称（宽窄字符规范化与不区分大小写），历史观测按时间倒序去重得出最近使用的最多五个指标。可以在测量表单直接快速创建 Metric（名称、数值/文本/是非、可选单位）；成功后自动选择，不清空日期、参考资料、关联的 Concern；失败保持已填写草稿，不把当前 Observation 误保存。完整指标默认参考范围仍可进入指标详情后编辑。
 - **Toast 位置和时长**：采用底部居中 Snackbar，Mobile 抬高避开固定底部导航，Desktop 避开常见右下角动作按钮；成功反馈自动约 4.2 秒消失，错误约 7.5 秒，均保留主动关闭。表单中的必填/关联操作失败继续以就近 inline error 呈现，不将需要重试的关键信息仅寄托给消失的 Toast。此位置符合 Material Design Snackbar 的底部提示与不遮挡主要操作的原则。
 - **范围**：只调整 ALOHA Health UX 和前端展示，不新增 LifeSpace Model/迁移、健康诊断语义、AI 或性能策略。继续保持 Draft PR/Staging 验收流程。
+
+## 2026-10-30 · Health MVP 收口与 ALOHA Hub 公共组件 / Shared shell
+
+- **MVP 边界**：Health 的「身体」七类普通模型、真实 CRUD、健康资料上传/下载、关注配置/部位和 Semantic Relation 均已有实际 BFF/Identity/Core 链路与自动化回归。没有 AI 的健康数据手工流程构成基础 MVP；不把未上线的饮食/运动、AI 或周期任务执行误写为已闭环。真实 Staging/权限/多端验收通过之前只能称为候选。
+- **非当前迭代**：[AI 提取与 Health Agent #43](https://github.com/huangshirui/ALOHA/issues/43)、[HealthRegimen × Task/Recurrence #44](https://github.com/huangshirui/ALOHA/issues/44)。两者在独立会话设计，不阻塞当前 Health 数据 MVP。Health Live 模式隐藏尚未接入的 Demo Agent，不让用户误以为已经是带权限的 Health AI。
+- **账号唯一真相**：HomeMew Web 使用 LifeSpace Identity `GET /api/v1/me` 的 `displayName` 和 `avatarUrl`。与家庭 Space 内的 Person 昵称、头像分离。ALOHA Health Hub 也通过当前验证的 Access Session + server-only application token 读取同一 User Profile，头像由同源 Health BFF 转发本人资料，不把 Identity Token 暴露浏览器。Profile 失败时仅显示无身份含义的「账号」占位，不推断用户名。
+- **Hub 抽取**：`@aloha/ui/AlohaHub.vue` 与 `@aloha/ui/AlohaHubSettings.vue` 为跨 PWA 公共组件，由 Health 与 Assistant 两个真实代码消费者使用；此前 Health 专属 Hub 组件已移除。Hub 仅负责界面和地址/状态投影，不成为身份服务器、Space/Grant 真相源或通用授权管理器。跨应用账号中心固定打开 `https://account.aisr.online/` 新标签页，即使目标页面尚未上线也不阻断 MVP。
+- **公共设置 path**：不创建独立 Hub 域名。Health 使用 `/health/hub/settings`；Assistant（独立 PWA 激活之后）使用 `/assistant/hub/settings`。两者使用同一设置组件，但提供空间列表的 BFF 各自拥有其权限校验。Health 不再在页面顶部显示空间选择，仅在未选择/连接异常时显示小型状态提示及设置入口。
+- **空间偏好**：已授权 Space 列表由 Core `/api/v1/me/spaces` 得到；用户选中后存储 `aloha.space`（同源共享浏览器偏好），读取时兼容旧的 `aloha.health.space` 并自动迁移。此 ID 不进入令牌或 Grant，不表示授权；每次数据操作依然由 LifeSpace Core 校验。Staging PWA 分别使用 workers.dev origin，localStorage 不自动跨不同 Origin 共享；不能承诺 Staging 所有 PWA 同步选择。未激活的 Assistant PWA 仍仅显示公共设置结构，不假装已有 LifeSpace 空间能力。
+- **发布边界**：以上改动只在 ALOHA Health 集成 Draft 分支的候选 PR 中；不改变 LifeSpace 数据模型，不修改 HomeMew，不部署 Production。上线需要真实头像、名称、Profile拒绝、切换 Space 后的数据隔离、刷新恢复、直接访问 path、Mobile/Desktop，以及单独部署 Assistant PWA 之后的交叉验证。
