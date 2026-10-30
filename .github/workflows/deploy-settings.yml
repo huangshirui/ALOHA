@@ -1,0 +1,25 @@
+# Register a manual workflow on the default branch so GitHub Actions can
+# dispatch the reviewed deployment implementation from a non-default ref.
+# This main-branch file never deploys anything.
+name: Deploy shared ALOHA Settings Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "Staging Preview or one-time no-route bootstrap (exact confirmation)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  default-branch-guard:
+    name: Select the Settings development branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail closed on the registration-only stub
+        run: |
+          echo "::error::This is a registration-only workflow. Select fix/health-live-edit-save-documents in Run workflow to use its reviewed staging deployment jobs."
+          exit 1
