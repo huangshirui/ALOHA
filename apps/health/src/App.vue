@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { editableSnapshot } from './health-editor'
-import { newestFirst, pageOf, pageCount, recentMetricIds } from './health-concern-view'
+import { newestFirst, pageOf, pageCount, recentMetricIds, searchMetrics } from './health-concern-view'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, ClipboardCheck, ClipboardList, Clock3, FileHeart,
@@ -121,10 +121,7 @@ const quickMetricError=ref('')
 const quickMetric=reactive({name:'',valueType:'number',defaultUnit:''})
 const recentMetrics=computed(()=>recentMetricIds(demo.observations,demo.metrics).map(id=>
   demo.metrics.find(metric=>metric.id===id)!).filter(Boolean))
-const metricMatches=computed(()=>{
-  const query=metricSearch.value.trim().toLocaleLowerCase()
-  return demo.metrics.filter(metric=>metric.name.toLocaleLowerCase().includes(query))
-})
+const metricMatches=computed(()=>searchMetrics(demo.metrics,metricSearch.value))
 function chooseObservationMetric(metric:Metric) {
   if(draft.value.metricId!==metric.id){
     draft.value.value=''
