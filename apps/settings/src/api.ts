@@ -14,5 +14,13 @@ export function selectedSpace(spaces:Space[],storage:Pick<Storage,'getItem'>):st
   const stored=storage.getItem('aloha.space')||storage.getItem('aloha.health.space')||''
   return spaces.some(s=>s.id===stored)?stored:''
 }
+// These destinations are build-controlled, never supplied by the query string.
+const destinations={
+  health:import.meta.env.VITE_ALOHA_HEALTH_URL||'/health/',
+  assistant:import.meta.env.VITE_ALOHA_ASSISTANT_URL||'/assistant/',
+  finance:'/finance/',
+  things:'/things/',
+}
 export const safeReturn=(from:string|null)=>
-  from==='assistant'?'/assistant/':from==='finance'?'/finance/':from==='things'?'/things/':'/health/'
+  from==='assistant'?destinations.assistant:from==='finance'?destinations.finance:
+  from==='things'?destinations.things:destinations.health
