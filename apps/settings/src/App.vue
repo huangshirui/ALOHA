@@ -3,8 +3,8 @@ import {computed,onMounted,ref} from 'vue'
 import '@fontsource/exo-2/latin-700.css'
 import {
   ArrowLeft,ArrowUpRight,ChevronRight,CircleAlert,CircleUserRound,
-  HeartPulse,HelpCircle,Layers3,Menu,RefreshCw,Settings2,ShieldCheck,
-  Sparkles,UserRound,X,
+  HelpCircle,Layers3,Menu,RefreshCw,Settings2,ShieldCheck,
+  Sparkles,UserRound,
 } from 'lucide-vue-next'
 import AlohaHubSettings from '@aloha/ui/AlohaHubSettings.vue'
 import {
@@ -65,8 +65,8 @@ onMounted(refresh)
 </script>
 
 <template>
-  <div class="aloha-settings-shell" data-aloha-surface="assistant">
-    <aside class="settings-rail" :class="{'is-open':mobileMenu}" aria-label="ALOHA 公共导航">
+  <div class="aloha-settings-shell" data-aloha-surface="assistant" @keydown.esc="mobileMenu=false">
+    <aside class="settings-rail" :class="{'is-open':mobileMenu}" aria-label="ALOHA 公共导航" :aria-hidden="false">
       <a :href="backUrl" class="settings-brand" aria-label="返回 ALOHA">
         <span class="settings-brand-mark"><Sparkles :size="24" :stroke-width="1.85" aria-hidden="true"/></span>
         <span class="settings-brand-title"><strong>ALOHA</strong><small>SETTINGS</small></span>
