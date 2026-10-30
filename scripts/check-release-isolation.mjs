@@ -12,7 +12,7 @@ assert.deepEqual(readdirSync(root).filter(file => /\.ya?ml$/.test(file)).sort(),
   expected, 'Unexpected or leftover GitHub Actions workflow; review it explicitly')
 
 const checkout = 'd23441a48e516b6c34aea4fa41551a30e30af803'
-const node = '49933ea5288caeca8642d1e84afbd3f7d6820020'
+const node = '249970729cb0ef3589644e2896645e5dc5ba9c38'
 for (const file of expected) {
   const c = read(file)
   assert.match(c, /permissions:\n  contents: read\n/, file + ': read-only contents required')
