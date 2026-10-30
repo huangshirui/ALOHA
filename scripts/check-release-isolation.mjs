@@ -98,7 +98,11 @@ for (const surface of ['finance','things']) {
   const c=read(`deploy-${surface}.yml`)
   assert.match(c, new RegExp(`DEPLOY_ALOHA_${surface.toUpperCase()}_STAGING_PREVIEW`))
   assert.match(c, /environment: preview/)
-  assert.match(c, /wrangler@4\.135\.0 preview --name staging/)
+  assert.match(c, /npx wrangler preview --name staging/)
+  const config = JSON.parse(readFileSync(`apps/${surface}/package.json`, 'utf8'))
+  assert.equal(config.scripts.deploy, undefined,
+    `${surface}: remove implicit unreviewed Production deploy script`)
+  assert.match(config.scripts['deploy:staging'], /wrangler preview --name staging/)
   assert.doesNotMatch(c, /npx wrangler deploy\s*$/m,
     `${surface}: scaffold Preview must not deploy Production`)
 }
