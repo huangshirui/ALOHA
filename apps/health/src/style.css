@@ -660,11 +660,11 @@
 .concern-inline-editor {border-top:1px solid var(--health-border-soft);margin-top:.8rem;padding-top:.7rem}
 .concern-inline-editor .helper-copy {margin:0 0 .5rem;font-size:.73rem}
 .concern-inline-editor .relation-picker {grid-template-columns:minmax(0,1fr) auto;margin:.25rem 0}
-.concern-inline-editor .relation-picker:has(select:first-child:nth-last-of-type(2)) {grid-template-columns:minmax(6rem,.6fr) minmax(9rem,1fr) auto}
+.concern-inline-editor .relation-picker:has(select:nth-of-type(2)) {grid-template-columns:minmax(6rem,.6fr) minmax(9rem,1fr) auto}
 .concern-inline-editor .relation-picker select {background:var(--health-surface);color:var(--health-ink)}
 @media(max-width:720px) {
   .concern-meta {gap:.65rem 1.15rem}
-  .concern-inline-editor .relation-picker,.concern-inline-editor .relation-picker:has(select:first-child:nth-last-of-type(2)) {grid-template-columns:1fr}
+  .concern-inline-editor .relation-picker,.concern-inline-editor .relation-picker:has(select:nth-of-type(2)) {grid-template-columns:1fr}
 }
 .metric-selector-field {display:grid;gap:.45rem;min-width:0}
 .metric-picker-toggle {display:flex;align-items:center;justify-content:space-between;width:100%;min-height:var(--health-control);padding:.65rem .9rem;background:var(--health-surface);border:1px solid var(--health-border);border-radius:var(--health-radius-control);color:var(--health-ink);text-align:left}
