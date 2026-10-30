@@ -56,12 +56,11 @@ cross-app Space-preference persistence must be tested under a shared
 origin separately before Production activation.
 
 Run [`deploy-settings.yml`](../.github/workflows/deploy-settings.yml)
-using the exact staging confirmation, after the named Settings Worker
-Preview has the required Access policy and **preview-only** Identity/Core
-configuration. An optional one-time no-public-route runtime bootstrap
-is separately gated by explicit Production environment approval, just
-as the Health Worker. It does not publish `/settings` or install a
-Production route.
+with the exact Preview confirmation after its Access policy and preview-only
+Identity/Core configuration are ready. The same Settings workflow has a
+**separate, manual Production job**, gated to `main` and the production
+environment. Neither job activates the public `/settings/*` route.
+There is no longer an automated one-time Production runtime bootstrap.
 
 ## Shared versus independent
 
@@ -94,13 +93,13 @@ Settings or Assistant; release each affected consumer deliberately and separatel
 
 | Unit | Staging / Preview | Production |
 | --- | --- | --- |
-| Health | `.github/workflows/deploy-health.yml` | `.github/workflows/deploy-health-production.yml` |
-| Settings (shared utility, not a PWA) | `.github/workflows/deploy-settings.yml` | `.github/workflows/deploy-settings-production.yml` |
+| Health | `.github/workflows/deploy-health.yml` (Preview job) | `.github/workflows/deploy-health.yml` (Production job) |
+| Settings (shared utility, not a PWA) | `.github/workflows/deploy-settings.yml` (Preview job) | `.github/workflows/deploy-settings.yml` (Production job) |
 | Assistant / transitional Gateway | existing Assistant staging path | `.github/workflows/deploy.yml` |
 | Finance, Things | their own Preview workflows | production workflows when ready |
 
 Production Health and Settings releases are individually dispatched from
-`main` with their own confirmation and `production` environment gate.
+`main` using different workflows, each with its own confirmation and `production` environment gate.
 Each workflow checks only its Worker bindings, validates/builds only its
 workspace, and executes `wrangler deploy` in only that app directory.
 Neither workflow deploys the other app, Assistant, Gateway or Agent Control.
@@ -131,15 +130,7 @@ Each PWA keeps **one Cloudflare Worker project** with two isolated deployments:
 - **Security**: A Preview does not inherit production secrets. Never share credentials or use request parameters to switch LifeSpace environments. Protect each Preview URL with Cloudflare Access; authorize user requests using its signed assertion and the staging application's configured Access Audiences.
 - **Infrastructure**: Preview resources are an environment of the same Worker project, not a separately named Worker or a second LifeSpace Application. Staging surfaces are accessed directly, without Worker-to-Worker proxying.
 
-This is the target policy for every independently released ALOHA PWA. The Health BFF Preview is the first implementation; other PWA deployment workflows should adopt the same split before handling staging data. The Assistant's temporary Gateway hosting remains a separate migration constraint.
-
-## Optional one-time runtime bootstrap for an existing assets-only Worker
-
-Some Workers were originally deployed with static assets only. When a Preview later adds an actual runtime entrypoint and bindings, the dashboard may still present the old assets-only settings view. For this migration, the Health deployment workflow includes an **explicitly confirmed one-time Production runtime bootstrap** that publishes the complete Worker bundle but does **not** activate any production hostname or route.
-
-This exception is intentionally limited: the Worker configuration must set `workers_dev: false`, `preview_urls: true`, have a runtime `main` entrypoint and no production `route`, `routes` or `vars`. The bootstrap must pass typechecks/tests and a Wrangler dry-run before deploying. Do not install Preview credentials on Production or treat the bootstrap as a release of the Health product. The existing named `staging` Preview and its isolated storage are separate.
-
-**Dashboard caveat:** This bootstrap may allow the Dashboard to recognize a script-based Worker. It does not guarantee that Cloudflare's current UI can edit secrets scoped to an already-created individual Preview. The Dashboard documents **Previews Base** configuration; Base changes apply to newly created Previews, not existing ones. Always confirm the selected environment and whether the change targets an existing Preview or only the Base template.
+This is the policy for each independently released ALOHA PWA. Health and Settings have separate Preview and Production jobs within their own individual workflows; migration/bootstrap-only jobs have been retired. The Assistant's temporary Gateway hosting remains a separate migration constraint.
 
 ## Native staging Preview URLs
 
@@ -154,7 +145,7 @@ This keeps staging deployment simple, but **staging PWAs have separate browser o
 - **Finance:** `apps/finance`, scope `/finance/`, assets-only Worker `aloha-app-finance`, manual preview deployment available; no production route yet.
 - **Things:** `apps/things`, scope `/things/`, assets-only Worker `aloha-app-things`, manual preview deployment available; no production route yet.
 
-This allows Health, Finance and Things to develop/release preview builds without touching the current Assistant production deployment.
+This allows Health, Finance and Things to develop/release Preview builds without touching the current Assistant Production deployment. The audited GitHub Actions workflow inventory and public-log policy are in [Actions security](./actions-security.md).
 
 ## Invariants
 
