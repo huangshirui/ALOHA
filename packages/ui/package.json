@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./styles.css": "./styles.css",
-    "./AlohaHub.vue": "./AlohaHub.vue"
+    "./AlohaHub.vue": "./AlohaHub.vue",
+    "./AlohaHubSettings.vue": "./AlohaHubSettings.vue"
   },
   "dependencies": {
     "@aloha/design-tokens": "*",
