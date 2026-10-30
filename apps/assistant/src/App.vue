@@ -1,15 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import AlohaHub from '@aloha/ui/AlohaHub.vue'
-import AlohaHubSettings from '@aloha/ui/AlohaHubSettings.vue'
 
 import { InteractionRequestError, runInteraction } from './lib/interaction'
 
 type SurfaceState = 'idle' | 'submitting' | 'working' | 'completed' | 'failed'
 
-const hubSettingsPath='/assistant/hub/settings'
-const hubSettingsMode=ref(window.location.pathname===hubSettingsPath)
-window.addEventListener('popstate',()=>{hubSettingsMode.value=window.location.pathname===hubSettingsPath})
 const draft = ref('')
 const latestInput = ref('')
 const output = ref('')
@@ -127,15 +123,14 @@ const newContext = () => {
         {id:'health',name:'Health',href:undefined},
         {id:'finance',name:'Finance'},
         {id:'things',name:'Things'},
-      ]" account-url="https://account.aisr.online/" settings-url="/assistant/hub/settings"/>
+      ]" account-url="https://account.aisr.online/" settings-url="/settings/?from=assistant"/>
       <strong>ALOHA</strong>
       <button class="icon-button" type="button" aria-label="新上下文" @click="newContext">
         ＋
       </button>
     </header>
 
-    <AlohaHubSettings v-if="hubSettingsMode" account-url="https://account.aisr.online/" selected-space-id="" :spaces="[]" back-url="/assistant/" space-message="当前 Assistant 尚未连接空间设置，可在 Health 中选择默认空间。" />
-    <section v-else class="stage" aria-live="polite">
+    <section class="stage" aria-live="polite">
       <div class="work-surface">
         <p class="status">{{ statusLabel }}</p>
 
@@ -153,7 +148,7 @@ const newContext = () => {
       </div>
     </section>
 
-    <form v-if="!hubSettingsMode" class="composer" @submit.prevent="submit">
+    <form class="composer" @submit.prevent="submit">
       <input
         v-model="draft"
         aria-label="输入消息"
