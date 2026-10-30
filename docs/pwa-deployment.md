@@ -107,9 +107,9 @@ Neither workflow deploys the other app, Assistant, Gateway or Agent Control.
 Production route activation and Access are separate release steps.
 
 The transitional `deploy.yml` retains its historic automatic
-`push main` deployment **only for Assistant/Gateway/Agent Control and
-Assistant-owned contracts/runtime packages**. Changes confined to
-`apps/health`, `apps/settings`, `packages/ui`, design tokens or common
+`push main` deployment **only for changes within `apps/assistant`, `workers/gateway` or
+`workers/agent-control`**. Changes confined to
+`apps/health`, `apps/settings`, `packages/ui`, design tokens, other shared packages or common
 documentation **must not** trigger it. For shared-component changes,
 perform normal CI then explicitly release only the consuming apps that
 should receive the new version; do not broadcast deployments to all consumers.
