@@ -9,7 +9,7 @@ const expected = [
   'deploy-settings.yml', 'deploy-things.yml',
 ]
 assert.deepEqual(readdirSync(root).filter(file => /\.ya?ml$/.test(file)).sort(),
-  expected, 'Unexpected or leftover GitHub Actions workflow; review it explicitly')
+  [...expected].sort(), 'Unexpected or leftover GitHub Actions workflow; review it explicitly')
 
 const checkout = 'd23441a48e516b6c34aea4fa41551a30e30af803'
 const node = '249970729cb0ef3589644e2896645e5dc5ba9c38'
