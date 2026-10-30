@@ -33,6 +33,13 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error('Health API 响应格式无效')
   return (payload as {data:T}).data
 }
+/** LifeSpace Identity User Profile is the common account identity used by
+ * ALOHA and HomeMew; a family's Person nickname/avatar is not a User Profile.
+ * The BFF returns an authenticated same-origin avatar URL (never tokens).
+ */
+export interface AlohaUserProfile {displayName:string;avatarUrl:string|null}
+export const getAlohaUserProfile=()=>api<AlohaUserProfile>('/profile')
+
 // Personal Space selection is an explicit one-time product decision, NOT a trust claim.
 // Core still verifies every requested Space against the authenticated LifeSpace user.
 export const listAuthorizedSpaces = () =>
