@@ -849,6 +849,7 @@ async function sendAgent() {
   agentInput.value?.focus()
 }
 async function openAgent() {
+  if(liveMode)return // AI is tracked separately; do not expose demo as real Health
   agentSession.show()
   await nextTick()
   agentInput.value?.focus()
@@ -912,7 +913,7 @@ function detailName(kind: HealthKind,record:any) {
           :account-url="accountCenterUrl" @choose-space="chooseLiveSpace" @retry="initializeLive"/>
         <section v-else-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
-            :agent-open="agentOpen"
+            :agent-open="agentOpen" :agent-enabled="!liveMode"
             
             @ask="openAgent">
             <template #actions>
@@ -959,7 +960,7 @@ function detailName(kind: HealthKind,record:any) {
           <template v-if="selected && current">
             <HealthPageHeader :title="detailName(selected.kind,current)" :context="labelForKind(selected.kind)"
               :subtitle="selected.kind==='concern' ? (current.summary || '持续关注的健康问题') : undefined"
-              can-back :agent-open="agentOpen"
+              can-back :agent-open="agentOpen" :agent-enabled="!liveMode"
             
             @ask="openAgent" @back="back">
               <template #actions>
@@ -1199,7 +1200,7 @@ function detailName(kind: HealthKind,record:any) {
 
           <template v-else>
             <HealthPageHeader title="身体健康" subtitle="健康问题、指标、事件与资料"
-              :agent-open="agentOpen"
+              :agent-open="agentOpen" :agent-enabled="!liveMode"
               
               @ask="openAgent">
               <template #actions>
@@ -1267,7 +1268,7 @@ function detailName(kind: HealthKind,record:any) {
         <section v-else-if="activeTab==='food'||activeTab==='movement'" class="future-page">
           <HealthPageHeader :title="activeTab==='food'?'饮食管理':'运动管理'"
               subtitle="逐步连接日常习惯与身体变化"
-              :agent-open="agentOpen"
+              :agent-open="agentOpen" :agent-enabled="!liveMode"
             
             @ask="openAgent"/>
           <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('focus')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
@@ -1278,7 +1279,7 @@ function detailName(kind: HealthKind,record:any) {
     </div>
 
     <!-- Persistent side workspace: no backdrop, no modal focus trap, no nav reset. -->
-    <aside v-if="agentOpen" id="health-agent-panel" class="agent-dock" aria-label="Health 助手对话">
+    <aside v-if="!liveMode&&agentOpen" id="health-agent-panel" class="agent-dock" aria-label="Health 助手对话">
       <header class="agent-dock-header">
         <div class="agent-dock-title"><span class="agent-dock-logo"><Sparkles :size="21"/></span><div><span class="agent-dock-eyebrow">ALOHA Health</span><h2>问问 Health</h2></div></div>
         <button class="icon-button" type="button" aria-label="收起对话" title="收起对话" @click="closeAgent"><X :size="20"/></button>
