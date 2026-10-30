@@ -3,6 +3,8 @@ import { computed, ref } from 'vue'
 import AlohaHub from '@aloha/ui/AlohaHub.vue'
 
 import { InteractionRequestError, runInteraction } from './lib/interaction'
+const settingsRoot=import.meta.env.VITE_ALOHA_SETTINGS_URL||'/settings/'
+const settingsUrl=settingsRoot.replace(/\\/?$/,'/')+'?from=assistant'
 
 type SurfaceState = 'idle' | 'submitting' | 'working' | 'completed' | 'failed'
 
@@ -123,7 +125,7 @@ const newContext = () => {
         {id:'health',name:'Health',href:undefined},
         {id:'finance',name:'Finance'},
         {id:'things',name:'Things'},
-      ]" account-url="https://account.aisr.online/" settings-url="/settings/?from=assistant"/>
+      ]" account-url="https://account.aisr.online/" :settings-url="settingsUrl"/>
       <strong>ALOHA</strong>
       <button class="icon-button" type="button" aria-label="新上下文" @click="newContext">
         ＋
