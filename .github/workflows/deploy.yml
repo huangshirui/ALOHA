@@ -9,9 +9,6 @@ on:
       - 'apps/assistant/**'
       - 'workers/gateway/**'
       - 'workers/agent-control/**'
-      - 'packages/contracts/**'
-      - 'packages/capabilities/**'
-      - 'packages/runtime-n8n/**'
   # Explicit manual Assistant release when a shared dependency was updated.
   workflow_dispatch:
 
