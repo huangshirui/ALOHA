@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import AlohaHub from '@aloha/ui/AlohaHub.vue'
 
 import { InteractionRequestError, runInteraction } from './lib/interaction'
 
@@ -117,7 +118,12 @@ const newContext = () => {
 <template>
   <main class="shell" data-aloha-surface="assistant">
     <header class="header">
-      <button class="icon-button" type="button" aria-label="更多">☰</button>
+      <AlohaHub current-app="assistant" :apps="[
+        {id:'assistant',name:'Assistant'},
+        {id:'health',name:'Health',href:undefined},
+        {id:'finance',name:'Finance'},
+        {id:'things',name:'Things'},
+      ]" account-url="https://account.aisr.online/" settings-url="/assistant/hub/settings"/>
       <strong>ALOHA</strong>
       <button class="icon-button" type="button" aria-label="新上下文" @click="newContext">
         ＋
