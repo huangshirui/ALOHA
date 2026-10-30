@@ -16,7 +16,7 @@ import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   type FileUploadProgress,
   type HealthRecord } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
-import { concernTargetKinds,concernTargetHasRelation,concernTargetModels,
+import { concernTargetHasRelation,concernTargetModels,
   type ConcernRelation,type ConcernTargetKind } from './health-concern-relations'
 import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
@@ -316,6 +316,10 @@ const relationChoices=[
 ]
 const relationCandidates=computed(()=>getList(relationKind.value).filter(r=>
   !concernTargetHasRelation(concernLinks.value,relationKind.value,r.id)))
+function relationTargetKind(edge:ConcernRelation):ConcernTargetKind {
+  return (Object.keys(concernTargetModels) as ConcernTargetKind[])
+    .find(kind=>concernTargetModels[kind]===edge.target.modelKey)!
+}
 function relationRecordName(kind:ConcernTargetKind,id:string){
   const record=getList(kind).find(r=>r.id===id)
   return record?.name||record?.title||record?.summary||
@@ -393,6 +397,7 @@ function show(kind: HealthKind,id: string) {
   if(activeTab.value==='body' && bodyTab.value==='timeline' && !selected.value)
     timelineScrollPosition.value=window.scrollY
   routeStack.value.push(location())
+  ++relationSequence;concernLinks.value=[];relationError.value=''
   activeTab.value='body'; selected.value=saveDestination(kind,id);sheet.value='';search.value=''
   if(liveMode&&selectedSpaceId.value)void loadLiveRecords('detail').then(()=>{
     if(kind==='concern'&&selected.value?.kind==='concern'&&selected.value.id===id&&liveStatus.value==='ready')
@@ -405,6 +410,7 @@ function back() {
   if(previous) {
     activeTab.value=previous.tab
     bodyTab.value=previous.section
+    ++relationSequence;concernLinks.value=[];relationError.value=''
     selected.value=previous.record
     if(liveMode&&selectedSpaceId.value)void loadLiveRecords(previous.record?'detail':previous.section).then(()=>{
       if(previous.record?.kind==='concern'&&liveStatus.value==='ready')
@@ -838,6 +844,7 @@ function detailName(kind: HealthKind,record:any) {
                   </dd></div>
                   <div><dt>开始关注</dt><dd>{{ displayDate(current.onsetDate) }}</dd></div><div v-if="current.resolvedDate"><dt>结束日期</dt><dd>{{ displayDate(current.resolvedDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 <div class="mini-label">相关指标</div>
+                <button v-for="m in concernRelated.metrics" :key="m.id" class="row-link" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="18"/></span><span class="row-main"><b>{{ m.name }}</b><small>查看趋势与历史观测</small></span><ChevronRight :size="16"/></button>
                 <button v-for="o in concernRelated.observations.slice().sort((a,b)=>b.observedDate.localeCompare(a.observedDate)).slice(0,3)" :key="o.id" class="row-link" type="button" @click="show('observation',o.id)">
                   <span class="list-icon"><Activity :size="18"/></span>
                   <span class="row-main">
@@ -870,6 +877,29 @@ function detailName(kind: HealthKind,record:any) {
                 <button v-for="a in concernRelated.assessments" :key="a.id" class="row-link" type="button" @click="show('assessment',a.id)"><span class="list-icon"><BadgeCheck :size="18"/></span><span class="row-main"><b>{{ a.title }}</b><small>评估 · {{ displayDate(a.assessedDate) }}</small></span><ChevronRight :size="17"/></button>
                 <p v-if="!concernRelated.assessments.length&&!concernRelated.documents.length" class="empty-inline">还没有报告或评估记录。</p>
                 <div class="action-row"><button class="soft-button" type="button" @click="openImport(current.id)"><Plus :size="16"/> 添加资料</button><button class="soft-button" type="button" @click="openEditor('assessment','',current.id)"><Plus :size="16"/> 新建评估</button></div>
+              </section>
+              <section v-if="liveMode" class="ui-card concern-relations">
+                <div class="card-heading"><h2>关联现有记录</h2></div>
+                <p class="helper-copy">将已有指标、测量、资料或方案关联到这项关注；解除关联不会删除原记录。</p>
+                <p v-if="relationLoading" class="helper-copy" role="status">正在读取关联…</p>
+                <p v-if="relationError" class="form-error" role="alert">{{ relationError }}</p>
+                <div v-if="!relationLoading" class="relation-picker">
+                  <label class="sr-only" for="health-relation-kind">记录类型</label>
+                  <select id="health-relation-kind" v-model="relationKind" :disabled="relationBusy" @change="relationTargetId=''">
+                    <option v-for="choice in relationChoices" :key="choice.kind" :value="choice.kind">{{ choice.label }}</option>
+                  </select>
+                  <label class="sr-only" for="health-relation-record">选择现有记录</label>
+                  <select id="health-relation-record" v-model="relationTargetId" :disabled="relationBusy">
+                    <option value="">选择尚未关联的记录</option>
+                    <option v-for="record in relationCandidates" :key="record.id" :value="record.id">{{ relationRecordName(relationKind,record.id) }}</option>
+                  </select>
+                  <button type="button" class="soft-button" :disabled="relationBusy||!relationTargetId" @click="addConcernLink"><Link2 :size="16"/> {{ relationBusy?'处理中…':'建立关联' }}</button>
+                </div>
+                <div v-for="edge in concernLinks" :key="edge.id" class="relation-row">
+                  <span><b>{{ relationChoices.find(c=>c.kind===relationTargetKind(edge))?.label }}</b> · {{ relationRecordName(relationTargetKind(edge),edge.target.recordId) }}</span>
+                  <button type="button" class="quiet-button" :disabled="relationBusy" :aria-label="'解除关联：'+relationRecordName(relationTargetKind(edge),edge.target.recordId)" @click="removeConcernLink(edge)">解除关联</button>
+                </div>
+                <p v-if="!relationLoading&&!concernLinks.length" class="empty-inline">暂无关联记录。</p>
               </section>
             </div>
 
