@@ -12,9 +12,12 @@ import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   listAuthorizedSpaces, patchConcernPresentation,
   getHealthSnapshot, updateHealthRecord, uploadHealthDocument, downloadHealthDocument,
+  listConcernRelations,linkConcernRecord,unlinkConcernRecord,
   type FileUploadProgress,
   type HealthRecord } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
+import { concernTargetKinds,concernTargetHasRelation,concernTargetModels,
+  type ConcernRelation,type ConcernTargetKind } from './health-concern-relations'
 import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
@@ -151,9 +154,21 @@ const detailKinds:Record<HealthKind,HealthKind[]>={
   assessment:['assessment','observation','document'],
 }
 const loadedKinds=new Set<HealthKind>()
+const concernLinks=ref<ConcernRelation[]>([])
+const relationLoading=ref(false)
+const relationBusy=ref(false)
+const relationError=ref('')
+const relationKind=ref<ConcernTargetKind>('metric')
+const relationTargetId=ref('')
+let relationSequence=0
 let liveLoadSequence=0
 function clearLiveRecords() {
   ++liveLoadSequence
+  ++relationSequence
+  concernLinks.value=[]
+  relationLoading.value=false
+  relationError.value=''
+  relationTargetId.value=''
   loadedKinds.clear()
   for(const kind of healthKinds) getList(kind).splice(0)
   // Never retain another Space/Person's coordinates or attention when switching.
@@ -279,15 +294,75 @@ const filteredRegimens = computed(()=>demo.regimens.filter(r=>r.name.includes(se
 const filteredTimeline = computed(()=>timeline.value.filter(e=>e.title.includes(search.value) || e.meta.includes(search.value)))
 const contextName = computed(()=>current.value ? (current.value.name || current.value.title || current.value.summary || nameOfMetric(current.value.metricId)) : activeTab.value === 'body' ? '身体' : navItems.find(n=>n.id===activeTab.value)?.title ?? '首页')
 const concernRelated = computed(() => {
-  const id = selectedConcern.value
+  const id=selectedConcern.value
+  const matches=(kind:ConcernTargetKind,record:{id:string;concernIds?:string[]})=>
+    liveMode ? concernTargetHasRelation(concernLinks.value,kind,record.id) : related(record as any,id)
   return {
-    observations: demo.observations.filter(o=>related(o,id)),
-    events: demo.events.filter(e=>related(e,id)),
-    documents: demo.documents.filter(d=>related(d,id)),
-    assessments: demo.assessments.filter(a=>related(a,id)),
-    regimens: demo.regimens.filter(r=>related(r,id)),
+    metrics:demo.metrics.filter(m=>liveMode?matches('metric',m):false),
+    observations:demo.observations.filter(o=>matches('observation',o)),
+    events:demo.events.filter(e=>matches('event',e)),
+    documents:demo.documents.filter(d=>matches('document',d)),
+    assessments:demo.assessments.filter(a=>matches('assessment',a)),
+    regimens:demo.regimens.filter(r=>matches('regimen',r)),
   }
 })
+const relationChoices=[
+  {kind:'metric' as const,label:'健康指标'},
+  {kind:'observation' as const,label:'测量记录'},
+  {kind:'event' as const,label:'健康事件'},
+  {kind:'document' as const,label:'健康资料'},
+  {kind:'assessment' as const,label:'健康评估'},
+  {kind:'regimen' as const,label:'健康方案'},
+]
+const relationCandidates=computed(()=>getList(relationKind.value).filter(r=>
+  !concernTargetHasRelation(concernLinks.value,relationKind.value,r.id)))
+function relationRecordName(kind:ConcernTargetKind,id:string){
+  const record=getList(kind).find(r=>r.id===id)
+  return record?.name||record?.title||record?.summary||
+    (kind==='observation'&&record?observationTitle(record):'记录已不可见')
+}
+async function refreshConcernLinks(concernId:string){
+  if(!liveMode||!selectedSpaceId.value)return
+  const spaceId=selectedSpaceId.value,version=++relationSequence
+  relationLoading.value=true;relationError.value='';concernLinks.value=[]
+  try{
+    const response=await listConcernRelations(spaceId,concernId)
+    if(version!==relationSequence||spaceId!==selectedSpaceId.value||
+       selected.value?.kind!=='concern'||selected.value.id!==concernId)return
+    concernLinks.value=response.items
+  }catch(e){
+    if(version===relationSequence)relationError.value=e instanceof Error?e.message:'关联读取失败'
+  }finally{if(version===relationSequence)relationLoading.value=false}
+}
+async function addConcernLink(){
+  const id=selected.value?.kind==='concern'?selected.value.id:null
+  const spaceId=selectedSpaceId.value,targetId=relationTargetId.value,kind=relationKind.value
+  if(!id||!spaceId||!targetId||relationBusy.value)return
+  relationBusy.value=true;relationError.value=''
+  try{
+    const saved=await linkConcernRecord(spaceId,id,kind,targetId)
+    if(spaceId===selectedSpaceId.value&&selected.value?.kind==='concern'&&selected.value.id===id){
+      if(!concernLinks.value.some(r=>r.id===saved.id))concernLinks.value=[...concernLinks.value,saved]
+      relationTargetId.value=''
+      notice.value='已关联现有记录。'
+    }
+  }catch(e){relationError.value=e instanceof Error?e.message:'关联失败'}
+  finally{relationBusy.value=false}
+}
+async function removeConcernLink(edge:ConcernRelation){
+  const id=selected.value?.kind==='concern'?selected.value.id:null
+  const spaceId=selectedSpaceId.value
+  if(!id||!spaceId||relationBusy.value)return
+  relationBusy.value=true;relationError.value=''
+  try{
+    await unlinkConcernRecord(spaceId,id,edge.id)
+    if(spaceId===selectedSpaceId.value&&selected.value?.kind==='concern'&&selected.value.id===id){
+      concernLinks.value=concernLinks.value.filter(r=>r.id!==edge.id)
+      notice.value='关联已解除，原记录已保留。'
+    }
+  }catch(e){relationError.value=e instanceof Error?e.message:'解除关联失败'}
+  finally{relationBusy.value=false}
+}
 const valuePreview = computed(() => {
   if(!current.value || selected.value?.kind !== 'observation') return ''
   return observationValue(current.value,demo.metrics.find(m=>m.id===current.value.metricId))
