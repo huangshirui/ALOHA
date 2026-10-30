@@ -85,7 +85,7 @@ jobs:
       - name: Fail closed if this could expose Production
         run: |
           node - <<'NODE'
-          const c=require('./apps/settings/wrangler.jsonc')
+          const fs=require('node:fs');const c=JSON.parse(fs.readFileSync('apps/settings/wrangler.jsonc','utf8'))
           if(c.name!=='aloha-app-settings'||c.workers_dev!==false||!c.preview_urls||c.route||c.routes||c.vars||c.main!=='./src/worker.ts')process.exit(1)
           NODE
       - run: npm run typecheck -w @aloha/settings && npm run test -w @aloha/settings && npm run build -w @aloha/settings
