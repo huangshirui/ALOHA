@@ -22,6 +22,8 @@ import { concernTargetHasRelation,concernTargetModels,
 import AlohaHub from './components/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
+import ConcernPager from './components/ConcernPager.vue'
+import ConcernLinkEditor from './components/ConcernLinkEditor.vue'
 import BodyOverview from './components/BodyOverview.vue'
 import HealthTimeline from './components/HealthTimeline.vue'
 import MetricTrend from './components/MetricTrend.vue'
@@ -946,77 +948,159 @@ function detailName(kind: HealthKind,record:any) {
                   :aria-label="liveMode?'删除健康记录':'删除演示记录'" @click="removeCurrent"><Trash2 :size="18"/></button>
               </template>
             </HealthPageHeader>
-            <div v-if="selected.kind==='concern'" class="detail-columns">
-              <section class="ui-card detail-primary">
+            <div v-if="selected.kind==='concern'" class="detail-columns concern-detail">
+              <!-- Four product-purpose cards. Relation management is hidden by default,
+                   and always scoped to the card's own record categories. -->
+              <section class="ui-card detail-primary concern-status-card">
                 <div class="card-heading"><h2>现在怎么样？</h2><span class="status-chip">{{ current.status==='active'?'持续关注':'已结束' }}</span></div>
-                <p class="body-copy">{{ current.summary || '你可以添加相关指标，逐步建立健康记录。' }}</p>
-                <div class="detail-stat"><b>{{ concernRelated.observations.length }}</b><span>条相关观测</span><span class="stat-separator"></span><b>{{ concernRelated.documents.length }}</b><span>份相关资料</span></div>
-                <dl class="detail-fields">
-                  <div class="concern-attention-row"><dt>关注度</dt><dd class="concern-attention-value">
-                    <span class="concern-attention-dot" :style="{'--body-dot-color':attentionColor(attentionByConcern[current.id]??'unset')}" aria-hidden="true"/>
-                    <select :value="attentionByConcern[current.id]??'unset'" class="concern-attention-select"
-                      :aria-label="'设置'+current.name+'的关注度'" @change="onAttentionChange(current.id,$event)">
-                      <option v-for="option in concernAttentionOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
-                    </select>
-                  </dd></div>
-                  <div><dt>开始关注</dt><dd>{{ displayDate(current.onsetDate) }}</dd></div><div v-if="current.resolvedDate"><dt>结束日期</dt><dd>{{ displayDate(current.resolvedDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
-                <div class="mini-label">相关指标</div>
-                <button v-for="m in concernRelated.metrics" :key="m.id" class="row-link" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="18"/></span><span class="row-main"><b>{{ m.name }}</b><small>查看趋势与历史观测</small></span><ChevronRight :size="16"/></button>
-                <button v-for="o in concernRelated.observations.slice().sort((a,b)=>b.observedDate.localeCompare(a.observedDate)).slice(0,3)" :key="o.id" class="row-link" type="button" @click="show('observation',o.id)">
-                  <span class="list-icon"><Activity :size="18"/></span>
-                  <span class="row-main">
-                    <span class="concern-observation-title">
-                      <b>{{ nameOfMetric(o.metricId) }} ·</b>
-                      <span class="metric-reading-inline">
-                        <b>{{ observationValue(o,demo.metrics.find(m=>m.id===o.metricId)) }}</b>
-                        <ReferenceIndicator :comparison="referenceFor(o,demo.metrics.find(m=>m.id===o.metricId))?.comparison"/>
-                      </span>
+                <p v-if="current.summary" class="body-copy concern-summary">{{ current.summary }}</p>
+                <div class="concern-meta">
+                  <label class="concern-attention-compact">
+                    <span class="mini-label">关注度</span>
+                    <span class="concern-attention-value">
+                      <span class="concern-attention-dot" :style="{'--body-dot-color':attentionColor(attentionByConcern[current.id]??'unset')}" aria-hidden="true"/>
+                      <select :value="attentionByConcern[current.id]??'unset'" class="concern-attention-select"
+                        :aria-label="'设置'+current.name+'的关注度'" @change="onAttentionChange(current.id,$event)">
+                        <option v-for="option in concernAttentionOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                      </select>
                     </span>
-                    <small>{{ displayDate(o.observedDate) }}</small>
-                  </span>
-                  <ChevronRight :size="16"/>
-                </button>
-                <p v-if="concernRelated.observations.length===0&&!relationLoading" class="empty-inline">还没有关联的测量记录。</p>
-                <button class="soft-button" type="button" @click="openEditor('observation','',current.id)"><Plus :size="16"/> 添加测量</button>
+                  </label>
+                  <span class="concern-meta-date"><span class="mini-label">开始关注</span><b>{{ displayDate(current.onsetDate) }}</b></span>
+                  <span v-if="current.resolvedDate" class="concern-meta-date"><span class="mini-label">结束日期</span><b>{{ displayDate(current.resolvedDate) }}</b></span>
+                </div>
+                <p v-if="current.notes" class="helper-copy concern-note">{{ current.notes }}</p>
+
+                <div class="concern-section-heading">
+                  <h3>追踪指标 <span>{{ concernRelated.metrics.length }}</span></h3>
+                  <span class="quiet-caption">看趋势</span>
+                </div>
+                <div v-if="pagedConcern.metrics.length" class="concern-metric-list">
+                  <div v-for="m in pagedConcern.metrics" :key="m.id" class="concern-record-row">
+                    <button type="button" class="concern-metric-link" @click="show('metric',m.id)">
+                      <Activity :size="17"/><span>{{ m.name }}</span><ChevronRight :size="15"/>
+                    </button>
+                    <button v-if="activeRelationCard==='status'&&concernEdge('metric',m.id)" type="button"
+                      class="concern-unlink" :disabled="relationBusy" :aria-label="'解除指标关联：'+m.name"
+                      title="解除指标关联" @click="removeConcernLink(concernEdge('metric',m.id)!)"><Link2 :size="15"/></button>
+                  </div>
+                </div>
+                <p v-else-if="!relationLoading" class="empty-inline">尚未追踪指标，可从下方关联。</p>
+                <ConcernPager :page="concernPage.metrics" :total="concernLists.metrics.length" @change="concernPage.metrics=$event"/>
+
+                <div class="concern-section-heading concern-section-separated">
+                  <h3>近期测量 <span>{{ concernRelated.observations.length }}</span></h3>
+                  <span class="quiet-caption">最新在前</span>
+                </div>
+                <div v-for="o in pagedConcern.observations" :key="o.id" class="concern-record-row">
+                  <button type="button" class="row-link" @click="show('observation',o.id)">
+                    <span class="list-icon"><Activity :size="18"/></span>
+                    <span class="row-main">
+                      <span class="concern-observation-title">
+                        <b>{{ nameOfMetric(o.metricId) }} ·</b>
+                        <span class="metric-reading-inline">
+                          <b>{{ observationValue(o,demo.metrics.find(m=>m.id===o.metricId)) }}</b>
+                          <ReferenceIndicator :comparison="referenceFor(o,demo.metrics.find(m=>m.id===o.metricId))?.comparison"/>
+                        </span>
+                      </span>
+                      <small>{{ displayDate(o.observedDate) }}</small>
+                    </span><ChevronRight :size="16"/>
+                  </button>
+                  <button v-if="activeRelationCard==='status'&&concernEdge('observation',o.id)" type="button"
+                    class="concern-unlink" :disabled="relationBusy" :aria-label="'解除测量关联：'+nameOfMetric(o.metricId)"
+                    title="解除测量关联" @click="removeConcernLink(concernEdge('observation',o.id)!)"><Link2 :size="15"/></button>
+                </div>
+                <p v-if="!concernRelated.observations.length&&!relationLoading" class="empty-inline">尚无关联测量记录。</p>
+                <ConcernPager :page="concernPage.observations" :total="concernLists.observations.length" @change="concernPage.observations=$event"/>
+                <div class="concern-card-actions">
+                  <button class="soft-button" type="button" @click="openEditor('observation','',current.id)"><Plus :size="16"/> 添加测量</button>
+                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :aria-expanded="activeRelationCard==='status'"
+                    @click="toggleRelationCard('status')"><Link2 :size="15"/>{{ activeRelationCard==='status'?'完成管理':'管理关联' }}</button>
+                </div>
+                <ConcernLinkEditor v-if="liveMode&&activeRelationCard==='status'"
+                  :kinds="relationChoices.filter(c=>relationKindForCard.status.includes(c.kind))"
+                  :kind="relationKind" :target-id="relationTargetId"
+                  :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
+                  :busy="relationBusy" :error="relationError"
+                  @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
-              <section class="ui-card"><div class="card-heading"><h2>正在做什么？</h2></div>
-                <button v-for="r in concernRelated.regimens" :key="r.id" class="row-link" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="18"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenStatuses,r.status) }}</small></span><ChevronRight :size="17"/></button>
+
+              <section class="ui-card concern-business-card">
+                <div class="card-heading"><h2>正在做什么？</h2><span class="quiet-caption">{{ concernRelated.regimens.length }} 项方案</span></div>
+                <div v-for="r in pagedConcern.regimens" :key="r.id" class="concern-record-row">
+                  <button type="button" class="row-link" @click="show('regimen',r.id)">
+                    <span class="list-icon"><ListChecks :size="18"/></span>
+                    <span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenStatuses,r.status) }} · {{ displayDate(r.startDate) }}</small></span>
+                    <ChevronRight :size="17"/>
+                  </button>
+                  <button v-if="activeRelationCard==='regimens'&&concernEdge('regimen',r.id)" class="concern-unlink" type="button"
+                    :aria-label="'解除方案关联：'+r.name" :disabled="relationBusy" @click="removeConcernLink(concernEdge('regimen',r.id)!)"><Link2 :size="15"/></button>
+                </div>
                 <p v-if="!concernRelated.regimens.length&&!relationLoading" class="empty-inline">还没有关联的健康方案。</p>
-                <button class="soft-button" type="button" @click="openEditor('regimen','',current.id)"><Plus :size="16"/> 添加方案</button>
+                <ConcernPager :page="concernPage.regimens" :total="concernLists.regimens.length" @change="concernPage.regimens=$event"/>
+                <div class="concern-card-actions">
+                  <button class="soft-button" type="button" @click="openEditor('regimen','',current.id)"><Plus :size="16"/> 添加方案</button>
+                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :aria-expanded="activeRelationCard==='regimens'"
+                    @click="toggleRelationCard('regimens')"><Link2 :size="15"/>{{ activeRelationCard==='regimens'?'完成管理':'管理关联' }}</button>
+                </div>
+                <ConcernLinkEditor v-if="liveMode&&activeRelationCard==='regimens'"
+                  :kinds="relationChoices.filter(c=>relationKindForCard.regimens.includes(c.kind))"
+                  :kind="relationKind" :target-id="relationTargetId"
+                  :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
+                  :busy="relationBusy" :error="relationError"
+                  @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
-              <section class="ui-card"><div class="card-heading"><h2>最近发生了什么？</h2></div>
-                <button v-for="e in concernRelated.events" :key="e.id" class="row-link" type="button" @click="show('event',e.id)"><span class="list-icon"><CalendarDays :size="18"/></span><span class="row-main"><b>{{ e.summary }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/></button>
+
+              <section class="ui-card concern-business-card">
+                <div class="card-heading"><h2>最近发生了什么？</h2><span class="quiet-caption">{{ concernRelated.events.length }} 条事件</span></div>
+                <div v-for="e in pagedConcern.events" :key="e.id" class="concern-record-row">
+                  <button type="button" class="row-link" @click="show('event',e.id)">
+                    <span class="list-icon"><CalendarDays :size="18"/></span>
+                    <span class="row-main"><b>{{ e.summary }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/>
+                  </button>
+                  <button v-if="activeRelationCard==='events'&&concernEdge('event',e.id)" class="concern-unlink" type="button"
+                    :aria-label="'解除事件关联：'+e.summary" :disabled="relationBusy" @click="removeConcernLink(concernEdge('event',e.id)!)"><Link2 :size="15"/></button>
+                </div>
                 <p v-if="!concernRelated.events.length&&!relationLoading" class="empty-inline">还没有关联的健康事件。</p>
-                <button class="soft-button" type="button" @click="openEditor('event','',current.id)"><Plus :size="16"/> 记录事件</button>
-              </section>
-              <section class="ui-card"><div class="card-heading"><h2>有哪些依据？</h2></div>
-                <button v-for="d in concernRelated.documents" :key="d.id" class="row-link" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="18"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }}</small></span><ChevronRight :size="17"/></button>
-                <button v-for="a in concernRelated.assessments" :key="a.id" class="row-link" type="button" @click="show('assessment',a.id)"><span class="list-icon"><BadgeCheck :size="18"/></span><span class="row-main"><b>{{ a.title }}</b><small>评估 · {{ displayDate(a.assessedDate) }}</small></span><ChevronRight :size="17"/></button>
-                <p v-if="!concernRelated.assessments.length&&!concernRelated.documents.length&&!relationLoading" class="empty-inline">还没有报告或评估记录。</p>
-                <div class="action-row"><button class="soft-button" type="button" @click="openImport(current.id)"><Plus :size="16"/> 添加资料</button><button class="soft-button" type="button" @click="openEditor('assessment','',current.id)"><Plus :size="16"/> 新建评估</button></div>
-              </section>
-              <section v-if="liveMode" class="ui-card concern-relations">
-                <div class="card-heading"><h2>关联现有记录</h2></div>
-                <p class="helper-copy">将已有指标、测量、资料或方案关联到这项关注；解除关联不会删除原记录。</p>
-                <p v-if="relationLoading" class="helper-copy" role="status">正在读取关联…</p>
-                <p v-if="relationError" class="form-error" role="alert">{{ relationError }}</p>
-                <div v-if="!relationLoading" class="relation-picker">
-                  <label class="sr-only" for="health-relation-kind">记录类型</label>
-                  <select id="health-relation-kind" v-model="relationKind" :disabled="relationBusy" @change="relationTargetId=''">
-                    <option v-for="choice in relationChoices" :key="choice.kind" :value="choice.kind">{{ choice.label }}</option>
-                  </select>
-                  <label class="sr-only" for="health-relation-record">选择现有记录</label>
-                  <select id="health-relation-record" v-model="relationTargetId" :disabled="relationBusy">
-                    <option value="">选择尚未关联的记录</option>
-                    <option v-for="record in relationCandidates" :key="record.id" :value="record.id">{{ relationRecordName(relationKind,record.id) }}</option>
-                  </select>
-                  <button type="button" class="soft-button" :disabled="relationBusy||!relationTargetId" @click="addConcernLink"><Link2 :size="16"/> {{ relationBusy?'处理中…':'建立关联' }}</button>
+                <ConcernPager :page="concernPage.events" :total="concernLists.events.length" @change="concernPage.events=$event"/>
+                <div class="concern-card-actions">
+                  <button class="soft-button" type="button" @click="openEditor('event','',current.id)"><Plus :size="16"/> 记录事件</button>
+                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :aria-expanded="activeRelationCard==='events'"
+                    @click="toggleRelationCard('events')"><Link2 :size="15"/>{{ activeRelationCard==='events'?'完成管理':'管理关联' }}</button>
                 </div>
-                <div v-for="edge in concernLinks" :key="edge.id" class="relation-row">
-                  <span><b>{{ relationChoices.find(c=>c.kind===relationTargetKind(edge))?.label }}</b> · {{ relationRecordName(relationTargetKind(edge),edge.target.recordId) }}</span>
-                  <button type="button" class="quiet-button" :disabled="relationBusy" :aria-label="'解除关联：'+relationRecordName(relationTargetKind(edge),edge.target.recordId)" @click="removeConcernLink(edge)">解除关联</button>
+                <ConcernLinkEditor v-if="liveMode&&activeRelationCard==='events'"
+                  :kinds="relationChoices.filter(c=>relationKindForCard.events.includes(c.kind))"
+                  :kind="relationKind" :target-id="relationTargetId"
+                  :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
+                  :busy="relationBusy" :error="relationError"
+                  @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
+              </section>
+
+              <section class="ui-card concern-business-card">
+                <div class="card-heading"><h2>有哪些依据？</h2><span class="quiet-caption">{{ concernLists.evidence.length }} 份资料与评估</span></div>
+                <div v-for="e in pagedConcern.evidence" :key="e.kind+e.id" class="concern-record-row">
+                  <button type="button" class="row-link" @click="show(e.kind,e.id)">
+                    <span class="list-icon"><FileText v-if="e.kind==='document'" :size="18"/><BadgeCheck v-else :size="18"/></span>
+                    <span class="row-main"><b>{{ e.title }}</b><small>{{ e.subtitle }} · {{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/>
+                  </button>
+                  <button v-if="activeRelationCard==='evidence'&&concernEdge(e.kind,e.id)" class="concern-unlink" type="button"
+                    :aria-label="'解除资料关联：'+e.title" :disabled="relationBusy" @click="removeConcernLink(concernEdge(e.kind,e.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!relationLoading&&!concernLinks.length" class="empty-inline">暂无关联记录。</p>
+                <p v-if="!concernLists.evidence.length&&!relationLoading" class="empty-inline">还没有报告或评估记录。</p>
+                <ConcernPager :page="concernPage.evidence" :total="concernLists.evidence.length" @change="concernPage.evidence=$event"/>
+                <div class="concern-card-actions">
+                  <div class="action-row">
+                    <button class="soft-button" type="button" @click="openImport(current.id)"><Plus :size="16"/> 添加资料</button>
+                    <button class="soft-button" type="button" @click="openEditor('assessment','',current.id)"><Plus :size="16"/> 新建评估</button>
+                  </div>
+                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :aria-expanded="activeRelationCard==='evidence'"
+                    @click="toggleRelationCard('evidence')"><Link2 :size="15"/>{{ activeRelationCard==='evidence'?'完成管理':'管理关联' }}</button>
+                </div>
+                <ConcernLinkEditor v-if="liveMode&&activeRelationCard==='evidence'"
+                  :kinds="relationChoices.filter(c=>relationKindForCard.evidence.includes(c.kind))"
+                  :kind="relationKind" :target-id="relationTargetId"
+                  :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
+                  :busy="relationBusy" :error="relationError"
+                  @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
             </div>
 
