@@ -46,6 +46,8 @@ function configuredOrigin(value: string | undefined): string | null {
 type Route = { path: string; modelKey?: string; spaceId?: string; recordId?: string; relationId?: string }
 function routeFor(url: URL, method: string): Route | null {
   const p = url.pathname
+  if(p==='/health/api/v1/profile'&&method==='GET')return {path:'@profile'}
+  if(p==='/health/api/v1/profile/avatar'&&method==='GET')return {path:'@profile-avatar'}
   if (p === '/health/api/v1/spaces' && method === 'GET') return { path: '/api/v1/me/spaces' }
   const upload = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/documents\/upload$/.exec(p)
   if (upload && method === 'POST') return {spaceId:upload[1],path:'@document-upload'}
@@ -520,6 +522,33 @@ export async function handleHealthApi(
   if(session instanceof Response)return session
   const {bearer,userId}=session
   const identityMs=performance.now()-identityStarted
+  if(route.path==='@profile'||route.path==='@profile-avatar'){
+    const upstream=await send(fetchImpl,identity+'/api/v1/me',{
+      method:'GET',headers:{Authorization:'Bearer '+bearer,Accept:'application/json'},
+    })
+    if(!upstream.ok)return withSessionCookie(proxyResponse(upstream),session.cookie)
+    const payload:unknown=await upstream.json().catch(()=>null)
+    if(!object(payload)||!object(payload.data))return json('invalid_profile_response',502)
+    const user=payload.data
+    if(typeof user.id!=='string'||!/^usr_[A-Za-z0-9_-]+$/.test(user.id)||
+       typeof user.displayName!=='string'||!user.displayName.trim()||
+       !(user.avatarUrl===null||typeof user.avatarUrl==='string')||
+       (userId!==null&&userId!==user.id))
+      return json('invalid_profile_response',502)
+    if(route.path==='@profile')return withSessionCookie(Response.json({
+      data:{displayName:user.displayName,avatarUrl:user.avatarUrl?'/health/api/v1/profile/avatar':null},
+    },{headers:{'Cache-Control':'private, no-store'}}),session.cookie)
+    if(!user.avatarUrl)return json('avatar_not_found',404)
+    const image=await send(fetchImpl,identity+'/assets/users/'+encodeURIComponent(user.id)+'/avatar',{
+      method:'GET',headers:{Accept:'image/png,image/jpeg,image/webp'},
+    })
+    if(!image.ok)return withSessionCookie(proxyResponse(image),session.cookie)
+    const type=(image.headers.get('Content-Type')||'').split(';')[0]?.trim().toLowerCase()
+    if(!['image/png','image/jpeg','image/webp'].includes(type))return json('invalid_avatar_type',502)
+    return withSessionCookie(new Response(image.body,{
+      status:200,headers:{'Content-Type':type,'Cache-Control':'private, max-age=60','X-Content-Type-Options':'nosniff'},
+    }),session.cookie)
+  }
   if(route.path==='@concern-relations')return withSessionCookie(
     await handleConcernRelations(request,fetchImpl,core,bearer,route,userId),session.cookie)
   if(route.path==='@snapshot')return withSessionCookie(
