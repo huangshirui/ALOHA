@@ -125,3 +125,16 @@
 4. 数据检查：所有文件均未被读取或上传；刷新后演示数据还原；观察值互斥、来源引用与用户确认显式；不包含真实医学结论。
 
 **后端留白：** 真正的 Health File 生命周期、身份/Space/Grant、Semantic Relation、Recurring Task、Agent 对话/操作确认，仍需 LifeSpace/ALOHA 对应可信服务支持。本原型不得暗示已部署这些能力。
+
+
+## 2026-10-30 · HealthConcern 真实 Semantic Relation 接入（Staging 候选）
+
+> 本节针对 Live 模式（`VITE_HEALTH_DATA_MODE=live`）；以上 UX Prototype 的演示态说明不代表真实服务状态。本功能仅在 ALOHA Health Preview 分支候选，必须通过实际 Staging 验收后才能声明已发布。
+
+- **所有权**：HealthConcern / HealthMetric / HealthObservation / HealthEvent / HealthDocument / HealthAssessment / HealthRegimen 仍是 LifeSpace Core 普通模型；关系使用 Core 原生、同一 Space 内的有向 Semantic Relation，**不向模型添加 `concernIds`**，也不把关系存进 Health 的 Durable Object。
+- **方向与谓词**：从当前用户拥有的 `health_concern` 作为 source 指向目标记录，指标采用 `monitors`，其他五类目标采用 `relates_to`。此语义为“正在关注/相关”，绝不隐含医学因果。原有 `health_assessment --based_on--> health_observation/document` 是另外的证据关系，不由本期的 Concern UI 代替。
+- **读取**：仅进入 Concern 详情时拉取该 Concern 的有向关系；按当前 Core 成员关系验证主体，并由 Core 验证两个端点的可读权限。前端按关系中的目标 Model/Record ID 显示相关指标、测量、事件、资料、评估、方案；切换 Space / Concern 时清空旧关系，防止跨主体混用。
+- **创建关联**：在 Concern 详情通过「关联现有记录」选择目标类型和现有记录。进入当前 Concern 的各类「添加」入口时自动预选当前 Concern；先持久化原始事实，再调用关系创建。若事实成功、关联失败，**必须分别提示**，不可误报为整体成功。LifeSpace 对重复关系创建有幂等约束。
+- **解除关联**：只 DELETE 关系 ID；不修改/删除任何源或目标原始记录，Core 对关系执行独立授权。删除 Concern 时由 Core 的模型删除生命周期处理已存在的关系，Health 自己仅清理应用展示投影。
+- **安全**：浏览器不提交 source、predicate、其他用户 ID 或 Core 地址。BFF 从当前 Access Session、LifeSpace 当前 Space Person 解析拥有者，对目标记录执行 Model/Person 校验（Metric 是 Space 共享指标目录）；Core 再核验双方的 Application/Model/Grant/Policy 权限。只有指定 Concern 的关系可解除；没有授权不得从 BFF 查询、写入或删除其他人的关系。
+- **范围限制**：暂不做全应用语义关系编辑器、批量关联、关系传播、AI 自动关联，或关联不同 Space 的健康事实；普通记录详情上的关系多选与 Assessment 证据 `based_on` 留待下一项。实际多人、跨 Space 授权仍由 LifeSpace 授权契约单独处理。
