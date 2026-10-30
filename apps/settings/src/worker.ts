@@ -93,7 +93,14 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
 }
 export default {
   fetch(request:Request,env:SettingsEnv):Promise<Response>{
-    if(new URL(request.url).pathname.startsWith('/settings/api/'))return handleSettingsApi(request,env)
+    const url=new URL(request.url)
+    if(url.pathname==='/settings'&&request.method==='GET'){
+      url.pathname='/settings/'
+      return Promise.resolve(Response.redirect(url.toString(),308))
+    }
+    if(url.pathname.startsWith('/settings/api/'))return handleSettingsApi(request,env)
+    if(!url.pathname.startsWith('/settings/'))
+      return Promise.resolve(denied('not_found',404))
     return env.ASSETS?.fetch(request)??Promise.resolve(denied('assets_unavailable',503))
   },
 }
