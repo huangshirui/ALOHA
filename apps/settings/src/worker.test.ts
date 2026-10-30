@@ -78,6 +78,42 @@ describe('ALOHA common Settings authenticated BFF',()=>{
     expect(mutation.status).toBe(405)
     expect(f.run).not.toHaveBeenCalled()
   })
+  it('distinguishes Identity credential rejection from absent Access assertion',async()=>{
+    const upstream=vi.fn(async(input:RequestInfo|URL)=>{
+      const path=new URL(String(input)).pathname
+      if(path==='/internal/v1/access/tokens')
+        return Response.json({error:{code:'INVALID_APPLICATION_CREDENTIAL'}},{status:401})
+      throw new Error('Unexpected '+path)
+    })
+    const response=await handleSettingsApi(request('me'),env,upstream)
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({error:'identity_application_unauthorized'})
+    expect(upstream).toHaveBeenCalledOnce()
+  })
+  it('preserves explicit Identity Access JWT rejection without exposing the upstream response',async()=>{
+    const upstream=vi.fn(async()=>Response.json({
+      error:{code:'INVALID_ACCESS_ASSERTION',message:'synthetic private detail'},
+    },{status:401}))
+    const response=await handleSettingsApi(request('me'),env,upstream)
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({error:'access_assertion_invalid'})
+  })
+  it('identifies an unregistered Access Audience as an application configuration error',async()=>{
+    const upstream=vi.fn(async()=>Response.json({
+      error:{code:'ACCESS_AUDIENCE_MISMATCH',message:'synthetic private detail'},
+    },{status:403}))
+    const response=await handleSettingsApi(request('me'),env,upstream)
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({error:'audience_not_registered'})
+  })
+  it('identifies an unlinked Access principal separately',async()=>{
+    const upstream=vi.fn(async()=>Response.json({
+      error:{code:'ACCESS_PRINCIPAL_UNLINKED'},
+    },{status:409}))
+    const response=await handleSettingsApi(request('spaces'),env,upstream)
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({error:'account_link_required'})
+  })
   it('denies wrong image MIME and malformed Identity profiles',async()=>{
     const f=fetcher({avatarType:'text/html'})
     expect((await handleSettingsApi(request('avatar'),env,f.run)).status).toBe(502)
