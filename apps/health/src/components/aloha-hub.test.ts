@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createSSRApp } from 'vue'
 import { renderToString } from 'vue/server-renderer'
 import AlohaHub from '@aloha/ui/AlohaHub.vue'
+import AlohaHubSettings from '@aloha/ui/AlohaHubSettings.vue'
 
 const apps = [
   { id:'assistant',name:'Assistant' },
@@ -67,4 +68,33 @@ describe('ALOHA Hub shared presentation / 公共入口', () => {
     expect((html.match(/target="_blank"/g) || [])).toHaveLength(4)
     expect((html.match(/rel="noopener noreferrer"/g) || [])).toHaveLength(4)
   })
+  it('routes common settings to a path and displays the verified Identity name/avatar',async()=>{
+    const html=await render({
+      accountUrl:'https://account.aisr.online/',
+      accountLabel:'Synthetic User',
+      avatarUrl:'/health/api/v1/profile/avatar',
+      spaceName:'Synthetic Space',
+      settingsUrl:'/health/hub/settings',
+    })
+    expect(html).toContain('href="https://account.aisr.online/"')
+    expect(html).toContain('Synthetic User')
+    expect(html).toContain('Synthetic Space')
+    expect(html).toContain('src="/health/api/v1/profile/avatar"')
+    expect(html).toContain('href="/health/hub/settings"')
+    expect(html).not.toContain('target="_blank" href="/health/hub/settings"')
+  })
+  it('renders a reusable common Space settings page without treating selection as a grant',async()=>{
+    const html=await renderToString(createSSRApp(AlohaHubSettings,{
+      accountUrl:'https://account.aisr.online/',
+      selectedSpaceId:'spc_synthetic',
+      spaces:[{id:'spc_synthetic',name:'Synthetic Space'}],
+      backUrl:'/health/',
+    }))
+    expect(html).toContain('默认空间')
+    expect(html).toContain('不改变 LifeSpace 权限')
+    expect(html).toContain('Synthetic Space')
+    expect(html).toContain('href="https://account.aisr.online/"')
+    expect(html).toContain('href="/health/"')
+  })
+
 })
