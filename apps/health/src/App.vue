@@ -54,7 +54,10 @@ const alohaApps = [
   { id:'things', name:'Things', href:import.meta.env.VITE_ALOHA_THINGS_URL || undefined },
 ]
 const accountCenterUrl='https://account.aisr.online/'
-const hubSettingsUrl='/settings/?from=health'
+// Production stays same-origin; Preview may supply the separately protected
+// Settings Preview URL (public routing configuration, never a credential).
+const hubSettingsRoot=import.meta.env.VITE_ALOHA_SETTINGS_URL||'/settings/'
+const hubSettingsUrl=hubSettingsRoot.replace(/\\/?$/,'/')+'?from=health'
 const hubProfile=ref<{displayName:string;avatarUrl:string|null}|null>(null)
 const alohaPublicLinks=computed(()=>({
   accountUrl:accountCenterUrl,
