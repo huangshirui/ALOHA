@@ -1,4 +1,4 @@
-name: Deploy Health PWA Preview and Runtime Bootstrap
+name: Deploy ALOHA Health (Preview or Production)
 
 on:
   workflow_dispatch:
@@ -22,12 +22,16 @@ jobs:
     if: inputs.confirmation == 'DEPLOY_ALOHA_HEALTH_STAGING_PREVIEW'
     runs-on: ubuntu-latest
     environment: preview
+    env:
+      WRANGLER_LOG: error
+      WRANGLER_LOG_SANITIZE: 'true'
+      WRANGLER_SEND_METRICS: 'false'
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
 
@@ -98,50 +102,76 @@ jobs:
           echo "The named staging Preview is separate from the Health Worker Production deployment."
           echo "Configure Preview-scoped secrets and protect its hostname with Cloudflare Access."
 
-  bootstrap-production-runtime:
-    name: One-time production runtime bootstrap (no public routes)
-    if: inputs.confirmation == 'BOOTSTRAP_ALOHA_HEALTH_PRODUCTION_RUNTIME'
+  production:
+    name: Verify and deploy only ALOHA Health
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY_ALOHA_HEALTH_PRODUCTION'
     runs-on: ubuntu-latest
     environment: production
+    env:
+      WRANGLER_LOG: error
+      WRANGLER_LOG_SANITIZE: 'true'
+      WRANGLER_SEND_METRICS: 'false'
     steps:
-      - name: Checkout reviewed branch
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
+      - run: npm install --global npm@10.9.2
+      - run: npm install --legacy-peer-deps
 
-      - name: Use repository npm version
-        run: npm install --global npm@10.9.2
-
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Fail closed if this would publish a production URL
-        run: |
-          test -f apps/health/src/worker.ts
-          node -e "const fs=require('node:fs');const c=JSON.parse(fs.readFileSync('apps/health/wrangler.jsonc'));if(c.name!=='aloha-app-health'||c.main!=='./src/worker.ts'||c.workers_dev!==false||c.route||c.routes||c.vars||!c.preview_urls||!c.previews?.durable_objects?.bindings?.some(b=>b.name==='HEALTH_PRESENTATION'))process.exit(1)"
-
-      - name: Verify Health
+      - name: Verify Health workspace
         run: npm run typecheck -w @aloha/health && npm run test -w @aloha/health
 
-      - name: Build Health runtime assets
+      - name: Verify only Health Production bindings (names only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          const { CLOUDFLARE_API_TOKEN: token, CLOUDFLARE_ACCOUNT_ID: account } = process.env
+          if (!token || !account) throw new Error('Production Cloudflare credentials unavailable')
+          const worker = 'aloha-app-health'
+          const url = `https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}/secrets`
+          const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+          const payload = await response.json()
+          if (!response.ok || !payload.success || !Array.isArray(payload.result))
+            throw new Error('Cannot verify Health Production bindings')
+          const names = new Set(payload.result.map(item => item.name))
+          const required = ['LIFESPACE_APPLICATION_CREDENTIAL', 'LIFESPACE_IDENTITY_BASE_URL', 'LIFESPACE_CORE_BASE_URL']
+          const missing = required.filter(name => !names.has(name))
+          if (missing.length) throw new Error('Missing Health Production bindings: ' + missing.join(', '))
+          console.log('Health Production bindings verified by name only')
+          NODE
+
+      - name: Verify Health configuration cannot activate a public route
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const config = JSON.parse(fs.readFileSync('apps/health/wrangler.jsonc','utf8'))
+          if (config.name !== 'aloha-app-health' || config.workers_dev !== false ||
+              config.route || config.routes || config.vars || config.keep_vars !== true ||
+              config.main !== './src/worker.ts')
+            throw new Error('Unsafe Health Production Worker configuration')
+          NODE
+
+      - name: Build only Health for Production
+        env:
+          VITE_HEALTH_DATA_MODE: live
         run: npm run build:health
 
-      - name: Dry-run production Worker bundle
+      - name: Dry-run only Health Worker
         working-directory: apps/health
-        run: npx wrangler deploy --dry-run --outdir ../../.health-bootstrap-dry-run
+        run: npx wrangler deploy --dry-run --outdir ../../.health-production-dry-run
 
-      - name: Bootstrap runtime on production Worker (not a public launch)
+      - name: Deploy only Health Production Worker
         working-directory: apps/health
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
 
-      - name: Deployment boundary
+      - name: Report release boundary
         run: |
-          echo "Production Worker script updated, without workers.dev or route activation."
-          echo "No backend credentials have been installed on Production."
-          echo "Configure preview secrets using the Cloudflare Dashboard; do not copy production settings."
+          echo "Health Production Worker deployed independently."
+          echo "No Assistant, Gateway, other PWA or Settings/Health peer was deployed."
+          echo "Public hostname route activation requires a separate review."
