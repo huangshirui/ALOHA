@@ -29,6 +29,40 @@ shared API routes -> ALOHA Gateway Worker
 
 The root path is not a fifth installable PWA. In the final topology it is a lightweight product entry point and may redirect to `/assistant/`.
 
+## ALOHA Shared Settings route (non-installable utility)
+
+`/settings/` is a **peer path** to `/health/` and `/assistant/`, not
+`/health/hub/settings`. It does **not** create a fifth installable PWA or
+additional LifeSpace Application Context. Its independently deployed Worker
+`aloha-app-settings` serves `apps/settings`, a small UI based on
+`@aloha/ui/AlohaHubSettings.vue` plus a read-only same-origin Identity/Core
+BFF. It must not overlap other surface PWA scopes.
+
+**Production route (manual activation after review):**
+`aloha.aisr.online/settings*` -> Settings Worker; Worker normalizes
+`/settings` to `/settings/`. The route wildcard is needed to cover
+assets and `/settings/api/*`; it also matches `/settings-other`,
+which the Settings Worker must reject. Do not attach this route to the
+transitional Assistant Gateway as an unreviewed side effect.
+
+**Staging:** protected named `staging` Preview of the Settings Worker.
+The Preview hostname differs from Health/Assistant Preview hosts.
+Set GitHub **preview environment variables** `ALOHA_SETTINGS_STAGING_URL`
+and `ALOHA_HEALTH_STAGING_URL` to the exact already-issued Preview
+destinations when exercising cross-Preview navigation; those values are
+public URLs, not credentials. Production builds use same-origin `/settings/`.
+Browser localStorage does **not** traverse Staging Preview origins. Thus
+cross-app Space-preference persistence must be tested under a shared
+origin separately before Production activation.
+
+Run [`deploy-settings.yml`](../.github/workflows/deploy-settings.yml)
+using the exact staging confirmation, after the named Settings Worker
+Preview has the required Access policy and **preview-only** Identity/Core
+configuration. An optional one-time no-public-route runtime bootstrap
+is separately gated by explicit Production environment approval, just
+as the Health Worker. It does not publish `/settings` or install a
+Production route.
+
 ## Shared versus independent
 
 The PWA Workers are frontend/static deployment units, not separate ALOHA applications.
