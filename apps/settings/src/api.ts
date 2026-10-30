@@ -5,9 +5,18 @@ export interface Space {id:string;name:string}
  * origin lacks a valid assertion, not necessarily that another ALOHA app is logged out. */
 export class SettingsApiError extends Error {
   constructor(public readonly status:number,public readonly code:string){
-    super(status===401?'Settings 当前站点没有有效的 Access 登录凭证':
-      status===403?'当前账号没有访问 Settings 的权限':
-      status>=500?'Settings 服务暂时不可用':'设置数据读取失败')
+    const reason:Record<string,string>={
+      access_required:'Settings Preview 缺少有效的 Cloudflare Access 登录断言，请重新通过受保护的入口访问',
+      access_assertion_invalid:'Settings 的 Access 登录凭证无效或已过期，请重新完成 Cloudflare Access 登录',
+      audience_not_registered:'Settings 的 Access Audience 尚未注册到 LifeSpace Staging 的 ALOHA Application',
+      identity_application_unauthorized:'Settings 连接 LifeSpace Identity 的应用凭据未通过校验，请检查 Staging 绑定',
+      account_link_required:'此 Access 账号尚未关联 LifeSpace 用户，需要完成账号关联',
+      application_scope_forbidden:'ALOHA Application 尚未允许 Settings 请求的权限范围',
+      identity_exchange_forbidden:'LifeSpace Identity 拒绝了本次认证，请检查 Application 和 Access 配置',
+      identity_service_unavailable:'LifeSpace Identity 当前无法验证登录请求',
+    }
+    super(reason[code]??(status===403?'当前账号没有访问 Settings 的权限':
+      status>=500?'Settings 服务暂时不可用':'设置数据读取失败'))
     this.name='SettingsApiError'
   }
 }
