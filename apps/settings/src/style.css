@@ -5,3 +5,5 @@
 .aloha-settings-profile {display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--aloha-color-text-muted)}
 .aloha-settings-error {padding:.8rem;border:1px solid var(--aloha-color-danger);border-radius:var(--aloha-radius-md);font-size:.86rem}
 .aloha-settings-alert {max-width:42rem;margin:0 auto;padding:0 1rem}
+
+.settings-rail {display:flex;flex-direction:column;background:var(--aloha-color-surface)}
