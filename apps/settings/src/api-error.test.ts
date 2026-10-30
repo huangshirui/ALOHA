@@ -3,8 +3,8 @@ import {getProfile,getSpaces,SettingsApiError} from './api'
 afterEach(()=>vi.unstubAllGlobals())
 describe('Settings current-origin authentication errors',()=>{
   it('describes a 401 as no Access assertion, not an account-wide logout',async()=>{
-    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(
-      JSON.stringify({error:'access_required'}),{status:401,headers:{'Content-Type':'application/json'}})))
+    vi.stubGlobal('fetch',vi.fn().mockImplementation(async()=>Response.json(
+      {error:'access_required'},{status:401})))
     await expect(getProfile()).rejects.toMatchObject({
       name:'SettingsApiError',status:401,code:'access_required',
     })
