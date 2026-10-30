@@ -48,7 +48,7 @@ describe('ALOHA Hub shared presentation / 公共入口', () => {
       currentApp:'health',apps,compact:true,
     }))
     expect(expanded).toContain('aloha-hub-wordmark')
-    expect(expanded).toMatch(/<strong>ALOHA<\/strong>\s*<small>HEALTH<\/small>/)
+    expect(expanded).toMatch(/<strong[^>]*>ALOHA<\/strong><small[^>]*>HEALTH<\/small>/)
     expect(expanded).toContain('aloha-hub-chevron')
     expect(compact).not.toContain('aloha-hub-wordmark')
     expect(compact).toContain('aloha-hub-logo')
