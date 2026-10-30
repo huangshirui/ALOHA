@@ -787,7 +787,7 @@ function togglePlan(id: string) {
   if(liveMode){notice.value='真实任务完成状态需要由 LifeSpace Task/Recurrence 管理，尚未接入。';return}
   completedPlanIds.value=completedPlanIds.value.includes(id) ? completedPlanIds.value.filter(x=>x!==id) : [...completedPlanIds.value,id]
 }
-function closeSheet() { if(saving.value)return;sheet.value='';formError.value='';uploadFile.value=null }
+function closeSheet() { if(saving.value||quickMetricSaving.value)return;sheet.value='';formError.value='';uploadFile.value=null }
 function pickFile(e: Event) {
   const file=(e.target as HTMLInputElement).files?.[0]
   // Never read file contents; filename is held only in component memory.
@@ -1295,7 +1295,7 @@ function detailName(kind: HealthKind,record:any) {
     <div v-if="sheet" class="modal-backdrop" @click.self="closeSheet">
       <section class="drawer" role="dialog" aria-modal="true" :aria-label="sheet==='edit'?'编辑健康记录':'整理报告'">
         <div class="drawer-handle"></div>
-        <header class="drawer-heading"><div><span class="eyebrow">{{ sheet==='edit'?'健康记录':'整理一份健康资料' }}</span><h2>{{ sheet==='edit'?(editId?'修改':'添加')+kindLabel[editKind]:'整理健康报告' }}</h2></div><button class="icon-button" aria-label="关闭" type="button" :disabled="saving" @click="closeSheet"><X :size="20"/></button></header>
+        <header class="drawer-heading"><div><span class="eyebrow">{{ sheet==='edit'?'健康记录':'整理一份健康资料' }}</span><h2>{{ sheet==='edit'?(editId?'修改':'添加')+kindLabel[editKind]:'整理健康报告' }}</h2></div><button class="icon-button" aria-label="关闭" type="button" :disabled="saving||quickMetricSaving" @click="closeSheet"><X :size="20"/></button></header>
 
         <form v-if="sheet==='edit'" class="editor-form" @submit.prevent="formSave">
           <p class="form-intro">填写你知道的内容即可，之后还可以修改。</p>
@@ -1352,9 +1352,9 @@ function detailName(kind: HealthKind,record:any) {
               </div>
               <div v-if="quickMetricOpen" class="quick-metric">
                 <div class="quick-metric-heading"><b>快速新建指标</b><button type="button" class="inline-link" :disabled="quickMetricSaving" @click="quickMetricOpen=false">取消</button></div>
-                <label>指标名称<input v-model="quickMetric.name" maxlength="160" placeholder="例如：静息心率" :disabled="quickMetricSaving"/></label>
+                <label>指标名称<input v-model="quickMetric.name" maxlength="160" placeholder="例如：静息心率" :disabled="quickMetricSaving" @keydown.enter.stop.prevent="saveQuickMetric"/></label>
                 <label>记录方式<select v-model="quickMetric.valueType" :disabled="quickMetricSaving"><option v-for="[value,name] in valueTypes" :key="value" :value="value">{{ name }}</option></select></label>
-                <label v-if="quickMetric.valueType==='number'">单位（可选）<input v-model="quickMetric.defaultUnit" placeholder="例如：次/分" :disabled="quickMetricSaving"/></label>
+                <label v-if="quickMetric.valueType==='number'">单位（可选）<input v-model="quickMetric.defaultUnit" placeholder="例如：次/分" :disabled="quickMetricSaving" @keydown.enter.stop.prevent="saveQuickMetric"/></label>
                 <p v-if="quickMetricError" class="form-error" role="alert">{{ quickMetricError }}</p>
                 <button type="button" class="soft-button" :disabled="quickMetricSaving" @click="saveQuickMetric">
                   <span v-if="quickMetricSaving" class="saving-spinner" aria-hidden="true"/><Plus v-else :size="16"/>
