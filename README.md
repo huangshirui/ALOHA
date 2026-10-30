@@ -13,6 +13,12 @@ Assistant is the Agent interaction surface; Health, Finance and Things provide s
 | ALOHA Finance | `Finance` | `/finance/` | Development scaffold ready; independently buildable and preview-deployable. Domain/data contracts intentionally TBD. |
 | ALOHA Things | `Things` | `/things/` | Development scaffold ready; independently buildable and preview-deployable. Domain/data contracts intentionally TBD. |
 
+The shared account/application settings page is available at **`/settings/`**,
+as a non-installable public utility route (not another PWA). It reuses
+`@aloha/ui` with Health and Assistant and sends account changes to the
+separate `account.aisr.online` account center. Production route activation
+is a separate approval and deployment step.
+
 These surfaces are **not separate LifeSpace applications**. They are independently installable/releasable surfaces of the same ALOHA application.
 
 All four surfaces share one cross-surface design language but may use completely different information architecture and domain interaction models. Every surface must intentionally support Mobile, Tablet and Desktop. See [`docs/design-system.md`](./docs/design-system.md).
