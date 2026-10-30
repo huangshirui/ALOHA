@@ -28,3 +28,9 @@ export function recentMetricIds(
   }
   return out
 }
+
+/** Search is accent/case-insensitive for the local Metric picker; Core still owns IDs. */
+export function searchMetrics<T extends {name:string}>(metrics:readonly T[],raw:string):T[]{
+  const term=raw.trim().normalize('NFKC').toLocaleLowerCase()
+  return metrics.filter(metric=>metric.name.normalize('NFKC').toLocaleLowerCase().includes(term))
+}
