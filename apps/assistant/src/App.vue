@@ -4,7 +4,7 @@ import AlohaHub from '@aloha/ui/AlohaHub.vue'
 
 import { InteractionRequestError, runInteraction } from './lib/interaction'
 const settingsRoot=import.meta.env.VITE_ALOHA_SETTINGS_URL||'/settings/'
-const settingsUrl=settingsRoot.replace(/\\/?$/,'/')+'?from=assistant'
+const settingsUrl=(settingsRoot.endsWith('/')?settingsRoot:settingsRoot+'/')+'?from=assistant'
 
 type SurfaceState = 'idle' | 'submitting' | 'working' | 'completed' | 'failed'
 
