@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, shallowRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { editableSnapshot } from './health-editor'
+import { newestFirst, pageOf, pageCount, recentMetricIds } from './health-concern-view'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, CheckCircle2,
   ChevronDown, ChevronRight, CircleHelp, ClipboardCheck, ClipboardList, Clock3, FileHeart,
@@ -118,6 +119,14 @@ const metricReferenceChoices=[
 ]
 const timelineScrollPosition = ref(0)
 const notice = ref('')
+const noticeIsError=computed(()=>/失败|出错|错误|请先|无法|超时|未同步|未连接|拒绝|没有.*权限|不完整/.test(notice.value))
+let noticeTimeout:ReturnType<typeof setTimeout>|undefined
+watch(notice,(message)=>{
+  if(noticeTimeout)clearTimeout(noticeTimeout)
+  if(message)noticeTimeout=setTimeout(()=>{if(notice.value===message)notice.value=''},
+    noticeIsError.value?7500:4200)
+})
+onBeforeUnmount(()=>{if(noticeTimeout)clearTimeout(noticeTimeout)})
 const agentSession = useDemoAgentSession()
 const agentOpen = agentSession.open
 const agentMessages = agentSession.messages
@@ -160,6 +169,31 @@ const relationBusy=ref(false)
 const relationError=ref('')
 const relationKind=ref<ConcernTargetKind>('metric')
 const relationTargetId=ref('')
+type ConcernCard='status'|'regimens'|'events'|'evidence'
+type ConcernList='metrics'|'observations'|'regimens'|'events'|'evidence'
+const activeRelationCard=ref<ConcernCard|null>(null)
+const concernPage=reactive<Record<ConcernList,number>>({
+  metrics:0,observations:0,regimens:0,events:0,evidence:0,
+})
+const relationKindForCard:Record<ConcernCard,ConcernTargetKind[]>={
+  status:['metric','observation'],regimens:['regimen'],
+  events:['event'],evidence:['document','assessment'],
+}
+function toggleRelationCard(card:ConcernCard){
+  if(activeRelationCard.value===card){activeRelationCard.value=null;return}
+  activeRelationCard.value=card
+  relationKind.value=relationKindForCard[card][0]!
+  relationTargetId.value=''
+  relationError.value=''
+}
+function resetConcernPages(){
+  for(const key of Object.keys(concernPage) as ConcernList[])concernPage[key]=0
+  activeRelationCard.value=null
+  relationTargetId.value=''
+}
+function gotoConcernPage(kind:ConcernList,delta:number,total:number){
+  concernPage[kind]=Math.min(pageCount(total)-1,Math.max(0,concernPage[kind]+delta))
+}
 let relationSequence=0
 let liveLoadSequence=0
 function clearLiveRecords() {
@@ -306,6 +340,28 @@ const concernRelated = computed(() => {
     regimens:demo.regimens.filter(r=>matches('regimen',r)),
   }
 })
+const evidenceEntries=computed(()=>newestFirst([
+  ...concernRelated.value.documents.map(r=>({kind:'document' as const,id:r.id,title:r.title,date:r.issuedDate,subtitle:'健康资料'})),
+  ...concernRelated.value.assessments.map(r=>({kind:'assessment' as const,id:r.id,title:r.title,date:r.assessedDate,subtitle:'健康评估'})),
+],r=>r.date))
+const concernLists=computed(()=>({
+  metrics:newestFirst(concernRelated.value.metrics,m=>
+    demo.observations.filter(o=>o.metricId===m.id).reduce((latest,o)=>o.observedDate>latest?o.observedDate:latest,'')),
+  observations:newestFirst(concernRelated.value.observations,r=>r.observedDate),
+  regimens:newestFirst(concernRelated.value.regimens,r=>r.startDate),
+  events:newestFirst(concernRelated.value.events,r=>r.date),
+  evidence:evidenceEntries.value,
+}))
+const pagedConcern=computed(()=>({
+  metrics:pageOf(concernLists.value.metrics,Math.min(concernPage.metrics,pageCount(concernLists.value.metrics.length)-1)),
+  observations:pageOf(concernLists.value.observations,Math.min(concernPage.observations,pageCount(concernLists.value.observations.length)-1)),
+  regimens:pageOf(concernLists.value.regimens,Math.min(concernPage.regimens,pageCount(concernLists.value.regimens.length)-1)),
+  events:pageOf(concernLists.value.events,Math.min(concernPage.events,pageCount(concernLists.value.events.length)-1)),
+  evidence:pageOf(concernLists.value.evidence,Math.min(concernPage.evidence,pageCount(concernLists.value.evidence.length)-1)),
+}))
+function concernEdge(kind:ConcernTargetKind,id:string){
+  return concernLinks.value.find(edge=>edge.target.modelKey===concernTargetModels[kind]&&edge.target.recordId===id)
+}
 const relationChoices=[
   {kind:'metric' as const,label:'健康指标'},
   {kind:'observation' as const,label:'测量记录'},
@@ -354,6 +410,7 @@ async function addConcernLink(){
   finally{relationBusy.value=false}
 }
 async function removeConcernLink(edge:ConcernRelation){
+  if(!window.confirm('确定解除与“'+relationRecordName(relationTargetKind(edge),edge.target.recordId)+'”的关联吗？\n原记录不会被删除。'))return
   const id=selected.value?.kind==='concern'?selected.value.id:null
   const spaceId=selectedSpaceId.value
   if(!id||!spaceId||relationBusy.value)return
@@ -397,7 +454,7 @@ function show(kind: HealthKind,id: string) {
   if(activeTab.value==='body' && bodyTab.value==='timeline' && !selected.value)
     timelineScrollPosition.value=window.scrollY
   routeStack.value.push(location())
-  ++relationSequence;concernLinks.value=[];relationError.value=''
+  ++relationSequence;concernLinks.value=[];relationError.value='';resetConcernPages()
   activeTab.value='body'; selected.value=saveDestination(kind,id);sheet.value='';search.value=''
   if(liveMode&&selectedSpaceId.value)void loadLiveRecords('detail').then(()=>{
     if(kind==='concern'&&selected.value?.kind==='concern'&&selected.value.id===id&&liveStatus.value==='ready')
@@ -410,7 +467,7 @@ function back() {
   if(previous) {
     activeTab.value=previous.tab
     bodyTab.value=previous.section
-    ++relationSequence;concernLinks.value=[];relationError.value=''
+    ++relationSequence;concernLinks.value=[];relationError.value='';resetConcernPages()
     selected.value=previous.record
     if(liveMode&&selectedSpaceId.value)void loadLiveRecords(previous.record?'detail':previous.section).then(()=>{
       if(previous.record?.kind==='concern'&&liveStatus.value==='ready')
@@ -497,10 +554,11 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
   if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
+  metricPickerOpen.value=false;metricSearch.value='';quickMetricOpen.value=false;quickMetricError.value=''
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
 }
 async function formSave() {
-  if(saving.value)return
+  if(saving.value||quickMetricSaving.value)return
   formError.value=''
   const v=draft.value, kind=editKind.value
   const mandatory: Record<HealthKind,string[]> = {
