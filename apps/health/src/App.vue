@@ -11,7 +11,7 @@ import {
 } from 'lucide-vue-next'
 import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
-  listAuthorizedSpaces, patchConcernPresentation,
+  listAuthorizedSpaces, getAlohaUserProfile, patchConcernPresentation,
   getHealthSnapshot, updateHealthRecord, uploadHealthDocument, downloadHealthDocument,
   listConcernRelations,linkConcernRecord,unlinkConcernRecord,
   type FileUploadProgress,
@@ -20,6 +20,7 @@ import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, h
 import { concernTargetHasRelation,concernTargetModels,
   type ConcernRelation,type ConcernTargetKind } from './health-concern-relations'
 import AlohaHub from '@aloha/ui/AlohaHub.vue'
+import AlohaHubSettings from '@aloha/ui/AlohaHubSettings.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import ConcernPager from './components/ConcernPager.vue'
@@ -45,19 +46,27 @@ type Tab = 'home' | 'body' | 'food' | 'movement' | 'more'
 type BodyTab = 'focus' | 'metrics' | 'timeline' | 'documents' | 'regimens'
 type Sheet = '' | 'edit' | 'import'
 type RecordView = { kind: HealthKind; id: string }
-// External destinations are enabled only after the ALOHA public pages and other PWAs exist.
-// VITE_* URLs are public routing configuration, not account or authorization data.
+// External app URLs are public routing configuration; Identity profile is read
+// from the trusted Health BFF, never from arbitrary client claims.
 const alohaApps = [
   { id:'assistant', name:'Assistant', href:import.meta.env.VITE_ALOHA_ASSISTANT_URL || undefined },
   { id:'health', name:'Health', iconUrl:`${import.meta.env.BASE_URL}app-icon.svg` },
   { id:'finance', name:'Finance', href:import.meta.env.VITE_ALOHA_FINANCE_URL || undefined },
   { id:'things', name:'Things', href:import.meta.env.VITE_ALOHA_THINGS_URL || undefined },
 ]
-const alohaPublicLinks = {
-  accountUrl:import.meta.env.VITE_ALOHA_ACCOUNT_URL || undefined,
+const accountCenterUrl='https://account.aisr.online/'
+const hubSettingsUrl='/health/hub/settings'
+const hubProfile=ref<{displayName:string;avatarUrl:string|null}|null>(null)
+const settingsMode=ref(typeof window!=='undefined'&&window.location.pathname===hubSettingsUrl)
+const alohaPublicLinks=computed(()=>({
+  accountUrl:accountCenterUrl,
+  accountLabel:hubProfile.value?.displayName||'账号',
+  avatarUrl:hubProfile.value?.avatarUrl||undefined,
+  spaceName:liveSpaces.value.find(space=>space.id===selectedSpaceId.value)?.name,
+  settingsUrl:hubSettingsUrl,
   privacyUrl:import.meta.env.VITE_ALOHA_PRIVACY_URL || undefined,
   helpUrl:import.meta.env.VITE_ALOHA_HELP_URL || undefined,
-}
+}))
 const sidebarCollapsed = ref(false)
 const navItems = [
   { id: 'home' as Tab, title: '首页', icon: Home },
@@ -334,21 +343,38 @@ async function chooseLiveSpace(spaceId:string) {
     selectedSpaceId.value='';liveStatus.value='select';return
   }
   selectedSpaceId.value=spaceId
-  localStorage.setItem('aloha.health.space',spaceId)
+  localStorage.setItem('aloha.space',spaceId)
+  if(settingsMode.value){liveStatus.value='ready';liveMessage.value='';return}
   await loadLiveRecords(bodyTab.value)
 }
 async function initializeLive() {
   liveStatus.value='loading'; liveMessage.value='正在验证访问权限…'
   try {
     liveSpaces.value=await listAuthorizedSpaces()
-    const stored=localStorage.getItem('aloha.health.space')
+    // Adopt the former Health-only preference once, then use a single
+    // per-origin ALOHA setting. A Space ID is never an authorization grant.
+    const stored=localStorage.getItem('aloha.space')||localStorage.getItem('aloha.health.space')
     if(stored && liveSpaces.value.some(s=>s.id===stored)) await chooseLiveSpace(stored)
     else {liveStatus.value='select';liveMessage.value='请选择用于健康档案的个人空间'}
   } catch(e) {
     liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法连接 LifeSpace'
   }
 }
-onMounted(() => {if(liveMode) void initializeLive()})
+async function loadHubProfile(){
+  try {hubProfile.value=await getAlohaUserProfile()}
+  catch {hubProfile.value=null} // no synthetic identity or stale profile
+}
+onMounted(()=>{
+  if(liveMode){void initializeLive();void loadHubProfile()}
+  window.addEventListener('popstate',syncSettingsPath)
+})
+onBeforeUnmount(()=>window.removeEventListener('popstate',syncSettingsPath))
+function syncSettingsPath(){settingsMode.value=window.location.pathname===hubSettingsUrl}
+function leaveSettingsPath(){
+  if(!settingsMode.value)return
+  settingsMode.value=false
+  window.history.replaceState({},'', '/health/')
+}
 const current = computed<any | null>(() => selected.value ? getList(selected.value.kind).find(item=>item.id===selected.value?.id) ?? null : null)
 const selectedConcern = computed(() => selected.value?.kind === 'concern' ? selected.value.id : '')
 const related = (record: {concernIds?:string[]},id:string) => (record.concernIds ?? []).includes(id)
@@ -497,6 +523,7 @@ function location(): HealthLocation {
   return { tab:activeTab.value, section:bodyTab.value, record:selected.value ? {...selected.value} : null }
 }
 function navigate(tab: Tab,loadDefault=true) {
+  leaveSettingsPath()
   routeStack.value=[]
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
@@ -862,7 +889,7 @@ function detailName(kind: HealthKind,record:any) {
         </button>
       </nav>
       <div class="sidebar-bottom">
-        <div v-if="!sidebarCollapsed" class="sidebar-note"><Info :size="16"/><span v-if="liveMode">LifeSpace 数据模式<br>权限由平台校验</span><span v-else>体验版本<br>所有数据均为虚构示例</span></div>
+        <div v-if="!sidebarCollapsed" class="sidebar-note"><Info :size="16"/><span v-if="liveMode">健康档案<br>数据访问受保护</span><span v-else>体验版本<br>所有数据均为虚构示例</span></div>
         <button type="button" class="sidebar-collapse" :title="sidebarCollapsed ? '展开导航' : '收起导航'"
           :aria-label="sidebarCollapsed ? '展开导航' : '收起导航'" :aria-expanded="!sidebarCollapsed"
           @click="sidebarCollapsed=!sidebarCollapsed">
@@ -874,18 +901,16 @@ function detailName(kind: HealthKind,record:any) {
     </aside>
     <div class="page-frame">
       <main class="content">
-        <div v-if="liveMode" class="health-live-bar" aria-label="Health 档案来源">
-          <span class="health-live-label"><ShieldCheck :size="16"/> LifeSpace 档案</span>
-          <label class="health-live-select">空间
-            <select :value="selectedSpaceId" @change="chooseLiveSpace(($event.target as HTMLSelectElement).value)">
-              <option value="">选择个人空间</option>
-              <option v-for="space in liveSpaces" :key="space.id" :value="space.id">{{ space.name }}</option>
-            </select>
-          </label>
-          <span :class="['health-live-status',{'health-live-error':liveStatus==='error'}]" role="status">{{ liveMessage }}</span>
-          <button type="button" class="quiet-button" @click="selectedSpaceId?loadLiveRecords(selected?'detail':bodyTab,true):initializeLive()">刷新</button>
+        <div v-if="liveMode&&!settingsMode&&liveStatus!=='ready'" class="health-live-bar" role="status">
+          <span class="health-live-label"><ShieldCheck :size="16"/> 健康档案</span>
+          <span :class="['health-live-status',{'health-live-error':liveStatus==='error'}]">{{ liveMessage||'正在连接健康档案…' }}</span>
+          <a href="/health/hub/settings" class="quiet-button">应用设置</a>
+          <button v-if="liveStatus==='error'" type="button" class="quiet-button" @click="initializeLive">重试</button>
         </div>
-        <section v-if="activeTab==='home'" class="home-view">
+        <AlohaHubSettings v-if="settingsMode" :spaces="liveSpaces" :selected-space-id="selectedSpaceId"
+          :busy="liveStatus==='loading'" :space-message="liveMessage" back-url="/health/"
+          :account-url="accountCenterUrl" @choose-space="chooseLiveSpace" @retry="initializeLive"/>
+        <section v-else-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
             :agent-open="agentOpen"
             
