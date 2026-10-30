@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createSSRApp } from 'vue'
 import { renderToString } from 'vue/server-renderer'
-import AlohaHub from './AlohaHub.vue'
+import AlohaHub from '@aloha/ui/AlohaHub.vue'
 
 const apps = [
   { id:'assistant',name:'Assistant' },
