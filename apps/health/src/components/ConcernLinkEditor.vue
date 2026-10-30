@@ -17,7 +17,7 @@ const emit=defineEmits<{
 <template>
   <div class="concern-inline-editor">
     <p class="helper-copy">关联已有记录；解除关联不会删除原记录。</p>
-    <div class="relation-picker">
+    <div class="relation-picker" :class="{ 'has-kind': kinds.length > 1 }">
       <label v-if="kinds.length>1" class="sr-only" for="concern-link-kind">记录类型</label>
       <select v-if="kinds.length>1" id="concern-link-kind" :value="kind" :disabled="busy"
         aria-label="选择记录类型" @change="emit('change-kind',($event.target as HTMLSelectElement).value as ConcernTargetKind)">
