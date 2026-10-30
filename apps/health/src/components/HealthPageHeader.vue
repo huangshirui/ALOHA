@@ -12,6 +12,7 @@ defineProps<{
   context?: string
   canBack?: boolean
   agentOpen?: boolean
+  agentEnabled?: boolean
 }>()
 defineEmits<{ back: []; ask: [] }>()
 
@@ -46,7 +47,7 @@ onUnmounted(() => window.removeEventListener('scroll', updateScrollState))
     </div>
     <div class="health-page-toolbar" role="group" aria-label="页面操作">
       <slot name="actions"/>
-      <button type="button" class="health-page-ask" :class="{ active: agentOpen }"
+      <button v-if="agentEnabled!==false" type="button" class="health-page-ask" :class="{ active: agentOpen }"
         aria-controls="health-agent-panel" :aria-expanded="agentOpen" aria-label="问问 Health" title="问问 Health"
         @click="$emit('ask')">
         <Sparkles :size="17"/><span>问问 Health</span>
