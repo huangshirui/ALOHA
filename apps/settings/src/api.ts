@@ -38,12 +38,19 @@ export function selectedSpace(spaces:Space[],storage:Pick<Storage,'getItem'>):st
   const stored=storage.getItem('aloha.space')||storage.getItem('aloha.health.space')||''
   return spaces.some(s=>s.id===stored)?stored:''
 }
-const destinations={
-  health:import.meta.env.VITE_ALOHA_HEALTH_URL||'/health/',
-  assistant:import.meta.env.VITE_ALOHA_ASSISTANT_URL||'/assistant/',
-  finance:'/finance/',
-  things:'/things/',
+/** Settings is hosted on a different preview origin from Health. A relative
+ * /health/ return path points back to Settings and is broken in Preview.
+ * Derive a same-account sibling Preview URL only for our known Worker hostname
+ * shape; no user-controlled host, query, or arbitrary redirect is accepted.
+ * Configured deployment URLs take precedence.
+ */
+export const safeReturn=(from:string|null)=>{
+  const host=typeof window==='undefined'?'':window.location.hostname
+  const match=/^staging-aloha-app-settings\\.([a-z0-9-]+\\.workers\\.dev)$/.exec(host)
+  const health=import.meta.env.VITE_ALOHA_HEALTH_URL||
+    (match?`https://staging-aloha-app-health.${match[1]}/health/`:'/health/')
+  const assistant=import.meta.env.VITE_ALOHA_ASSISTANT_URL||
+    (match?'https://aloha.aisr.online/':'/assistant/')
+  return from==='assistant'?assistant:from==='finance'?'/finance/':
+    from==='things'?'/things/':health
 }
-export const safeReturn=(from:string|null)=>
-  from==='assistant'?destinations.assistant:from==='finance'?destinations.finance:
-  from==='things'?destinations.things:destinations.health
