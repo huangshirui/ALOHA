@@ -7,6 +7,13 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Until Assistant moves off /, its root-scoped service worker must never
+      // serve the Assistant offline shell for peer ALOHA applications.
+      // Without an allowlist, /health/ and /settings/ navigations can render
+      // a cached Assistant page even when Cloudflare Routes are correct.
+      workbox: {
+        navigateFallbackAllowlist: [/^\/$/],
+      },
       manifest: {
         name: 'ALOHA Assistant',
         short_name: 'Assistant',
