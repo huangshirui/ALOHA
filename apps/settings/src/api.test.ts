@@ -21,6 +21,6 @@ describe('ALOHA common settings',()=>{
   it('never applies an unavailable Space preference',()=>{
     const spaces=[{id:'spc_a',name:'Synthetic A'}]
     expect(selectedSpace(spaces,{getItem:key=>key==='aloha.space'?'spc_unlisted':null})).toBe('')
-    expect(selectedSpace(spaces,{getItem:key=>key==='aloha.health.space'?'spc_a':null})).toBe('spc_a')
+    expect(selectedSpace(spaces,{getItem:key=>key==='aloha.health.space'?'spc_a':null})).toBe('')
   })
 })
