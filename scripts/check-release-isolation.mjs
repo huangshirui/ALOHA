@@ -25,6 +25,9 @@ for (const file of expected) {
       file + ': external Actions must use audited immutable commit SHAs')
   }
   assert.match(c, /actions\/checkout@[a-f0-9]{40}/, file + ': checkout action missing')
+  const checkoutCount = [...c.matchAll(/uses:\s+actions\/checkout@[a-f0-9]{40}/g)].length
+  assert.equal(c.split('persist-credentials: false').length - 1, checkoutCount,
+    file + ': checkout must not leave a reusable GitHub token in the workspace')
   const setupCount = [...c.matchAll(/uses:\s+actions\/setup-node@[a-f0-9]{40}/g)].length
   assert.equal(c.split('package-manager-cache: false').length - 1, setupCount,
     file + ': setup-node v6 must not cache without a checked-in lockfile')
