@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: "Health staging Preview or one-time production runtime bootstrap (use the exact confirmation word)"
+        description: "Choose Health Staging Preview or independent Production deployment"
         required: true
         type: string
 
