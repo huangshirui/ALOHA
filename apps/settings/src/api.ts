@@ -35,7 +35,7 @@ export const getProfile=()=>fetchData<UserProfile>('me')
 export const getSpaces=()=>fetchData<Space[]>('spaces')
 /** A Space ID stored here is a per-origin browser preference, never a grant. */
 export function selectedSpace(spaces:Space[],storage:Pick<Storage,'getItem'>):string{
-  const stored=storage.getItem('aloha.space')||storage.getItem('aloha.health.space')||''
+  const stored=storage.getItem('aloha.space')||''
   return spaces.some(s=>s.id===stored)?stored:''
 }
 /** Settings is hosted on a different preview origin from Health. A relative
