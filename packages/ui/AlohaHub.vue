@@ -94,7 +94,7 @@ async function closeOnEscape() {
           </component>
         </div>
 
-        <a v-if="settingsUrl" :href="settingsUrl" class="aloha-hub-settings-link" @click="close">
+        <a v-if="settingsUrl" :href="settingsUrl" class="aloha-hub-settings-link" target="_blank" rel="noopener noreferrer" @click="close">
           <Settings2 :size="18" aria-hidden="true"/> 应用设置
         </a>
         <div class="aloha-hub-footer" aria-label="公共服务">
