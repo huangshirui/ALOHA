@@ -44,7 +44,8 @@ boundary without deploying any other app.
    `WRANGLER_LOG_SANITIZE=true` and `WRANGLER_SEND_METRICS=false` for
    deployment jobs. Avoid a wrapper Action when local Wrangler already
    supports the operation; pin supported first-party Actions to full
-   reviewed commit SHAs, not floating tags. While this repository has no
+   reviewed commit SHAs, not floating tags. Checkout uses `persist-credentials: false`
+   because no job needs Git credentials after cloning. While this repository has no
    lockfile, disable setup-node v6 automatic package-manager caching, and use
    the Wrangler package installed by the workspace rather than an ad hoc
    `npx --yes` download.
