@@ -11,9 +11,13 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      WRANGLER_LOG: error
+      WRANGLER_LOG_SANITIZE: 'true'
+      WRANGLER_SEND_METRICS: 'false'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
       - name: Use repository npm version
@@ -32,7 +36,7 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           # A public-release gate must inspect history, not only the current tree.
           fetch-depth: 0
@@ -41,6 +45,6 @@ jobs:
         # of a reported detection regression; revisit the pin after the regression is resolved.
         run: >-
           docker run --rm
-          -v "$GITHUB_WORKSPACE:/repo"
+          -v "$GITHUB_WORKSPACE:/repo:ro"
           ghcr.io/gitleaks/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a
           git --redact --no-banner /repo
