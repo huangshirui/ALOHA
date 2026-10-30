@@ -20,6 +20,26 @@ describe('Settings current-origin authentication errors',()=>{
       name:'SettingsApiError',status:403,code:'access_denied',
     })
   })
+  it('shows the registered-AUD error rather than treating it as an expired browser login',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json(
+      {error:'audience_not_registered'},{status:403})))
+    try { await getProfile(); throw new Error('Expected denial') }
+    catch(e) {
+      expect(e).toMatchObject({status:403,code:'audience_not_registered'})
+      expect((e as Error).message).toContain('Access Audience')
+      expect((e as Error).message).not.toContain('登录凭证')
+    }
+  })
+  it('distinguishes an invalid backend application credential from missing Access proof',async()=>{
+    vi.stubGlobal('fetch',vi.fn().mockResolvedValue(Response.json(
+      {error:'identity_application_unauthorized'},{status:503})))
+    try { await getProfile(); throw new Error('Expected denial') }
+    catch(e) {
+      expect(e).toMatchObject({status:503,code:'identity_application_unauthorized'})
+      expect((e as Error).message).toContain('应用凭据')
+      expect((e as Error).message).not.toContain('登录凭证')
+    }
+  })
   it('loads profile independently from spaces if Core fails',async()=>{
     vi.stubGlobal('fetch',vi.fn(async(input:string)=>{
       if(input.endsWith('/me'))return Response.json({data:{displayName:'Synthetic Account',avatarUrl:null}})
