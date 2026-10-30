@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { editableSnapshot } from './health-editor'
+import { selectedAuthorizedHealthSpace } from './health-space-entry'
 import { newestFirst, pageOf, pageCount, recentMetricIds, searchMetrics } from './health-concern-view'
 import {
   Activity, ArrowLeft, ArrowRight, ArrowUpRight, BadgeCheck, CalendarDays, Check, CheckCircle2,
@@ -99,7 +100,7 @@ type SpaceChoice = {id:string,name:string,role:string,timezone?:string}
 const liveSpaces = ref<SpaceChoice[]>([])
 const selectedSpaceId = ref('')
 const subjectPersonId = ref('')
-const liveStatus = ref<'idle'|'loading'|'select'|'ready'|'error'>('idle')
+const liveStatus = ref<'idle'|'loading'|'ready'|'error'>('idle')
 const liveMessage = ref('')
 // The Home slot is reserved for a future cross-domain overview; land on Body for now.
 const activeTab = ref<Tab>('body')
@@ -341,7 +342,7 @@ async function chooseLiveSpace(spaceId:string) {
   clearLiveRecords()
   subjectPersonId.value=''
   if(!liveSpaces.value.some(s=>s.id===spaceId)) {
-    selectedSpaceId.value='';liveStatus.value='select';return
+    selectedSpaceId.value='';liveStatus.value='error';liveMessage.value='当前空间无权访问，请到应用设置重新选择';return
   }
   selectedSpaceId.value=spaceId
   localStorage.setItem('aloha.space',spaceId)
@@ -353,9 +354,14 @@ async function initializeLive() {
     liveSpaces.value=await listAuthorizedSpaces()
     // Adopt the former Health-only preference once, then use a single
     // per-origin ALOHA setting. A Space ID is never an authorization grant.
-    const stored=localStorage.getItem('aloha.space')||localStorage.getItem('aloha.health.space')
-    if(stored && liveSpaces.value.some(s=>s.id===stored)) await chooseLiveSpace(stored)
-    else {liveStatus.value='select';liveMessage.value='请选择用于健康档案的个人空间'}
+    const stored=selectedAuthorizedHealthSpace(liveSpaces.value,localStorage)
+    if(!stored) {
+      // Only Settings owns ALOHA Space selection. Navigation is same-origin
+      // in Production; Preview uses its explicitly configured Settings URL.
+      window.location.replace(hubSettingsUrl)
+      return
+    }
+    await chooseLiveSpace(stored)
   } catch(e) {
     liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法连接 LifeSpace'
   }
@@ -893,12 +899,16 @@ function detailName(kind: HealthKind,record:any) {
     </aside>
     <div class="page-frame">
       <main class="content">
-        <div v-if="liveMode&&liveStatus!=='ready'" class="health-live-bar" role="status">
-          <span class="health-live-label"><ShieldCheck :size="16"/> 健康档案</span>
-          <span :class="['health-live-status',{'health-live-error':liveStatus==='error'}]">{{ liveMessage||'正在连接健康档案…' }}</span>
-          <a href="/settings/?from=health" class="quiet-button">应用设置</a>
-          <button v-if="liveStatus==='error'" type="button" class="quiet-button" @click="initializeLive">重试</button>
+        <div v-if="liveMode&&(liveStatus==='error'||!selectedSpaceId)" class="health-entry-state"
+          :role="liveStatus==='error'?'alert':'status'">
+          <template v-if="liveStatus==='error'">
+            <h2>健康档案暂时无法加载</h2>
+            <p>{{ liveMessage }}</p>
+            <button type="button" class="quiet-button" @click="initializeLive">重新连接</button>
+          </template>
+          <p v-else>正在连接健康档案…</p>
         </div>
+        <template v-else>
         <section v-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
             :agent-open="agentOpen" :agent-enabled="!liveMode"
@@ -1263,6 +1273,7 @@ function detailName(kind: HealthKind,record:any) {
         <section v-else class="more-view">
           <AlohaHub page :apps="alohaApps" current-app="health" v-bind="alohaPublicLinks"/>
         </section>
+        </template>
       </main>
     </div>
 
