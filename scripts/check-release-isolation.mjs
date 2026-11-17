@@ -120,4 +120,15 @@ for(const surface of ['settings','health']){
   assert.equal(cfg.services.find(x=>x.binding==='ALOHA_WORKSPACE').service,'aloha-space-binding')
   assert.equal(cfg.previews.services.find(x=>x.binding==='ALOHA_WORKSPACE').service,'aloha-space-binding-staging')
 }
+const state=JSON.parse(readFileSync('workers/space-binding/wrangler.jsonc','utf8'))
+assert.equal(state.workers_dev,false)
+assert.equal(state.preview_urls,false)
+assert.equal(state.env.staging.workers_dev,false)
+assert.equal(state.env.staging.preview_urls,false)
+assert.notEqual(state.name,state.env.staging.name)
+for(const cfg of [state,state.env.staging]){
+  assert.equal(cfg.route,undefined)
+  assert.equal(cfg.routes,undefined)
+  assert.ok(cfg.migrations.some(m=>m.new_sqlite_classes.includes('WorkspaceState')))
+}
 console.log('ALOHA Actions: independent workflows and workspace isolation verified')

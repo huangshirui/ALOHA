@@ -7,7 +7,7 @@ const props=withDefaults(defineProps<{
   accountUrl:string
   selectedSpaceId:string
   spaces:HubSpace[]
-  workspaceStatus?:'unbound'|'bound'|'reselect'|'creating'|'uncertain'|'unavailable'
+  workspaceStatus:'unbound'|'bound'|'reselect'|'creating'|'uncertain'|'unavailable'
   busy?:boolean
   spaceMessage?:string
   backUrl:string
@@ -30,7 +30,7 @@ const roleLabels:Record<string,string>={owner:'所有者',admin:'管理员',edit
     <section id="default-space" class="aloha-settings-card" aria-label="ALOHA 专属空间">
       <div class="aloha-settings-section-heading"><h2>ALOHA 专属空间</h2><ShieldCheck :size="20" aria-hidden="true"/></div>
       <p>ALOHA 各应用共用一个空间。绑定保存在云端，换设备无需重新选择；不会改变 LifeSpace 权限。</p>
-      <template v-if="busy&&!workspaceStatus"><p role="status">正在检查空间…</p></template>
+      <template v-if="busy&&workspaceStatus==='unavailable'"><p role="status">正在检查空间…</p></template>
       <template v-else-if="workspaceStatus==='bound'">
         <div class="aloha-workspace-current"><strong>{{selectedName||'已绑定'}}</strong><small>已绑定 · 跨设备同步</small></div>
         <p>如需管理、退出或注销此空间，请前往账户中心。当前有效绑定不会被自动替换。</p>

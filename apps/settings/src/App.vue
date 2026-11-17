@@ -50,7 +50,7 @@ async function refreshSpaces(){
     spaceError.value=e instanceof Error?e:new Error('无法读取空间绑定')
   }finally{spaceBusy.value=false}
 }
-function refresh(){void Promise.all([refreshProfile(),refreshSpaces()])}
+function refresh(){if(!spaceBusy.value||!workspace.value)void Promise.all([refreshProfile(),refreshSpaces()])}
 async function configure(operation:()=>Promise<WorkspaceView>){
   if(spaceBusy.value||!workspace.value||workspace.value.status==='bound'||workspace.value.status==='creating')return
   spaceBusy.value=true;spaceError.value=null;message.value=''

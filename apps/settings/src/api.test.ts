@@ -19,11 +19,11 @@ describe('ALOHA common settings',()=>{
     expect(safeReturn('health')).toBe('/health/')
   })
   it('uses the authenticated cloud endpoint and explicit mutations',async()=>{
-    const fetch=vi.fn(async()=>Response.json({data:{status:'unbound',space:null,spaces:[]}}))
+    const fetch=vi.fn(async(_path:string,_init?:RequestInit)=>Response.json({data:{status:'unbound',space:null,spaces:[]}}))
     vi.stubGlobal('fetch',fetch)
     await getWorkspace();await bindWorkspace('spc_synthetic');await createWorkspace('Synthetic','UTC',false)
     expect(fetch.mock.calls[0]?.[0]).toBe('/settings/api/v1/workspace')
-    const bind=fetch.mock.calls[1] as unknown as [string,RequestInit]
+    const bind=fetch.mock.calls[1] as [string,RequestInit]
     expect(bind[1].method).toBe('POST')
     expect(bind[1].headers).toMatchObject({'X-ALOHA-Intent':'configure-workspace'})
     expect(JSON.parse(String(bind[1].body))).toEqual({intent:'bind',spaceId:'spc_synthetic'})

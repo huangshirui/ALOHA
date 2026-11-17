@@ -348,6 +348,7 @@ async function chooseLiveSpace(spaceId:string) {
   await loadLiveRecords(bodyTab.value)
 }
 async function initializeLive() {
+  clearLiveRecords();selectedSpaceId.value='';subjectPersonId.value='';liveSpaces.value=[]
   liveStatus.value='loading'; liveMessage.value='正在验证访问权限…'
   try {
     const view=await getAlohaWorkspace()

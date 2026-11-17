@@ -38,7 +38,7 @@ export async function workspaceState(
     if(!obj(payload)||!obj(payload.data))return fail()
     const b=payload.data
     if(!Number.isSafeInteger(b.revision)||Number(b.revision)<0||
-      !['unbound','bound','creating','uncertain'].includes(String(b.status))||
+      (typeof b.status!=='string'||!['unbound','bound','creating','uncertain'].includes(b.status))||
       !(b.spaceId===null||(typeof b.spaceId==='string'&&workspaceSpaceId.test(b.spaceId)))||
       (b.status==='bound')!==(typeof b.spaceId==='string'))return fail()
     return b as unknown as WorkspaceBinding
