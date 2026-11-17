@@ -12,7 +12,7 @@ import {
 } from 'lucide-vue-next'
 import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
-  listAuthorizedSpaces, getAlohaUserProfile, patchConcernPresentation,
+  getAlohaWorkspace, getAlohaUserProfile, patchConcernPresentation,
   getHealthSnapshot, updateHealthRecord, uploadHealthDocument, downloadHealthDocument,
   listConcernRelations,linkConcernRecord,unlinkConcernRecord,
   type FileUploadProgress,
@@ -345,20 +345,19 @@ async function chooseLiveSpace(spaceId:string) {
     selectedSpaceId.value='';liveStatus.value='error';liveMessage.value='当前空间无权访问，请到应用设置重新选择';return
   }
   selectedSpaceId.value=spaceId
-  localStorage.setItem('aloha.space',spaceId)
   await loadLiveRecords(bodyTab.value)
 }
 async function initializeLive() {
   liveStatus.value='loading'; liveMessage.value='正在验证访问权限…'
   try {
-    liveSpaces.value=await listAuthorizedSpaces()
-    // Only Settings owns the explicit per-origin ALOHA selection.
-    // Legacy Health-only storage is not a valid current preference.
-    // A Space ID is never an authorization grant.
-    const stored=selectedAuthorizedHealthSpace(liveSpaces.value,localStorage)
-    if(!stored) {
-      // Only Settings owns ALOHA Space selection. Navigation is same-origin
-      // in Production; Preview uses its explicitly configured Settings URL.
+    const view=await getAlohaWorkspace()
+    liveSpaces.value=view.spaces
+    const stored=selectedAuthorizedHealthSpace(view)
+    if(!stored){
+      if(view.status==='creating'){
+        liveStatus.value='error';liveMessage.value='专属空间正在创建，请重新检查或进入应用设置查看。';return
+      }
+      // No browser storage and no fallback to an arbitrary current Space.
       window.location.replace(hubSettingsUrl)
       return
     }

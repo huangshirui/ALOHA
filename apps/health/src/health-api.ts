@@ -67,6 +67,7 @@ export const getAlohaUserProfile=()=>api<AlohaUserProfile>('/profile')
 
 // Personal Space selection is an explicit one-time product decision, NOT a trust claim.
 // Core still verifies every requested Space against the authenticated LifeSpace user.
+export const getAlohaWorkspace = () => api<import('@aloha/contracts').WorkspaceView>('/workspace')
 export const listAuthorizedSpaces = () =>
   api<Array<{id:string,name:string,role:string,timezone?:string}>>('/spaces')
 // Person is resolved by the trusted BFF from current verified Principal + membership.
