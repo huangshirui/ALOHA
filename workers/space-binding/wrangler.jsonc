@@ -1,0 +1,47 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "aloha-space-binding",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-30",
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKSPACE_STATE",
+        "class_name": "WorkspaceState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "workspace-v1",
+      "new_sqlite_classes": [
+        "WorkspaceState"
+      ]
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "aloha-space-binding-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "WORKSPACE_STATE",
+            "class_name": "WorkspaceState"
+          }
+        ]
+      },
+      "migrations": [
+        {
+          "tag": "workspace-v1",
+          "new_sqlite_classes": [
+            "WorkspaceState"
+          ]
+        }
+      ]
+    }
+  }
+}

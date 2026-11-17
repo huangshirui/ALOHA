@@ -6,7 +6,7 @@ const root = '.github/workflows/'
 const read = file => readFileSync(root + file, 'utf8')
 const expected = [
   'ci.yml', 'deploy.yml', 'deploy-finance.yml', 'deploy-health.yml',
-  'deploy-settings.yml', 'deploy-things.yml',
+  'deploy-settings.yml', 'deploy-things.yml', 'deploy-workspace.yml',
 ]
 assert.deepEqual(readdirSync(root).filter(file => /\.ya?ml$/.test(file)).sort(),
   [...expected].sort(), 'Unexpected or leftover GitHub Actions workflow; review it explicitly')
@@ -109,4 +109,10 @@ for (const surface of ['finance','things']) {
   assert.doesNotMatch(c, /npx wrangler deploy\s*$/m,
     `${surface}: scaffold Preview must not deploy Production`)
 }
-console.log('ALOHA Actions: six explicit, independent, least-privilege, sanitized workflows verified')
+const workspace=read('deploy-workspace.yml')
+assert.match(workspace,/workflow_dispatch:/)
+assert.doesNotMatch(workspace,/  push:/)
+assert.match(workspace,/DEPLOY_ALOHA_WORKSPACE_STAGING/)
+assert.match(workspace,/DEPLOY_ALOHA_WORKSPACE_PRODUCTION/)
+assert.match(workspace,/wrangler deploy --env staging/)
+console.log('ALOHA Actions: independent, least-privilege, sanitized workflows verified')

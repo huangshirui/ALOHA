@@ -1,0 +1,62 @@
+name: Deploy ALOHA private workspace state
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: "DEPLOY_ALOHA_WORKSPACE_STAGING or DEPLOY_ALOHA_WORKSPACE_PRODUCTION"
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: aloha-workspace-${{ inputs.confirmation }}
+  cancel-in-progress: false
+jobs:
+  staging:
+    if: inputs.confirmation == 'DEPLOY_ALOHA_WORKSPACE_STAGING'
+    runs-on: ubuntu-latest
+    environment: preview
+    env:
+      WRANGLER_LOG: error
+      WRANGLER_LOG_SANITIZE: 'true'
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --legacy-peer-deps
+      - run: npm run typecheck -w @aloha/space-binding && npm run test -w @aloha/space-binding
+      - name: Deploy only private staging state service
+        working-directory: workers/space-binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --env staging
+  production:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'DEPLOY_ALOHA_WORKSPACE_PRODUCTION'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      WRANGLER_LOG: error
+      WRANGLER_LOG_SANITIZE: 'true'
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm install --legacy-peer-deps
+      - run: npm run typecheck -w @aloha/space-binding && npm run test -w @aloha/space-binding
+      - name: Deploy only private production state service
+        working-directory: workers/space-binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
