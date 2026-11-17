@@ -185,16 +185,8 @@ aloha.aisr.online/
   The Settings BFF independently authenticates signed Access evidence through
   LifeSpace Identity and proxies only the current user's bounded profile/avatar,
   never browser-exposed backend credentials.
-- **Default Space**: Settings reads `/api/v1/me/spaces` from Core using a
-  server-only Identity-issued user token. It stores only `aloha.space` as
-  a **per-browser, per-origin preference**, migrating any old Health-only key.
-  Health reads the preference and independently enforces Core authorization
-  for every request. No new user profile database or Space/Grant authority.
-- **Staging caveat**: each PWA/Settings named Preview has a distinct
-  `workers.dev` Origin, so preview localStorage cannot be shared by browsing
-  between them; publicly configured preview navigation URLs can link pages.
-  An actual cross-app preference round-trip needs a **same-origin** integration
-  environment, not an invented cross-origin cookie or user identity.
+- **ALOHA workspace binding (candidate)**: one current Space pointer per verified LifeSpace User, stored by an internal per-user SQLite Durable Object service. On first use or confirmed loss of membership, Settings explicitly offers creation of a normal Space or binding an existing current member Space. No browser preference, migration, implicit first match or automatic retry after an ambiguous Core create. Valid binding is reused and is not an authority grant; Account remains the management entry. Health resolves through its trusted BFF; every Core operation retains its own authorization and own-Person check. Assistant currently has no personal Space routing; future domain operations must resolve the same binding, not invent a second selection.
+- **Preview isolation**: named Preview Service Bindings target deployed Workers, not another named Preview. Settings/Health Preview bind to the separate private staging workspace service, production binds to its production counterpart. Neither service has a public route; do not share namespaces. Deploy the private service before the respective consumers.
 - **Health MVP boundary**: manual health CRUD, observations/trends, files
   and relationships are the baseline candidate. AI import/Agent (Issue #43)
   and HealthRegimen ↔ Task/Recurrence (Issue #44) are later work.

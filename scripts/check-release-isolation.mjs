@@ -115,4 +115,9 @@ assert.doesNotMatch(workspace,/  push:/)
 assert.match(workspace,/DEPLOY_ALOHA_WORKSPACE_STAGING/)
 assert.match(workspace,/DEPLOY_ALOHA_WORKSPACE_PRODUCTION/)
 assert.match(workspace,/wrangler deploy --env staging/)
-console.log('ALOHA Actions: independent, least-privilege, sanitized workflows verified')
+for(const surface of ['settings','health']){
+  const cfg=JSON.parse(readFileSync('apps/'+surface+'/wrangler.jsonc','utf8'))
+  assert.equal(cfg.services.find(x=>x.binding==='ALOHA_WORKSPACE').service,'aloha-space-binding')
+  assert.equal(cfg.previews.services.find(x=>x.binding==='ALOHA_WORKSPACE').service,'aloha-space-binding-staging')
+}
+console.log('ALOHA Actions: independent workflows and workspace isolation verified')

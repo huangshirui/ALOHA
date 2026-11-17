@@ -35,8 +35,8 @@ The root path is not a fifth installable PWA. In the final topology it is a ligh
 `/health/hub/settings`. It does **not** create a fifth installable PWA or
 additional LifeSpace Application Context. Its independently deployed Worker
 `aloha-app-settings` serves `apps/settings`, a small UI based on
-`@aloha/ui/AlohaHubSettings.vue` plus a read-only same-origin Identity/Core
-BFF. It must not overlap other surface PWA scopes.
+`@aloha/ui/AlohaHubSettings.vue` plus a scoped same-origin Identity/Core
+BFF for profile and workspace onboarding. It must not overlap other surface PWA scopes.
 
 **Production route (manual activation after review):**
 `aloha.aisr.online/settings*` -> Settings Worker; Worker normalizes
@@ -51,9 +51,7 @@ Set GitHub **preview environment variables** `ALOHA_SETTINGS_STAGING_URL`
 and `ALOHA_HEALTH_STAGING_URL` to the exact already-issued Preview
 destinations when exercising cross-Preview navigation; those values are
 public URLs, not credentials. Production builds use same-origin `/settings/`.
-Browser localStorage does **not** traverse Staging Preview origins. Thus
-cross-app Space-preference persistence must be tested under a shared
-origin separately before Production activation.
+The cloud workspace pointer replaces browser localStorage. Preview Health and Settings bind the same dedicated private staging workspace service; Production binds a distinct private production service. Deploy the service first using the manual workspace workflow. Never bind named Previews to the production service.
 
 Run [`deploy-settings.yml`](../.github/workflows/deploy-settings.yml)
 with the exact Preview confirmation after its Access policy and preview-only

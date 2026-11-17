@@ -1,8 +1,10 @@
-/** Read-only common ALOHA settings BFF.
+/** Common ALOHA settings BFF.
  * Cloudflare Access verified by LifeSpace Identity at exchange; no browser bearer.
  * Distinct from LifeSpace account editing (account.aisr.online) and Core auth.
  */
+import {parseWorkspaceSpaces,workspaceState,workspaceView,workspaceSpaceId,workspaceUserId,type WorkspaceService} from '@aloha/contracts'
 export interface SettingsEnv {
+  ALOHA_WORKSPACE?:WorkspaceService
   LIFESPACE_IDENTITY_BASE_URL?:string
   LIFESPACE_CORE_BASE_URL?:string
   LIFESPACE_APPLICATION_CREDENTIAL?:string
@@ -33,9 +35,34 @@ async function data(response:Response):Promise<Dict|null>{
 }
 export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:Fetcher=fetch):Promise<Response>{
   const route=new URL(request.url).pathname
-  const known=['/settings/api/v1/me','/settings/api/v1/spaces','/settings/api/v1/avatar']
+  const known=['/settings/api/v1/me','/settings/api/v1/spaces','/settings/api/v1/avatar','/settings/api/v1/workspace']
   if(!known.includes(route))return denied('not_found',404)
-  if(request.method!=='GET')return denied('method_not_allowed',405)
+  const workspace=route==='/settings/api/v1/workspace'
+  const mutation=workspace&&request.method==='POST'
+  if(request.method!=='GET'&&!mutation)return denied('method_not_allowed',405)
+  if(new URL(request.url).search)return denied('invalid_request',400)
+  let input:Dict|null=null
+  if(mutation){
+    if(request.headers.get('Origin')!==new URL(request.url).origin||
+      request.headers.get('Sec-Fetch-Site')!=='same-origin'||
+      request.headers.get('X-ALOHA-Intent')!=='configure-workspace'||
+      !/^application\/json(?:;|$)/i.test(request.headers.get('Content-Type')??''))return denied('origin_forbidden',403)
+    const raw=await request.text()
+    if(raw.length>2048)return denied('invalid_request',400)
+    let parsed:unknown
+    try{parsed=JSON.parse(raw)}catch{return denied('invalid_request',400)}
+    if(!object(parsed))return denied('invalid_request',400)
+    const keys=Object.keys(parsed).sort().join(',')
+    if(parsed.intent==='bind'){
+      if(keys!=='intent,spaceId'||typeof parsed.spaceId!=='string'||!workspaceSpaceId.test(parsed.spaceId))return denied('invalid_request',400)
+    }else if(parsed.intent==='create'){
+      if(keys!=='acknowledgeUncertain,intent,name,timezone'||typeof parsed.name!=='string'||!parsed.name.trim()||parsed.name.trim().length>100||
+        typeof parsed.timezone!=='string'||!parsed.timezone||parsed.timezone.length>100||typeof parsed.acknowledgeUncertain!=='boolean')return denied('invalid_request',400)
+      try{new Intl.DateTimeFormat('en',{timeZone:parsed.timezone})}catch{return denied('invalid_request',400)}
+    }else return denied('invalid_request',400)
+    input=parsed
+  }
+  if(workspace&&!env.ALOHA_WORKSPACE)return denied('workspace_storage_unavailable',503)
   const identity=origin(env.LIFESPACE_IDENTITY_BASE_URL)
   const core=origin(env.LIFESPACE_CORE_BASE_URL)
   const credential=env.LIFESPACE_APPLICATION_CREDENTIAL
@@ -47,7 +74,7 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
       Authorization:'Bearer '+credential,
       'Content-Type':'application/json',
     },
-    body:JSON.stringify({accessAssertion:assertion,requestedScopes:['profile:read','spaces:read']}),
+    body:JSON.stringify({accessAssertion:assertion,requestedScopes:['profile:read','spaces:read',...(input?.intent==='create'?['spaces:write']:[])]}),
   })
   if(!exchanged.ok){
     // Do not confuse a missing Access header with an Identity exchange failure.
@@ -71,6 +98,55 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
   const bearer=session?.accessToken
   if(typeof bearer!=='string'||!bearer)return denied('invalid_exchange_response',502)
   const auth={Authorization:'Bearer '+bearer,Accept:'application/json'}
+  if(workspace){
+    const profileResponse=await upstream(fetcher,identity+'/api/v1/me',{method:'GET',headers:auth})
+    if(!profileResponse.ok)return denied('profile_unavailable',profileResponse.status)
+    const profile=await data(profileResponse)
+    if(!profile||typeof profile.id!=='string'||!workspaceUserId.test(profile.id)||
+      typeof profile.displayName!=='string'||!profile.displayName.trim())return denied('invalid_profile_response',502)
+    const userId=profile.id
+    const binding=await workspaceState(env.ALOHA_WORKSPACE,userId,'read')
+    if(binding instanceof Response)return binding
+    const listed=await upstream(fetcher,core+'/api/v1/me/spaces',{method:'GET',headers:auth})
+    if(!listed.ok)return denied('spaces_unavailable',listed.status)
+    const spaces=parseWorkspaceSpaces(await listed.json().catch(()=>null))
+    if(!spaces)return denied('invalid_spaces_response',502)
+    const view=workspaceView(binding,spaces)
+    const ok=(value:unknown)=>Response.json({data:value},{headers:{'Cache-Control':'private, no-store'}})
+    if(!input)return ok(view)
+    if(view.status==='bound'){
+      if(input.intent==='bind'&&input.spaceId===view.space?.id)return ok(view)
+      return denied('workspace_already_bound',409)
+    }
+    if(view.status==='creating')return denied('workspace_creation_in_progress',409)
+    if(input.intent==='bind'){
+      const selected=spaces.find(s=>s.id===input.spaceId)
+      if(!selected)return denied('workspace_not_member',403)
+      const saved=await workspaceState(env.ALOHA_WORKSPACE,userId,'bind',{expectedRevision:binding.revision,spaceId:selected.id})
+      if(saved instanceof Response)return saved
+      return ok(workspaceView(saved,spaces))
+    }
+    if(view.status==='uncertain'&&input.acknowledgeUncertain!==true)return denied('workspace_creation_uncertain',409)
+    const reservation=await workspaceState(env.ALOHA_WORKSPACE,userId,'reserve',{
+      expectedRevision:binding.revision,acknowledgeUncertain:input.acknowledgeUncertain,
+    })
+    if(reservation instanceof Response)return reservation
+    // Durable reservation precedes Core. Never retry an ambiguous create.
+    const created=await upstream(fetcher,core+'/api/v1/spaces',{
+      method:'POST',headers:{...auth,'Content-Type':'application/json'},
+      body:JSON.stringify({name:String(input.name).trim(),timezone:input.timezone,ownerDisplayName:profile.displayName}),
+    })
+    const item=created.status===201?await data(created):null
+    const space=item&&typeof item.id==='string'&&workspaceSpaceId.test(item.id)&&typeof item.name==='string'&&item.name.trim()&&item.role==='owner'
+      ?{id:item.id,name:item.name,role:'owner' as const}:null
+    const outcome=space?'bound':([400,401,403,422].includes(created.status)?'unbound':'uncertain')
+    const finished=await workspaceState(env.ALOHA_WORKSPACE,userId,'finish',{
+      expectedRevision:reservation.revision,outcome,...(space?{spaceId:space.id}:{})
+    })
+    if(finished instanceof Response)return finished
+    if(!space)return denied(outcome==='uncertain'?'workspace_creation_uncertain':'workspace_create_denied',outcome==='uncertain'?503:created.status)
+    return ok(workspaceView(finished,[...spaces.filter(s=>s.id!==space.id),space]))
+  }
   if(route==='/settings/api/v1/spaces'){
     const response=await upstream(fetcher,core+'/api/v1/me/spaces',{method:'GET',headers:auth})
     if(!response.ok)return denied('spaces_unavailable',response.status)

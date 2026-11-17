@@ -13,7 +13,8 @@
     "@aloha/ui": "*",
     "@aloha/design-tokens": "*",
     "vue": "^3.5.42",
-    "lucide-vue-next": "^0.468.0"
+    "lucide-vue-next": "^0.468.0",
+    "@aloha/contracts": "*"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",

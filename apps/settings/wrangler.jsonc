@@ -4,14 +4,31 @@
   "compatibility_date": "2026-10-30",
   "workers_dev": false,
   "keep_vars": true,
-  "keep_vars": true,
   "main": "./src/worker.ts",
   "preview_urls": true,
-  "previews": {},
+  "previews": {
+    "services": [
+      {
+        "binding": "ALOHA_WORKSPACE",
+        "service": "aloha-space-binding-staging"
+      }
+    ]
+  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/settings*"]
-  }
+    "run_worker_first": [
+      "/settings*"
+    ]
+  },
+  "services": [
+    {
+      "binding": "ALOHA_WORKSPACE",
+      "service": "aloha-space-binding"
+    }
+  ],
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ]
 }

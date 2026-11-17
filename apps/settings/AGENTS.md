@@ -2,7 +2,7 @@
 
 The `/settings/` route is an ALOHA shared product utility. It is **not** a separate LifeSpace application, Identity provider, user directory, or installable PWA.
 
-- Serve only the shared settings UI and its strictly scoped same-origin read-only BFF.
+- Serve the shared settings UI and strictly scoped same-origin BFF. It owns explicit ALOHA workspace onboarding only: resolve current binding, create ordinary Space or bind an existing current member Space through Core. Use the private workspace binding service for product state, never a second user/Space authority.
 - All access to LifeSpace Identity and Core uses verified Cloudflare Access -> Identity token exchange server-side. Never trust a userId/Space membership from browser input.
 - Do not create user/Space identity databases or use cookies shared across subdomains.
 - `/settings/` must not overlap `/health/` or `/assistant/` installation scope. Do not import Health-specific code.

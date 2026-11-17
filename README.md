@@ -133,3 +133,7 @@ The current production workflow still deploys Assistant assets with the shared G
 When starting concrete work on a PWA, open that app's `AGENTS.md` first, keep domain decisions local to the surface, and promote only proven cross-surface primitives into shared packages.
 
 See [`docs/development.md`](./docs/development.md) for detailed deployment and private-configuration rules.
+
+### ALOHA workspace onboarding (candidate)
+
+A user explicitly creates a normal LifeSpace Space or binds an existing current member Space in shared Settings. The private workspace service stores one current pointer per verified User across devices; Health resolves it through the BFF. No existing browser preference migration or LifeSpace API/schema change. A valid binding is reused; loss of membership returns to onboarding. Account remains the place for generic Space management. Creation reservations prevent concurrent duplicate requests; uncertain outcomes require explicit recovery. Staging and Production deploy the private service independently before Settings/Health. Assistant domain integration will consume the same pointer when its personal Space data path exists.
