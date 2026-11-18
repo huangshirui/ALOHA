@@ -4,6 +4,8 @@ import {dispatchWorkspaceState,WorkspaceState} from './workspace-state'
 import settingsWorker from './worker'
 import {handleHealthApi} from '../../health/src/worker'
 const base='https://settings.example.com/settings/api/v1/workspace'
+const previewSettings='https://staging-aloha-app-settings.synthetic.workers.dev'
+const previewHealth='https://staging-aloha-app-health.synthetic.workers.dev'
 const token='header.'+btoa(JSON.stringify({sub:'usr_synthetic'})).replace(/=/g,'')+'.signature'
 const assertion='header.payload.signature'
 const initial={id:'spc_existing',name:'Synthetic',role:'owner'}
@@ -55,12 +57,44 @@ function fixture(){
   const health=()=>handleHealthApi(new Request('https://health.example.com/health/api/v1/workspace',{
     headers:{'Cf-Access-Jwt-Assertion':assertion},
   }),{...env,ALOHA_WORKSPACE:{fetch:request=>dispatchWorkspaceState(request,storageEnv,true)}},upstream)
+  const previewEnv={...env,ALOHA_WORKSPACE_MODE:'preview'}
+  const previewRead=(headers:Record<string,string>={},method='GET',mode='preview')=>handleSettingsApi(new Request(previewSettings+'/settings/api/v1/workspace/preview-read',{method,headers}),{...env,ALOHA_WORKSPACE_MODE:mode},upstream)
+  const previewCalls:Request[]=[]
+  const healthPreview=(overrides:Record<string,unknown>={},host=previewHealth,wrongUser=false)=>handleHealthApi(new Request(host+'/health/api/v1/workspace',{headers:{'Cf-Access-Jwt-Assertion':assertion}}),{...env,ALOHA_WORKSPACE_MODE:'preview',ALOHA_SETTINGS_PREVIEW_URL:previewSettings+'/settings/',ALOHA_SETTINGS_ACCESS_CLIENT_ID:'synthetic-id',ALOHA_SETTINGS_ACCESS_CLIENT_SECRET:'synthetic-secret',...overrides},async(input,init)=>{
+    if(String(input).startsWith(previewSettings)){
+      const req=new Request(input,init);previewCalls.push(req)
+      if(wrongUser)return Response.json({data:{revision:0,status:'unbound',spaceId:null},userId:'usr_other'})
+      return handleSettingsApi(req,previewEnv,upstream)
+    }
+    return upstream(input,init)
+  })
   const reader=(path:string,payload:unknown)=>dispatchWorkspaceState(new Request('https://workspace.internal/'+path,{method:'POST',body:JSON.stringify(payload)}),storageEnv,true)
-  return {get,post,health,reader,env,upstream,calls,get creates(){return creates},setSpaces:(next:typeof spaces)=>{spaces=next},failList:()=>{failList=true},failCreate:()=>{failCreate=true}}
+  return {get,post,health,reader,previewRead,healthPreview,previewCalls,env,upstream,calls,get creates(){return creates},setSpaces:(next:typeof spaces)=>{spaces=next},failList:()=>{failList=true},failCreate:()=>{failCreate=true}}
 }
 const bind={intent:'bind',spaceId:'spc_existing'}
 const create={intent:'create',name:'Synthetic workspace',timezone:'UTC',acknowledgeUncertain:false}
 describe('trusted cloud onboarding and Health cross-surface read',()=>{
+  it('reads the same preview binding over authenticated HTTPS and verifies the original user',async()=>{
+    const t=fixture();await t.post(bind)
+    const r=await t.healthPreview();expect(r.status).toBe(200)
+    expect((await r.json() as {data:import('@aloha/contracts').WorkspaceView}).data.space?.id).toBe('spc_existing')
+    expect(t.previewCalls).toHaveLength(1)
+    expect(t.previewCalls[0]?.headers.get('CF-Access-Client-Id')).toBe('synthetic-id')
+    expect(t.previewCalls[0]?.headers.get('X-ALOHA-User-Assertion')).toBe(assertion)
+    expect(t.previewCalls[0]?.redirect).toBe('manual')
+    expect((await t.previewRead({'Cf-Access-Jwt-Assertion':assertion})).status).toBe(401)
+    expect((await t.previewRead({'X-ALOHA-User-Assertion':assertion},'POST')).status).toBe(405)
+    expect((await t.previewRead({'X-ALOHA-User-Assertion':assertion},'GET','production')).status).toBe(404)
+    expect((await t.healthPreview({},previewHealth,true)).status).toBe(503)
+  })
+  it('fails closed on missing Preview config, wrong origin, or injected production binding',async()=>{
+    const t=fixture()
+    for(const overrides of [{ALOHA_SETTINGS_PREVIEW_URL:'https://production.example.com'},{ALOHA_SETTINGS_PREVIEW_URL:'https://staging-aloha-app-settings.other.workers.dev'},{ALOHA_SETTINGS_ACCESS_CLIENT_SECRET:''},{ALOHA_WORKSPACE:{fetch:()=>{throw Error('never call production')}}}]){
+      expect((await t.healthPreview(overrides)).status).toBe(503)
+    }
+    expect((await t.healthPreview({},'https://health.example.com')).status).toBe(503)
+    expect(t.previewCalls).toHaveLength(0)
+  })
   it('does not expose raw binding operations on the public Settings handler or read-only entrypoint',async()=>{
     const t=fixture()
     expect((await settingsWorker.fetch(new Request('https://workspace.internal/read',{method:'POST',body:JSON.stringify({userId:'usr_synthetic'})}),t.env)).status).toBe(404)

@@ -9,13 +9,13 @@ describe('ALOHA common settings',()=>{
     expect(safeReturn('https://evil.example')).toBe('/health/')
   })
   it('returns to a same-account Health Preview instead of Settings /health/',()=>{
-    vi.stubGlobal('window',{location:{hostname:'aloha-app-settings-staging.synthetic.workers.dev'}})
+    vi.stubGlobal('window',{location:{hostname:'staging-aloha-app-settings.synthetic.workers.dev'}})
     expect(safeReturn('health')).toBe('https://staging-aloha-app-health.synthetic.workers.dev/health/')
     expect(safeReturn('assistant')).toBe('https://aloha.aisr.online/')
     expect(safeReturn('https://evil.example')).toBe('https://staging-aloha-app-health.synthetic.workers.dev/health/')
   })
   it('does not construct a Preview URL for untrusted hostnames',()=>{
-    vi.stubGlobal('window',{location:{hostname:'aloha-app-settings-staging.attacker.example.com'}})
+    vi.stubGlobal('window',{location:{hostname:'staging-aloha-app-settings.attacker.example.com'}})
     expect(safeReturn('health')).toBe('/health/')
   })
   it('uses the authenticated cloud endpoint and explicit mutations',async()=>{

@@ -46,11 +46,11 @@ assets and `/settings/api/*`; it also matches `/settings-other`,
 which the Settings Worker must reject. Do not attach this route to the
 transitional Assistant Gateway as an unreviewed side effect.
 
-**Staging:** a distinct Settings Wrangler environment (`aloha-app-settings-staging`), not a named Preview. Named Health Preview Service Bindings target the deployed Settings staging Worker. Production Health targets production Settings. Both bindings select the read-only named `WorkspaceReader` entrypoint; only Settings can mutate its per-user SQLite DO. No third Worker or separate workspace deployment.
+**Staging:** use the existing Settings named `staging` Preview, with its own automatically isolated `WorkspaceState` DO namespace. Production Health targets the production Settings read-only named `WorkspaceReader` Service Binding. Named Health Preview cannot bind a peer Preview; it uses an HTTPS GET to the existing Settings Preview's dedicated read-only endpoint, admitted by Cloudflare Access Service Auth, carrying the original user assertion independently verified by staging Identity. No browser-supplied user ID, no redirect or cross-environment fallback. Production does not serve this HTTP endpoint.
 
-Deploy Settings staging using `DEPLOY_ALOHA_SETTINGS_STAGING`; its own secrets and Access audience must target LifeSpace Staging. Configure a protected staging hostname manually (no public route activated in code) and register its Access audience. Set preview environment variables `ALOHA_SETTINGS_STAGING_URL` and `ALOHA_HEALTH_STAGING_URL` to the actual protected staging URLs before building the clients. Then deploy Health Preview. Never point either environment at production for staging. The old Settings named Preview must not be used for workspace integration.
+Deploy Settings Preview using `DEPLOY_ALOHA_SETTINGS_STAGING_PREVIEW`; retain its existing Access audience and staging secrets. Set existing GitHub preview environment variables `ALOHA_SETTINGS_STAGING_URL` and `ALOHA_HEALTH_STAGING_URL` to the protected named Preview URLs. Health Preview deployment injects the approved Settings destination into Preview-only runtime configuration from the existing GitHub variable. Create a narrowly scoped Access Service Token accepted by the Settings Preview Access application (Service Auth policy, preserve the human Allow policy), and store the Client ID and Client Secret in Health **Preview-only** secrets `ALOHA_SETTINGS_ACCESS_CLIENT_ID` and `ALOHA_SETTINGS_ACCESS_CLIENT_SECRET`. Do not use production credentials. Then deploy Health Preview; the workflow checks required binding names and rejects an unexpected production Service Binding. Do not commit or log the token.
 
-Run [deploy-settings.yml](../.github/workflows/deploy-settings.yml) for the staging or separate main-only Production job. Production routing remains a separate review. No automatic route or secret provisioning.
+Run [deploy-settings.yml](../.github/workflows/deploy-settings.yml) for the named Preview or separate main-only Production job. No new product or staging Worker, no automatic route or secret provisioning.
 
 ## Shared versus independent
 
@@ -101,7 +101,7 @@ Settings or Assistant; release each affected consumer deliberately and separatel
 | Unit | Staging / Preview | Production |
 | --- | --- | --- |
 | Health | `.github/workflows/deploy-health.yml` (Preview job) | `.github/workflows/deploy-health.yml` (Production job) |
-| Settings (shared utility, not a PWA) | `.github/workflows/deploy-settings.yml` (staging environment job) | `.github/workflows/deploy-settings.yml` (Production job) |
+| Settings (shared utility, not a PWA) | `.github/workflows/deploy-settings.yml` (Preview job) | `.github/workflows/deploy-settings.yml` (Production job) |
 | Assistant / transitional Gateway | existing Assistant staging path | `.github/workflows/deploy.yml` |
 | Finance, Things | their own Preview workflows | production workflows when ready |
 
@@ -152,10 +152,8 @@ the typed storage and Model Contract. Keep Staging and Production application
 credentials, Access audiences and Scope ceilings independent.
 
 At release acceptance, separately verify:
-1. Settings returns the available Space choices and saves an explicit
-   same-origin `aloha.space` browser preference.
-2. Health without that preference navigates to Settings instead of selecting
-   an arbitrary Space or reading stale app-specific preferences.
+1. Settings explicitly creates or binds an available Space and persists the current cloud pointer in its per-user DO.
+2. Health without a valid cloud binding navigates to Settings instead of selecting an arbitrary Space or reading a stale browser preference.
 3. Health with a verified available Space can read the expected model snapshot
    (including an **empty** personal record set) without HTTP 404/403.
 4. Health create/read/write still respects both ALOHA Application policy and
@@ -179,7 +177,7 @@ Each PWA keeps **one Cloudflare Worker project** with two isolated deployments:
 - **State**: Preview-specific Durable Object classes and storage are automatically isolated from the production Durable Object namespace. Keep DO migrations at the Worker root and declare the Preview DO bindings under `previews.durable_objects.bindings` when the Worker code needs them.
 - **Preview hostnames**: Production surfaces share a single product origin with distinct paths. In staging, each PWA uses its own Cloudflare-provided named Preview URL and Worker-level Access policy; there is no shared staging ingress. Register each required Preview Access Audience under the single staging LifeSpace Application. Cross-surface browser origins remain distinct in staging.
 - **Security**: A Preview does not inherit production secrets. Never share credentials or use request parameters to switch LifeSpace environments. Protect each Preview URL with Cloudflare Access; authorize user requests using its signed assertion and the staging application's configured Access Audiences.
-- **Infrastructure**: Preview resources are an environment of the same Worker project, not a separately named Worker or a second LifeSpace Application. Staging surfaces are accessed directly, without Worker-to-Worker proxying.
+- **Infrastructure**: Preview resources are an environment of the same Worker project, not a separately named Worker or a second LifeSpace Application. Staging browser surfaces are accessed directly. Explicit read-only backend integrations may use authenticated HTTPS to the intended peer Preview; do not use a Preview Service Binding to production.
 
 This is the policy for each independently released ALOHA PWA. Health and Settings have separate Preview and Production jobs within their own individual workflows; migration/bootstrap-only jobs have been retired. The Assistant's temporary Gateway hosting remains a separate migration constraint.
 
@@ -187,7 +185,7 @@ This is the policy for each independently released ALOHA PWA. Health and Setting
 
 Each independently deployed PWA can use its Cloudflare named `staging` Preview URL directly. The URL has the form `https://staging-<worker>.<account>.workers.dev/<surface>/`. Cloudflare Access protects the corresponding `preview_worker` destination and produces a signed identity assertion. Register that Access Audience with the shared staging LifeSpace Application; the application itself and its model permissions remain shared across ALOHA surfaces.
 
-This keeps staging deployment simple, but **staging PWAs have separate browser origins**. Do not rely on shared cookies or local storage across staging surfaces. Production remains a shared product origin with path-scoped independent PWA Workers; validate origin-specific integrations separately before launch. No staging reverse proxy or cross-Worker service token is required.
+This keeps staging deployment simple, but **staging PWAs have separate browser origins**. Do not rely on shared cookies or local storage across staging surfaces. Production remains a shared product origin with path-scoped independent PWA Workers; validate origin-specific integrations separately before launch. No staging reverse proxy is required. For the explicit Health-to-Settings backend read, use a Preview-only Access Service Token; ordinary browser sign-in remains unchanged.
 
 ## Current deployment state
 

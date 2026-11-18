@@ -36,11 +36,9 @@ jobs:
             npx wrangler deploy --dry-run --outdir ../../.health-preview-dry-run
           fi
 
-      - name: Dry-run Settings Worker (both environments)
+      - name: Dry-run Settings Worker
         working-directory: apps/settings
-        run: |
-          npx wrangler deploy --dry-run --outdir ../../.settings-production-dry-run
-          npx wrangler deploy --env staging --dry-run --outdir ../../.settings-staging-dry-run
+        run: npx wrangler deploy --dry-run --outdir ../../.settings-production-dry-run
 
   secret-scan:
     runs-on: ubuntu-latest

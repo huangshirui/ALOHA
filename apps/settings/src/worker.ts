@@ -2,9 +2,10 @@
  * Cloudflare Access verified by LifeSpace Identity at exchange; no browser bearer.
  * Distinct from LifeSpace account editing (account.aisr.online) and Core auth.
  */
-import {parseWorkspaceSpaces,workspaceState,workspaceView,workspaceSpaceId,workspaceUserId,type WorkspaceService} from '@aloha/contracts'
+import {parseWorkspaceSpaces,workspaceState,workspaceView,workspaceSpaceId,workspaceUserId,workspacePreviewReadPath,workspacePreviewUserHeader,workspacePreviewMode,type WorkspaceService} from '@aloha/contracts'
 import {dispatchWorkspaceState,type WorkspaceStorageEnv} from './workspace-state'
 export interface SettingsEnv extends WorkspaceStorageEnv {
+  ALOHA_WORKSPACE_MODE?:string
   LIFESPACE_IDENTITY_BASE_URL?:string
   LIFESPACE_CORE_BASE_URL?:string
   LIFESPACE_APPLICATION_CREDENTIAL?:string
@@ -35,7 +36,9 @@ async function data(response:Response):Promise<Dict|null>{
 }
 export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:Fetcher=fetch):Promise<Response>{
   const route=new URL(request.url).pathname
-  const known=['/settings/api/v1/me','/settings/api/v1/spaces','/settings/api/v1/avatar','/settings/api/v1/workspace']
+  const previewRead=route===workspacePreviewReadPath
+  if(previewRead&&env.ALOHA_WORKSPACE_MODE!==workspacePreviewMode)return denied('not_found',404)
+  const known=['/settings/api/v1/me','/settings/api/v1/spaces','/settings/api/v1/avatar','/settings/api/v1/workspace',workspacePreviewReadPath]
   if(!known.includes(route))return denied('not_found',404)
   const workspace=route==='/settings/api/v1/workspace'
   const mutation=workspace&&request.method==='POST'
@@ -62,13 +65,15 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
     }else return denied('invalid_request',400)
     input=parsed
   }
-  if(workspace&&!env.WORKSPACE_STATE)return denied('workspace_storage_unavailable',503)
+  if((workspace||previewRead)&&!env.WORKSPACE_STATE)return denied('workspace_storage_unavailable',503)
   const storage:WorkspaceService={fetch:request=>dispatchWorkspaceState(request,env)}
   const identity=origin(env.LIFESPACE_IDENTITY_BASE_URL)
   const core=origin(env.LIFESPACE_CORE_BASE_URL)
   const credential=env.LIFESPACE_APPLICATION_CREDENTIAL
   if(!identity||!core||!credential)return denied('not_configured',503)
-  const assertion=request.headers.get('Cf-Access-Jwt-Assertion')||''
+  // Access service admission is distinct from the user's assertion. Only the
+  // preview read route uses the forwarded original assertion; Identity verifies it.
+  const assertion=request.headers.get(previewRead?workspacePreviewUserHeader:'Cf-Access-Jwt-Assertion')||''
   if(assertion.length>32768||!jwt.test(assertion))return denied('access_required',401)
   const exchanged=await upstream(fetcher,identity+'/internal/v1/access/tokens',{
     method:'POST',headers:{
@@ -99,7 +104,7 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
   const bearer=session?.accessToken
   if(typeof bearer!=='string'||!bearer)return denied('invalid_exchange_response',502)
   const auth={Authorization:'Bearer '+bearer,Accept:'application/json'}
-  if(workspace){
+  if(workspace||previewRead){
     const profileResponse=await upstream(fetcher,identity+'/api/v1/me',{method:'GET',headers:auth})
     if(!profileResponse.ok)return denied('profile_unavailable',profileResponse.status)
     const profile=await data(profileResponse)
@@ -108,6 +113,7 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
     const userId=profile.id
     const binding=await workspaceState(storage,userId,'read')
     if(binding instanceof Response)return binding
+    if(previewRead)return Response.json({data:binding,userId},{headers:{'Cache-Control':'private, no-store'}})
     const listed=await upstream(fetcher,core+'/api/v1/me/spaces',{method:'GET',headers:auth})
     if(!listed.ok)return denied('spaces_unavailable',listed.status)
     const spaces=parseWorkspaceSpaces(await listed.json().catch(()=>null))
