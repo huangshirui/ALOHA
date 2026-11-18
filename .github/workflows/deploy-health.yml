@@ -62,6 +62,26 @@ jobs:
         working-directory: apps/health
         run: npx wrangler deploy --dry-run --outdir ../../.health-preview-dry-run
 
+      - name: Configure only the approved Settings Preview destination
+        env:
+          ALOHA_SETTINGS_STAGING_URL: ${{ vars.ALOHA_SETTINGS_STAGING_URL }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const path='apps/health/wrangler.jsonc'
+          const config=JSON.parse(fs.readFileSync(path,'utf8'))
+          let url
+          try{url=new URL(process.env.ALOHA_SETTINGS_STAGING_URL||'')}catch{throw new Error('Settings Preview URL required')}
+          if(url.protocol!=='https:'||url.port||url.username||url.password||url.search||url.hash||
+            !['/','/settings','/settings/'].includes(url.pathname)||
+            !/^staging-aloha-app-settings\.[a-z0-9-]+\.workers\.dev$/.test(url.hostname))
+            throw new Error('Invalid named Settings Preview URL')
+          if(config.previews?.vars?.ALOHA_WORKSPACE_MODE!=='preview'||config.previews.services)
+            throw new Error('Unsafe Health Preview workspace transport')
+          config.previews.vars.ALOHA_SETTINGS_PREVIEW_URL=url.origin+'/settings/'
+          fs.writeFileSync(path,JSON.stringify(config,null,2)+'\n')
+          NODE
+
       - name: Deploy named staging Preview (does not modify Production)
         working-directory: apps/health
         env:
@@ -90,9 +110,11 @@ jobs:
           if (!deployments.length) throw new Error('Named staging Preview has no deployments');
           const latest = await read(`/${preview.id}/deployments/${deployments[0].id}`);
           const required = [
-            'ASSETS', 'HEALTH_PRESENTATION', 'ALOHA_WORKSPACE', 'LIFESPACE_APPLICATION_CREDENTIAL',
+            'ASSETS', 'HEALTH_PRESENTATION', 'ALOHA_WORKSPACE_MODE', 'ALOHA_SETTINGS_PREVIEW_URL',
+            'ALOHA_SETTINGS_ACCESS_CLIENT_ID', 'ALOHA_SETTINGS_ACCESS_CLIENT_SECRET', 'LIFESPACE_APPLICATION_CREDENTIAL',
             'LIFESPACE_IDENTITY_BASE_URL', 'LIFESPACE_CORE_BASE_URL',
           ];
+          if ('ALOHA_WORKSPACE' in (latest.env ?? {})) throw new Error('Health Preview must not have a production Service Binding');
           const missing = required.filter((name) => !(name in (latest.env ?? {})));
           if (missing.length) {
             throw new Error(`Missing staging Preview bindings: ${missing.join(', ')}. Reconfigure in Cloudflare Dashboard before using live Health data.`);
