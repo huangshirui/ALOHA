@@ -39,13 +39,9 @@
         }
       ]
     },
-    "services": [
-      {
-        "binding": "ALOHA_WORKSPACE",
-        "service": "aloha-app-settings-staging",
-        "entrypoint": "WorkspaceReader"
-      }
-    ]
+    "vars": {
+      "ALOHA_WORKSPACE_MODE": "preview"
+    }
   },
   "compatibility_flags": [
     "global_fetch_strictly_public"

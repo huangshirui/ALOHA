@@ -2,7 +2,7 @@
  * ALOHA Health same-origin BFF. The browser never receives LifeSpace credentials.
  * Identity verifies the raw Access assertion; Core owns Space/Model/Grant authorization.
  */
-import {parseWorkspaceSpaces,workspaceState,workspaceView,workspaceUserId,type WorkspaceService} from '@aloha/contracts'
+import {parseWorkspaceSpaces,workspaceState,workspaceView,workspaceUserId,workspacePreviewReadPath,workspacePreviewUserHeader,workspacePreviewMode,type WorkspaceService} from '@aloha/contracts'
 import { parsePresentationPatch, type PresentationScope } from './health-presentation'
 import { uploadHealthDocument, downloadHealthDocument } from './health-files'
 import { readHealthSession, makeHealthSessionCookie, signedTokenSubject, clearHealthSessionCookie } from './health-session'
@@ -17,6 +17,10 @@ export interface HealthPresentationNamespace {
 
 export interface HealthEnv {
   ALOHA_WORKSPACE?:WorkspaceService
+  ALOHA_WORKSPACE_MODE?:string
+  ALOHA_SETTINGS_PREVIEW_URL?:string
+  ALOHA_SETTINGS_ACCESS_CLIENT_ID?:string
+  ALOHA_SETTINGS_ACCESS_CLIENT_SECRET?:string
   HEALTH_PRESENTATION?: HealthPresentationNamespace
   ASSETS?: { fetch(request: Request): Promise<Response> }
   LIFESPACE_IDENTITY_BASE_URL?: string
@@ -505,6 +509,36 @@ async function handleConcernRelations(
   if(!removed.ok)return proxyResponse(removed)
   return new Response(null,{status:204,headers:{'Cache-Control':'no-store'}})
 }
+/** Named Previews cannot bind to one another. Use only the explicitly configured
+ * same-account named Settings Preview URL; never send credentials to request-selected
+ * destinations, redirects or a production endpoint. No fallback in either direction.
+ */
+function previewWorkspaceReader(request:Request,env:HealthEnv,fetchImpl:Fetcher,userId:string,assertion:string):WorkspaceService|undefined{
+  if(env.ALOHA_WORKSPACE||!env.ALOHA_SETTINGS_ACCESS_CLIENT_ID||!env.ALOHA_SETTINGS_ACCESS_CLIENT_SECRET)return undefined
+  let target:URL
+  try{target=new URL(env.ALOHA_SETTINGS_PREVIEW_URL??'')}catch{return undefined}
+  const host=new URL(request.url).hostname
+  const match=/^staging-aloha-app-health\.([a-z0-9-]+\.workers\.dev)$/.exec(host)
+  if(!match||target.protocol!=='https:'||target.port||target.username||target.password||target.search||target.hash||
+    !['/','/settings/','/settings'].includes(target.pathname)||target.hostname!=='staging-aloha-app-settings.'+match[1])return undefined
+  target.pathname=workspacePreviewReadPath
+  return {async fetch(internal){
+    if(new URL(internal.url).pathname!=='/read'||internal.method!=='POST')return json('workspace_storage_unavailable',503)
+    const response=await send(fetchImpl,target.href,{
+      method:'GET',headers:{
+        Accept:'application/json',
+        'CF-Access-Client-Id':env.ALOHA_SETTINGS_ACCESS_CLIENT_ID!,
+        'CF-Access-Client-Secret':env.ALOHA_SETTINGS_ACCESS_CLIENT_SECRET!,
+        [workspacePreviewUserHeader]:assertion,
+      },
+    })
+    if(!response.ok)return json('workspace_storage_unavailable',503)
+    const payload:unknown=await response.json().catch(()=>null)
+    if(!object(payload)||payload.userId!==userId)return json('workspace_storage_unavailable',503)
+    return Response.json({data:payload.data},{headers:{'Cache-Control':'no-store'}})
+  }}
+}
+
 export async function handleHealthApi(
   request: Request, env: HealthEnv, fetchImpl: Fetcher = fetch,
 ): Promise<Response> {
@@ -527,7 +561,10 @@ export async function handleHealthApi(
   const identityMs=performance.now()-identityStarted
   if(route.path==='@workspace'){
     if(!userId||!workspaceUserId.test(userId))return withSessionCookie(json('identity_session_mismatch',401),session.cookie)
-    const binding=await workspaceState(env.ALOHA_WORKSPACE,userId,'read')
+    const service=env.ALOHA_WORKSPACE_MODE===workspacePreviewMode
+      ?previewWorkspaceReader(request,env,fetchImpl,userId,assertion)
+      :env.ALOHA_WORKSPACE_MODE===undefined?env.ALOHA_WORKSPACE:undefined
+    const binding=await workspaceState(service,userId,'read')
     if(binding instanceof Response)return withSessionCookie(binding,session.cookie)
     const listed=await send(fetchImpl,core+'/api/v1/me/spaces',{method:'GET',headers:{Authorization:'Bearer '+bearer,Accept:'application/json'}})
     if(!listed.ok)return withSessionCookie(json('spaces_unavailable',listed.status),session.cookie)

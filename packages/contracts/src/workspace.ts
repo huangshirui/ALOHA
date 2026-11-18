@@ -44,3 +44,9 @@ export async function workspaceState(
     return b as unknown as WorkspaceBinding
   }catch{return fail()}
 }
+
+/** Preview HTTP transport has no caller-supplied user ID; Settings verifies the
+ * forwarded original user assertion and returns the bound user's identity. */
+export const workspacePreviewReadPath='/settings/api/v1/workspace/preview-read'
+export const workspacePreviewUserHeader='X-ALOHA-User-Assertion'
+export const workspacePreviewMode='preview'
