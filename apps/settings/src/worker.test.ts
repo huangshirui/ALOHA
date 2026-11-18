@@ -43,7 +43,7 @@ describe('ALOHA common Settings authenticated BFF',()=>{
     const f=fetcher()
     const r=await handleSettingsApi(request('me'),env,f.run)
     expect(r.status).toBe(200)
-    expect((await r.json()).data).toEqual({
+    expect((await r.json() as {data:unknown}).data).toEqual({
       displayName:'Synthetic User',avatarUrl:'/settings/api/v1/avatar',
     })
     expect(r.headers.get('Cache-Control')).toContain('no-store')
@@ -58,7 +58,7 @@ describe('ALOHA common Settings authenticated BFF',()=>{
     const f=fetcher()
     const r=await handleSettingsApi(request('spaces'),env,f.run)
     expect(r.status).toBe(200)
-    expect((await r.json()).data).toEqual([{id:'spc_synthetic',name:'Synthetic Space'}])
+    expect((await r.json() as {data:unknown}).data).toEqual([{id:'spc_synthetic',name:'Synthetic Space'}])
   })
   it('fails closed without Access proof and never calls Identity',async()=>{
     const f=fetcher()
