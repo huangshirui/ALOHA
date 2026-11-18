@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
+import {resolveSettingsPreview,configureHealthPreview} from './resolve-health-preview-settings.mjs'
 
 // Runs without credentials on PRs and on main. Keep the public release surface small.
 const root = '.github/workflows/'
@@ -132,4 +133,20 @@ assert.match(healthPreview,/ALOHA_SETTINGS_PREVIEW_URL/)
 assert.match(healthPreview,/ALOHA_SETTINGS_ACCESS_CLIENT_ID/)
 assert.match(healthPreview,/ALOHA_SETTINGS_ACCESS_CLIENT_SECRET/)
 assert.match(healthPreview,/Health Preview must not have a production Service Binding/)
+assert.match(healthPreview,/node scripts\/resolve-health-preview-settings\.mjs/)
+assert.doesNotMatch(healthPreview,/vars\.ALOHA_SETTINGS_STAGING_URL/)
+assert.ok(healthPreview.indexOf('node scripts/resolve-health-preview-settings.mjs')<healthPreview.indexOf('npm run build:health'))
+const sample=(surface,account='synthetic')=>[{name:'staging',deployed_on:'2026-01-01T00:00:00Z',urls:['https://staging-aloha-app-'+surface+'.'+account+'.workers.dev/']}]
+const settingsUrl=resolveSettingsPreview(sample('health'),sample('settings'))
+assert.equal(settingsUrl,'https://staging-aloha-app-settings.synthetic.workers.dev/settings/')
+assert.throws(()=>resolveSettingsPreview(sample('health'),sample('settings','other')),/suffix mismatch/)
+assert.throws(()=>resolveSettingsPreview(sample('health'),[]),/one deployed/)
+assert.throws(()=>resolveSettingsPreview(sample('health'),[{...sample('settings')[0],deployed_on:null}]),/one deployed/)
+assert.throws(()=>resolveSettingsPreview(sample('health'),[{...sample('settings')[0],urls:['https://aloha-app-settings.synthetic.workers.dev/']}]),/canonical/)
+assert.throws(()=>resolveSettingsPreview(sample('health'),[{...sample('settings')[0],urls:['https://staging-aloha-app-settings.synthetic.workers.dev/?x=1']}]),/canonical/)
+const configured=configureHealthPreview(health,settingsUrl)
+assert.equal(configured.previews.vars.ALOHA_SETTINGS_PREVIEW_URL,settingsUrl)
+assert.equal(configured.vars,undefined)
+assert.deepEqual(configured.services,health.services)
+assert.throws(()=>configureHealthPreview({...health,previews:{...health.previews,services:health.services}},settingsUrl),/Unsafe/)
 console.log('ALOHA Actions: six independent workflows and isolated Preview HTTPS / Production binding verified')
