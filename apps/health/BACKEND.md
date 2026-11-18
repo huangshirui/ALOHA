@@ -75,16 +75,16 @@ Health 使用一个 Cloudflare Worker 项目 `aloha-app-health`：Production 接
 - Staging **只通过** `wrangler preview --name staging` 更新命名 Preview，生产版本只能通过单独审批后的 `wrangler deploy` 更新。现有 GitHub 手工 Workflow 强制构建 `VITE_HEALTH_DATA_MODE=live`；它是公开的 UI 功能模式，不承担环境边界。
 - `wrangler.jsonc` 的顶层 Durable Object Class / SQLite Migration 保持不变；`previews.durable_objects.bindings` 声明 Preview 的 `HEALTH_PRESENTATION`。Cloudflare 每个 Preview 自动获得**独立的 SQLite-backed Durable Object Namespace**。不能把 Preview DO 重新绑定到生产 DO。
 - Preview Worker Secrets **不继承** Production。使用 Cloudflare Preview 的独立 Secret 配置：`LIFESPACE_APPLICATION_CREDENTIAL`、`LIFESPACE_IDENTITY_BASE_URL`、`LIFESPACE_CORE_BASE_URL`。这两个 URL 虽不是机密，也可作为 Secret 由 Cloudflare Web 配置：Secret 在后续 Preview 部署时会保留，而未写入 Wrangler Preview 配置的 Dashboard Text Variable 可能被下次部署覆盖。源代码不提交实际环境地址或私有配置。部署工作流会核对必需 Binding 名称（不读取其值）；缺少配置时不应进行在线联调。
-- **认证入口与路由**：Staging 直接使用当前 Worker 的命名 Preview URL (`staging-<worker>.<account>.workers.dev/health/`)，不设置额外共享 Staging 入口或 Worker-to-Worker Service Token。必须验证 Preview 直连地址的 Cloudflare Access 拦截未授权用户，并确认当前 Audience 已注册至 LifeSpace Staging。
+- **认证入口与路由**：Staging 直接使用当前 Worker 的命名 Preview URL (`staging-<worker>.<account>.workers.dev/health/`)，不设置额外共享 Staging 入口；仅在需要真实跨 Preview 读取 Settings 时使用独立的 Access Service Token。必须验证 Preview 直连地址的 Cloudflare Access 拦截未授权用户，并确认当前 Audience 已注册至 LifeSpace Staging。
 - 首次 Preview 上传后用安全终端或 Cloudflare Preview 设置页面添加独立 Preview Secrets。示例命令（仅传名称，实际值应在安全终端交互输入，不进入 GitHub 日志）：`npx wrangler@4.135.0 preview secret put LIFESPACE_APPLICATION_CREDENTIAL --name staging`。其它敏感配置同理。
 - Staging Model Registry 七模型的存在不等于 Application Model Access 已授予；需单独配置 read/write，并核对用户的 Space/Data Grant。DO、BFF、Access 均完成后用**完全合成记录**验证刷新/跨设备恢复、User/Space/Person 隔离、非法坐标 422、权限拒绝、清除点位、删除后无孤点、后端失效明确报错，不修改 Production。
-- Production 只在已通过 Staging 验收、显式批准并配置自己的 Access Audience、`lsa_*`、DO 和发布路由后上线。不要把已有 Worker 的 Production 版本或 Workers.dev 端点当作 Staging Preview。
+- Production 按生产优先迭代规则发布：自动化检查通过、显式批准并配置自己的 Access Audience、`lsa_*`、DO 和发布路由后，可直接发布，真实使用中验收；不要求先通过 Staging 验收。高风险授权或数据变更保留专项验证和恢复方案。不要把已有 Worker 的 Production 版本或 Workers.dev 端点当作 Staging Preview。
 
 **当前状态**：Health BFF 已部署至命名 `staging` Preview，LifeSpace Staging 七个 Health 模型和 Application Model Access 已配置；Cloudflare Access、Identity/Core URL 及独立 Application Credential 已配置，在线用户登录与数据 E2E 验收仍待完成。功能代码仍在 Draft PR，未开放正式产品路由。真实文件上传、Semantic Relations 与 Task 完成尚未接入。
 
 ## Workers Runtime 本地集成测试（PR #37）
 
-`npm run test -w @aloha/health` 依次运行纯 Vitest 单元测试及 `@cloudflare/vitest-plugin` 的 workerd SQLite DO 测试。后者通过 `apps/health/wrangler.test.jsonc` 装载与正式 Worker 相同的 DO 类，验证建表、写入、实例隔离和驱逐后重启读取；全部使用合成值，不调用 Staging。该通过不等于 Staging 已经配置 Access、发布模型或真实 CRUD。相关部署仍须走 Console 与 Preview 部署流程。
+`npm run test -w @aloha/health` 依次运行纯 Vitest 单元测试及 `@cloudflare/vitest-plugin` 的 workerd SQLite DO 测试。后者通过 `apps/health/wrangler.test.jsonc` 装载与正式 Worker 相同的 DO 类，验证建表、写入、实例隔离和驱逐后重启读取；全部使用合成值，不调用 Staging。该通过不等于 Staging 已经配置 Access、发布模型或真实 CRUD。涉及模型发布或授权的变更仍须走对应环境的 LifeSpace Console 流程；常规 ALOHA 功能无需先部署 Preview。
 
 ## Workspace onboarding correction (candidate)
 

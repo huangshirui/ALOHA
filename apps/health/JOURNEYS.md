@@ -179,3 +179,7 @@ against Core. Production stays unchanged until route activation is approved.
 ## Workspace onboarding correction (candidate)
 
 This candidate supersedes earlier browser-local Space-selection instructions above. Health startup reads `GET /health/api/v1/workspace` through its authenticated BFF, validates the per-user cloud pointer against current Core memberships, and redirects to shared Settings only for unbound/reselect/uncertain state. Explicit create/bind lives in Settings; transient backend failures do not trigger selection or creation. Existing health record authorization and Person resolution remain Core-owned. No browser-local Space preference is used or migrated. Deploy Settings first in the corresponding environment. Production Health uses its read-only named Service Binding; the existing named Health Preview uses authenticated HTTPS to the existing Settings Preview, with the original user assertion reverified and the returned user matched. No standalone Workspace or staging Worker.
+
+## Production-first release rule / 生产优先迭代
+
+本节覆盖上文历史候选阶段的强制 Staging 验收要求。已完成功能通过自动化验证后可直接独立发布 Production，实际使用时进行非破坏性验收和迭代；Preview 主要用于新 UX 探索或需要隔离的实验，默认使用合成数据，不要求同步全部后端。授权、数据隔离、高风险变更验证和独立回滚要求不变。详见 `docs/pwa-deployment.md`。历史上线状态不代表当前部署结果。

@@ -48,7 +48,7 @@ transitional Assistant Gateway as an unreviewed side effect.
 
 **Staging:** use the existing Settings named `staging` Preview, with its own automatically isolated `WorkspaceState` DO namespace. Production Health targets the production Settings read-only named `WorkspaceReader` Service Binding. Named Health Preview cannot bind a peer Preview; it uses an HTTPS GET to the existing Settings Preview's dedicated read-only endpoint, admitted by Cloudflare Access Service Auth, carrying the original user assertion independently verified by staging Identity. No browser-supplied user ID, no redirect or cross-environment fallback. Production does not serve this HTTP endpoint.
 
-Deploy Settings Preview using `DEPLOY_ALOHA_SETTINGS_STAGING_PREVIEW`; retain its existing Access audience and staging secrets. Health Preview deployment discovers the existing named Health and Settings Preview URLs through Cloudflare metadata using the existing deployment credential, verifies both are deployed and share the same account suffix, and injects the Settings URL into the Health build and Preview-only runtime configuration. No manual `ALOHA_SETTINGS_STAGING_URL` variable is required for this workflow. Missing or mismatched Preview metadata fails closed. Create a narrowly scoped Access Service Token accepted by the Settings Preview Access application (Service Auth policy, preserve the human Allow policy), and store the Client ID and Client Secret in Health **Preview-only** secrets `ALOHA_SETTINGS_ACCESS_CLIENT_ID` and `ALOHA_SETTINGS_ACCESS_CLIENT_SECRET`. Do not use production credentials. Then deploy Health Preview; the workflow checks required binding names and rejects an unexpected production Service Binding. Do not commit or log the token.
+When a live cross-Preview experience is actually needed, deploy Settings Preview using `DEPLOY_ALOHA_SETTINGS_STAGING_PREVIEW`; retain its existing Access audience and staging secrets. Health Preview deployment discovers the existing named Health and Settings Preview URLs through Cloudflare metadata using the existing deployment credential, verifies both are deployed and share the same account suffix, and injects the Settings URL into the Health build and Preview-only runtime configuration. No manual `ALOHA_SETTINGS_STAGING_URL` variable is required for this workflow. Missing or mismatched Preview metadata fails closed. Create a narrowly scoped Access Service Token accepted by the Settings Preview Access application (Service Auth policy, preserve the human Allow policy), and store the Client ID and Client Secret in Health **Preview-only** secrets `ALOHA_SETTINGS_ACCESS_CLIENT_ID` and `ALOHA_SETTINGS_ACCESS_CLIENT_SECRET`. Do not use production credentials. Then deploy Health Preview; the workflow checks required binding names and rejects an unexpected production Service Binding. Do not commit or log the token.
 
 Run [deploy-settings.yml](../.github/workflows/deploy-settings.yml) for the named Preview or separate main-only Production job. No new product or staging Worker, no automatic route or secret provisioning.
 
@@ -90,6 +90,16 @@ deployed Workers. Keep this boundary in place until the separate
 may need to visit/reload the Assistant root page to receive the updated
 Service Worker; an incognito window can distinguish an existing stale
 Service Worker from a server-side routing problem.
+
+## Production-first release policy / 生产优先迭代
+
+During the early, owner-operated product phase, Production is the default destination for completed functional changes. Named Preview is an optional UX exploration and experiment environment. It need not mirror every Production feature or backend integration, and no successful Preview deployment or Preview acceptance is a prerequisite for an ordinary Production release.
+
+Default path: reviewed change → automated tests/typecheck/security checks → merge to main → affected Production workflow(s), including existing binding/build/dry-run gates → brief real-use smoke test and iteration. Release only affected units; deploy providers before consumers. Keep the prior recoverable version and distinguish code rollback from irreversible data changes. Do not use production personal records for destructive verification.
+
+Preview path: use synthetic/demo data by default for UX prototypes and visual comparison. When a real backend is necessary, use only isolated Preview resources and staging credentials. Existing protected Named Previews remain available; no new Worker or forced production parity. Optional isolated testing remains appropriate for risky migrations, authority/security changes, sensitive writes or major cross-service changes. Those changes still require targeted verification, explicit risk review and a recovery plan; never waive security or data integrity gates.
+
+Health/Settings keep their current explicit owner-dispatched, main-only Production workflows and confirmation parameters; Assistant's existing narrowly filtered auto-release remains unchanged. This decision does not introduce new automatic production deployments, activate routes, or change the release requirements of LifeSpace or HomeMew.
 
 ## Independent Production release pipelines / 生产独立发布
 
@@ -151,7 +161,7 @@ Definitions through LifeSpace Console's Platform Admin API, which also builds
 the typed storage and Model Contract. Keep Staging and Production application
 credentials, Access audiences and Scope ceilings independent.
 
-At release acceptance, separately verify:
+During Production smoke checks or optional isolated live validation, separately verify:
 1. Settings explicitly creates or binds an available Space and persists the current cloud pointer in its per-user DO.
 2. Health without a valid cloud binding navigates to Settings instead of selecting an arbitrary Space or reading a stale browser preference.
 3. Health with a verified available Space can read the expected model snapshot
@@ -173,7 +183,7 @@ ALOHA uses one LifeSpace Application per environment: the production application
 Each PWA keeps **one Cloudflare Worker project** with two isolated deployments:
 
 - **Production**: `wrangler deploy`, production-only bindings and secrets, released through an explicit production approval flow.
-- **Staging**: `wrangler preview --name staging` publishes an isolated named Preview of each surface Worker. The Preview uses staging-only backend settings and credentials. The Preview workflow must never use `wrangler deploy`, which updates Production code.
+- **Staging / optional Preview**: `wrangler preview --name staging` publishes an isolated named Preview of each surface Worker. The Preview uses staging-only backend settings and credentials. The Preview workflow must never use `wrangler deploy`, which updates Production code.
 - **State**: Preview-specific Durable Object classes and storage are automatically isolated from the production Durable Object namespace. Keep DO migrations at the Worker root and declare the Preview DO bindings under `previews.durable_objects.bindings` when the Worker code needs them.
 - **Preview hostnames**: Production surfaces share a single product origin with distinct paths. In staging, each PWA uses its own Cloudflare-provided named Preview URL and Worker-level Access policy; there is no shared staging ingress. Register each required Preview Access Audience under the single staging LifeSpace Application. Cross-surface browser origins remain distinct in staging.
 - **Security**: A Preview does not inherit production secrets. Never share credentials or use request parameters to switch LifeSpace environments. Protect each Preview URL with Cloudflare Access; authorize user requests using its signed assertion and the staging application's configured Access Audiences.
@@ -185,7 +195,7 @@ This is the policy for each independently released ALOHA PWA. Health and Setting
 
 Each independently deployed PWA can use its Cloudflare named `staging` Preview URL directly. The URL has the form `https://staging-<worker>.<account>.workers.dev/<surface>/`. Cloudflare Access protects the corresponding `preview_worker` destination and produces a signed identity assertion. Register that Access Audience with the shared staging LifeSpace Application; the application itself and its model permissions remain shared across ALOHA surfaces.
 
-This keeps staging deployment simple, but **staging PWAs have separate browser origins**. Do not rely on shared cookies or local storage across staging surfaces. Production remains a shared product origin with path-scoped independent PWA Workers; validate origin-specific integrations separately before launch. No staging reverse proxy is required. For the explicit Health-to-Settings backend read, use a Preview-only Access Service Token; ordinary browser sign-in remains unchanged.
+This keeps staging deployment simple, but **staging PWAs have separate browser origins**. Do not rely on shared cookies or local storage across staging surfaces. Production remains a shared product origin with path-scoped independent PWA Workers; verify origin-specific integrations in the selected environment, with Production smoke checks for the actual production topology. No staging reverse proxy is required. For the explicit Health-to-Settings backend read, use a Preview-only Access Service Token; ordinary browser sign-in remains unchanged.
 
 ## Current deployment state
 

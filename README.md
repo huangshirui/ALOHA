@@ -67,6 +67,10 @@ n8n Agent Workflow
 
 Health, Finance and Things do **not** automatically inherit the Assistant Agent-Control data path. Their trusted domain/data API boundaries must be decided explicitly in their own development work.
 
+## Release policy — production first
+
+For the early product phase, ordinary changes ship directly to the affected Production Workers after automated validation; practical acceptance occurs in normal use. Named Previews are optional for UX exploration and experiments, not a mandatory production release gate. Keep explicit deployment boundaries, data/authority protections and rollback readiness. See [release policy](./docs/pwa-deployment.md#production-first-release-policy--生产优先迭代).
+
 ## Current execution state
 
 Assistant M0-M3 work already exists. Further Assistant product/runtime integration is paused where it depends on the in-progress LifeSpace upgrade.
