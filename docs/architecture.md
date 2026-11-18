@@ -185,8 +185,8 @@ aloha.aisr.online/
   The Settings BFF independently authenticates signed Access evidence through
   LifeSpace Identity and proxies only the current user's bounded profile/avatar,
   never browser-exposed backend credentials.
-- **ALOHA workspace binding (candidate)**: one current Space pointer per verified LifeSpace User, stored by an internal per-user SQLite Durable Object service. On first use or confirmed loss of membership, Settings explicitly offers creation of a normal Space or binding an existing current member Space. No browser preference, migration, implicit first match or automatic retry after an ambiguous Core create. Valid binding is reused and is not an authority grant; Account remains the management entry. Health resolves through its trusted BFF; every Core operation retains its own authorization and own-Person check. Assistant currently has no personal Space routing; future domain operations must resolve the same binding, not invent a second selection.
-- **Preview isolation**: named Preview Service Bindings target deployed Workers, not another named Preview. Settings/Health Preview bind to the separate private staging workspace service, production binds to its production counterpart. Neither service has a public route; do not share namespaces. Deploy the private service before the respective consumers.
+- **ALOHA workspace binding (candidate)**: one current Space pointer per verified LifeSpace User, stored by a per-user SQLite Durable Object owned by Settings Worker. On first use or confirmed loss of membership, Settings explicitly offers creation of a normal Space or binding an existing current member Space. No browser preference, migration, implicit first match or automatic retry after an ambiguous Core create. Valid binding is reused and is not an authority grant; Account remains the management entry. Health resolves through its trusted BFF; every Core operation retains its own authorization and own-Person check. Assistant currently has no personal Space routing; future domain operations must resolve the same binding, not invent a second selection.
+- **Staging isolation**: Settings owns the named read-only WorkspaceReader Service Binding entrypoint; its public routes never expose raw storage operations. Named Health Preview binds the isolated Settings staging environment; production Health binds production Settings. Settings staging is a normal Wrangler environment, not another named Preview. Distinct DO namespaces; deploy Settings before Health. The staging hostname/Access/Identity configuration remains a separate operator step.
 - **Health MVP boundary**: manual health CRUD, observations/trends, files
   and relationships are the baseline candidate. AI import/Agent (Issue #43)
   and HealthRegimen ↔ Task/Recurrence (Issue #44) are later work.
@@ -200,16 +200,16 @@ Target production topology:
 
 ```text
 aloha.aisr.online/
-  /assistant/*  -> Assistant PWA Worker
-  /health/*     -> Health PWA Worker
-  /finance/*    -> Finance PWA Worker
-  /.../*        -> corresponding PWA Worker
+  /assistant/*  -> Assistant PWA + thin Gateway Worker
+  /health/*     -> Health PWA + domain BFF Worker
+  /finance/*    -> Finance PWA + domain BFF Worker
+  /things/*     -> Things PWA + domain BFF Worker
+  /settings*    -> Settings + application configuration Worker
 
-shared/Agent API paths -> Gateway where applicable
-                         -> Agent Control where Agent semantics are required
+Assistant/Gateway -> private Agent Control Worker -> Runtime Backends
 ```
 
-PWA scopes must not overlap. The root path is not a fifth installable PWA in the target topology.
+PWA scopes must not overlap. The root path is not a fifth installable PWA in the target topology. Target six logical Workers: five product-facing deployment units plus private Agent Control. DO/D1/R2/Queue are owned by the responsible Worker, not independent services by default. Gateway remains a logical transport boundary within the Assistant deployment until a concrete separate-channel need justifies a split. Domain BFFs call LifeSpace directly for ordinary CRUD; Settings is only for shared application configuration, not a data proxy. External professional Runtime Backends are not additional ALOHA Workers. Finance and Things remain scaffolds until needed. This is the target, not a migration of Assistant in this change.
 
 ### Current migration state
 

@@ -22,9 +22,10 @@ aloha.aisr.online/
   /finance/*    -> aloha-app-finance Worker
   /things/*     -> aloha-app-things Worker
 
-shared API routes -> ALOHA Gateway Worker
-                    -> Agent Control Worker where the Assistant Agent path applies
-                    -> other trusted domain services/platform APIs as explicitly designed
+  /settings*    -> aloha-app-settings Worker
+
+Assistant Worker (thin Gateway) -> private aloha-agent-control Worker
+Domain BFFs -> LifeSpace; shared application configuration -> Settings
 ```
 
 The root path is not a fifth installable PWA. In the final topology it is a lightweight product entry point and may redirect to `/assistant/`.
@@ -45,20 +46,11 @@ assets and `/settings/api/*`; it also matches `/settings-other`,
 which the Settings Worker must reject. Do not attach this route to the
 transitional Assistant Gateway as an unreviewed side effect.
 
-**Staging:** protected named `staging` Preview of the Settings Worker.
-The Preview hostname differs from Health/Assistant Preview hosts.
-Set GitHub **preview environment variables** `ALOHA_SETTINGS_STAGING_URL`
-and `ALOHA_HEALTH_STAGING_URL` to the exact already-issued Preview
-destinations when exercising cross-Preview navigation; those values are
-public URLs, not credentials. Production builds use same-origin `/settings/`.
-The cloud workspace pointer replaces browser localStorage. Preview Health and Settings bind the same dedicated private staging workspace service; Production binds a distinct private production service. Deploy the service first using the manual workspace workflow. Never bind named Previews to the production service.
+**Staging:** a distinct Settings Wrangler environment (`aloha-app-settings-staging`), not a named Preview. Named Health Preview Service Bindings target the deployed Settings staging Worker. Production Health targets production Settings. Both bindings select the read-only named `WorkspaceReader` entrypoint; only Settings can mutate its per-user SQLite DO. No third Worker or separate workspace deployment.
 
-Run [`deploy-settings.yml`](../.github/workflows/deploy-settings.yml)
-with the exact Preview confirmation after its Access policy and preview-only
-Identity/Core configuration are ready. The same Settings workflow has a
-**separate, manual Production job**, gated to `main` and the production
-environment. Neither job activates the public `/settings/*` route.
-There is no longer an automated one-time Production runtime bootstrap.
+Deploy Settings staging using `DEPLOY_ALOHA_SETTINGS_STAGING`; its own secrets and Access audience must target LifeSpace Staging. Configure a protected staging hostname manually (no public route activated in code) and register its Access audience. Set preview environment variables `ALOHA_SETTINGS_STAGING_URL` and `ALOHA_HEALTH_STAGING_URL` to the actual protected staging URLs before building the clients. Then deploy Health Preview. Never point either environment at production for staging. The old Settings named Preview must not be used for workspace integration.
+
+Run [deploy-settings.yml](../.github/workflows/deploy-settings.yml) for the staging or separate main-only Production job. Production routing remains a separate review. No automatic route or secret provisioning.
 
 ## Shared versus independent
 
@@ -109,7 +101,7 @@ Settings or Assistant; release each affected consumer deliberately and separatel
 | Unit | Staging / Preview | Production |
 | --- | --- | --- |
 | Health | `.github/workflows/deploy-health.yml` (Preview job) | `.github/workflows/deploy-health.yml` (Production job) |
-| Settings (shared utility, not a PWA) | `.github/workflows/deploy-settings.yml` (Preview job) | `.github/workflows/deploy-settings.yml` (Production job) |
+| Settings (shared utility, not a PWA) | `.github/workflows/deploy-settings.yml` (staging environment job) | `.github/workflows/deploy-settings.yml` (Production job) |
 | Assistant / transitional Gateway | existing Assistant staging path | `.github/workflows/deploy.yml` |
 | Finance, Things | their own Preview workflows | production workflows when ready |
 

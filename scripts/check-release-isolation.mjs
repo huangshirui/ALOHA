@@ -6,7 +6,7 @@ const root = '.github/workflows/'
 const read = file => readFileSync(root + file, 'utf8')
 const expected = [
   'ci.yml', 'deploy.yml', 'deploy-finance.yml', 'deploy-health.yml',
-  'deploy-settings.yml', 'deploy-things.yml', 'deploy-workspace.yml',
+  'deploy-settings.yml', 'deploy-things.yml',
 ]
 assert.deepEqual(readdirSync(root).filter(file => /\.ya?ml$/.test(file)).sort(),
   [...expected].sort(), 'Unexpected or leftover GitHub Actions workflow; review it explicitly')
@@ -74,9 +74,13 @@ for(const surface of ['health', 'settings']){
   assert.match(source, /^on:\n  workflow_dispatch:/m)
   assert.doesNotMatch(source.split('\npermissions:')[0], /  push:/,
     'Domain releases must remain manual')
-  assert.match(preview, new RegExp(`DEPLOY_ALOHA_${upper}_STAGING_PREVIEW`))
+  assert.match(preview, new RegExp(`DEPLOY_ALOHA_${upper}_STAGING${surface==='health'?'_PREVIEW':''}`))
   assert.match(preview, /environment: preview/)
-  assert.match(preview, /npx wrangler preview --name staging/)
+  if(surface==='health')assert.match(preview,/npx wrangler preview --name staging/)
+  else {
+    assert.match(preview,/npx wrangler deploy --env staging\s*$/m)
+    assert.doesNotMatch(preview,/npx wrangler preview --name staging/)
+  }
   assert.doesNotMatch(preview, /npx wrangler deploy\s*$/m,
     `${surface}: Preview must not publish Production`)
   assert.match(prod, /github.ref == 'refs\/heads\/main'/)
@@ -109,26 +113,20 @@ for (const surface of ['finance','things']) {
   assert.doesNotMatch(c, /npx wrangler deploy\s*$/m,
     `${surface}: scaffold Preview must not deploy Production`)
 }
-const workspace=read('deploy-workspace.yml')
-assert.match(workspace,/workflow_dispatch:/)
-assert.doesNotMatch(workspace,/  push:/)
-assert.match(workspace,/DEPLOY_ALOHA_WORKSPACE_STAGING/)
-assert.match(workspace,/DEPLOY_ALOHA_WORKSPACE_PRODUCTION/)
-assert.match(workspace,/wrangler deploy --env staging/)
-for(const surface of ['settings','health']){
-  const cfg=JSON.parse(readFileSync('apps/'+surface+'/wrangler.jsonc','utf8'))
-  assert.equal(cfg.services.find(x=>x.binding==='ALOHA_WORKSPACE').service,'aloha-space-binding')
-  assert.equal(cfg.previews.services.find(x=>x.binding==='ALOHA_WORKSPACE').service,'aloha-space-binding-staging')
-}
-const state=JSON.parse(readFileSync('workers/space-binding/wrangler.jsonc','utf8'))
-assert.equal(state.workers_dev,false)
-assert.equal(state.preview_urls,false)
-assert.equal(state.env.staging.workers_dev,false)
-assert.equal(state.env.staging.preview_urls,false)
-assert.notEqual(state.name,state.env.staging.name)
-for(const cfg of [state,state.env.staging]){
+const settings=JSON.parse(readFileSync('apps/settings/wrangler.jsonc','utf8'))
+const health=JSON.parse(readFileSync('apps/health/wrangler.jsonc','utf8'))
+assert.equal(settings.main,'./src/entrypoint.ts')
+assert.equal(settings.services,undefined)
+assert.equal(settings.preview_urls,false)
+assert.equal(settings.env.staging.name,'aloha-app-settings-staging')
+for(const cfg of [settings,settings.env.staging]){
+  assert.equal(cfg.workers_dev,false)
+  assert.equal(cfg.preview_urls,false)
   assert.equal(cfg.route,undefined)
   assert.equal(cfg.routes,undefined)
+  assert.deepEqual(cfg.durable_objects.bindings,[{name:'WORKSPACE_STATE',class_name:'WorkspaceState'}])
   assert.ok(cfg.migrations.some(m=>m.new_sqlite_classes.includes('WorkspaceState')))
 }
-console.log('ALOHA Actions: independent workflows and workspace isolation verified')
+assert.deepEqual(health.services.find(x=>x.binding==='ALOHA_WORKSPACE'),{binding:'ALOHA_WORKSPACE',service:settings.name,entrypoint:'WorkspaceReader'})
+assert.deepEqual(health.previews.services.find(x=>x.binding==='ALOHA_WORKSPACE'),{binding:'ALOHA_WORKSPACE',service:settings.env.staging.name,entrypoint:'WorkspaceReader'})
+console.log('ALOHA Actions: six independent workflows and Settings-owned workspace isolation verified')

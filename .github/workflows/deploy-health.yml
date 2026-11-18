@@ -90,7 +90,7 @@ jobs:
           if (!deployments.length) throw new Error('Named staging Preview has no deployments');
           const latest = await read(`/${preview.id}/deployments/${deployments[0].id}`);
           const required = [
-            'ASSETS', 'HEALTH_PRESENTATION', 'LIFESPACE_APPLICATION_CREDENTIAL',
+            'ASSETS', 'HEALTH_PRESENTATION', 'ALOHA_WORKSPACE', 'LIFESPACE_APPLICATION_CREDENTIAL',
             'LIFESPACE_IDENTITY_BASE_URL', 'LIFESPACE_CORE_BASE_URL',
           ];
           const missing = required.filter((name) => !(name in (latest.env ?? {})));
