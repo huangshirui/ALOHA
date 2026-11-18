@@ -100,7 +100,7 @@ Before real Health data behavior is implemented, define at minimum:
 
 Pull-request CI (`.github/workflows/ci.yml`) validates the whole repository so shared-contract regressions are still caught across workspaces.
 
-Independent release workflows may validate only the surface they deploy plus any required shared dependency checks. This allows one PWA to release without coupling its deployment to another PWA.
+Independent release workflows may validate only the surface they deploy plus any required shared dependency checks. This allows one PWA to release without coupling its deployment to another PWA. The default early-product path is automated validation, merge, direct affected Production release and real-use smoke testing. Named Preview is optional for UX exploration, experiments or targeted high-risk validation; it is not a mandatory release gate. See the Production-first release policy in `docs/pwa-deployment.md`.
 
 ## Runtime development rule
 
@@ -164,17 +164,17 @@ Assistant Browser
 
 `workers/gateway/wrangler.jsonc` points its static-assets directory at `apps/assistant/dist`. This keeps production behavior stable after the repository rename from `apps/web`.
 
-### Health independent staging Preview deployment
+### Health optional named Preview deployment
 
 `.github/workflows/deploy-health.yml` is manually dispatched on the reviewed Health BFF branch. It installs dependencies, checks the required `worker.ts` runtime entry and Preview DO binding, typechecks/tests Health, builds in Live mode, compiles a **dry-run Worker bundle** and uploads only the named `staging` Worker Preview with `wrangler preview --name staging`. This does **not** update the existing `aloha-app-health` Production deployment.
 
-The generic `npm run deploy` entry was removed from Health because it previously invoked `wrangler deploy` (Production). The explicit `npm run deploy:staging` only uploads already-built Preview assets and must not be used until the protected Preview environment is ready. Do not trigger the old `main` deployment workflow (which uses `wrangler deploy`) as a substitute.
+The generic `npm run deploy` entry was removed from Health to avoid accidental Production updates. For ordinary completed changes, use the independent Health Production job on main, without a prior Preview deployment. The explicit `npm run deploy:staging` is reserved for optional experiments and must not be used for live private data until its protected Preview environment is ready. Do not use the Assistant deployment workflow as a substitute.
 
 The independent Preview URL requires protection at the Cloudflare Worker Preview/Access layer before handling private data. A shared product-level staging Access login and a shared origin/path router are separate tasks: a named Worker Preview does not automatically appear under the shared staging domain, and Service Bindings from a Preview normally reach the downstream Worker's Production deployment. Do not configure an unsupported Preview-to-Preview binding or expose a direct URL as a replacement for shared login.
 
 Once the Preview has been created and security protection confirmed, set Preview-scoped LifeSpace Identity/Core URL variables and a Health-only `LIFESPACE_APPLICATION_CREDENTIAL` secret in Cloudflare's named `staging` Preview. Credentials never belong in GitHub source or logs. The BFF deliberately returns `backend_not_configured` until these are present. Cloudflare's **Production** settings for the existing static-only Worker are not the place to install these values.
 
-Production path routing remains inactive until the independent release gate has been accepted.
+Production path routing activation remains a separate reviewed infrastructure operation; routine releases do not require Preview acceptance.
 
 ### Target production deployment
 

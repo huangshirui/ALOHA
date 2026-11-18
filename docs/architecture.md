@@ -84,7 +84,7 @@ The following must be decided explicitly when a domain is implemented:
 
 Do not infer these choices from the Assistant architecture.
 
-The Health prototype is merged; Draft PR #37 adds a same-origin trusted LifeSpace BFF for seven Console-published domain models, and a separate per-user SQLite-backed Durable Object for ALOHA-only body-point/attention presentation state. Neither the Live integration nor Production routing has passed staging acceptance.
+The Health prototype is merged; Draft PR #37 adds a same-origin trusted LifeSpace BFF for seven Console-published domain models, and a separate per-user SQLite-backed Durable Object for ALOHA-only body-point/attention presentation state. This historical prototype description does not impose a mandatory staging acceptance gate. The current release policy is Production-first; see `docs/pwa-deployment.md`.
 
 ## Gateway（网关）
 
@@ -186,7 +186,7 @@ aloha.aisr.online/
   LifeSpace Identity and proxies only the current user's bounded profile/avatar,
   never browser-exposed backend credentials.
 - **ALOHA workspace binding (candidate)**: one current Space pointer per verified LifeSpace User, stored by a per-user SQLite Durable Object owned by Settings Worker. On first use or confirmed loss of membership, Settings explicitly offers creation of a normal Space or binding an existing current member Space. No browser preference, migration, implicit first match or automatic retry after an ambiguous Core create. Valid binding is reused and is not an authority grant; Account remains the management entry. Health resolves through its trusted BFF; every Core operation retains its own authorization and own-Person check. Assistant currently has no personal Space routing; future domain operations must resolve the same binding, not invent a second selection.
-- **Staging isolation**: keep the original Named Preview per Worker, with its automatically isolated DO namespace. Production Health calls Settings' private read-only WorkspaceReader Service Binding. Named Health Preview cannot bind another Preview, so it calls the existing Settings Named Preview over HTTPS using a narrowly scoped Cloudflare Access service token and forwards the original verified user assertion; Settings re-verifies the user through staging Identity and only returns that user's binding. Health verifies the returned user and current Core membership. The HTTP route is Preview-only, read-only and not exposed in Production. No cross-environment fallback; no extra Worker. Deploy Settings Preview before Health Preview.
+- **Staging isolation**: keep the original Named Preview per Worker, with its automatically isolated DO namespace. Production Health calls Settings' private read-only WorkspaceReader Service Binding. Named Health Preview cannot bind another Preview, so it calls the existing Settings Named Preview over HTTPS using a narrowly scoped Cloudflare Access service token and forwards the original verified user assertion; Settings re-verifies the user through staging Identity and only returns that user's binding. Health verifies the returned user and current Core membership. The HTTP route is Preview-only, read-only and not exposed in Production. No cross-environment fallback; no extra Worker. When a live cross-Preview experiment is needed, deploy Settings Preview before Health Preview. Ordinary releases use Production Settings before dependent Production Health; no mandatory Preview parity.
 - **Health MVP boundary**: manual health CRUD, observations/trends, files
   and relationships are the baseline candidate. AI import/Agent (Issue #43)
   and HealthRegimen ↔ Task/Recurrence (Issue #44) are later work.
@@ -258,7 +258,7 @@ ALOHA-managed capability registry/adapters. Do not use this package as a generic
 ## Current implementation order
 
 1. Keep existing Assistant M0-M3 behavior stable while the required LifeSpace upgrade is completed.
-2. Keep the independently deployed Health PWA boundary. Publish the seven ordinary Health models through LifeSpace Console; validate the Draft BFF and DO integration in Staging before production cutover.
+2. Keep the independently deployed Health PWA boundary. Publish the seven ordinary Health models through LifeSpace Console; validate the BFF and DO integration with automated checks, direct Production smoke checks, and isolated testing where risk warrants it under the Production-first policy.
 3. When LifeSpace-dependent Assistant work is ready, finish Assistant integration and separately cut Assistant production from root/Gateway static hosting to its independent `/assistant/` PWA Worker.
 4. Activate Health production routing only when Health has a release-ready UI, final icon assets and an explicitly designed trusted data/API boundary.
 5. Add Finance or other surfaces only when their product scope is concrete; reuse the same independent-PWA pattern rather than copying Assistant internals.

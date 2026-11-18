@@ -20,7 +20,7 @@ in the repository or workflow output.
 Finance and Things development scaffolds expose only explicit `deploy:staging`
 commands; neither ships an unguarded `deploy` script that publishes Production.
 
-No joint Health/Settings deployment. No Worker rename, secret generation,
+Production-first is the default for routine changes in the early product phase. No preceding Preview deployment or acceptance is required. The manual Production dispatches and existing security/validation gates remain unchanged; Preview is optional and isolated. No joint Health/Settings deployment. No Worker rename, secret generation,
 one-time runtime bootstrap or old M1/M2 fallback is run during normal releases.
 Common Hub/`@aloha/ui` code is bundled when each consuming app is explicitly
 released, never deployed as a separate runtime or automatically broadcast to

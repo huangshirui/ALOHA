@@ -187,6 +187,14 @@ Do not duplicate protocol shapes independently when they belong in `packages/con
 - Prefer the smallest implementation that proves the next invariant; preserve real extension points rather than speculative frameworks.
 - The old `aloha-assistant-pwa` repository is historical reference only, not a compatibility/migration baseline.
 
+## Production-first release policy (early product phase)
+
+- Default delivery for an implemented, production-ready surface: make the smallest coherent change, pass automated checks and the affected Production workflow's build/dry-run/configuration gates, merge reviewed code, release only affected Production Workers, then validate in real use. Do not require a separate named Preview deployment or manual Preview acceptance for ordinary changes.
+- Named Previews are optional UX exploration and isolated experiments, not a release train or a permanent production replica. Prefer synthetic/demo data for exploratory UI. Use a protected live Preview only when needed; preserve its separate LifeSpace identity, secrets, resources and access rules. Never let a Preview reach production data or bindings just to match topology.
+- Keep the existing explicit main-only Production dispatch and confirmation for Health/Settings; the existing narrowly scoped Assistant auto-release is unchanged. Do not introduce new automatic production triggers, unrelated deployments or public route activation under this policy.
+- Do not equate fewer release steps with weaker authorization or data safety. Check required scopes, service bindings, migration/rollback compatibility and dependency order. For destructive or irreversible migrations, security/authority changes, sensitive data writes or major cross-service changes, require targeted negative tests and explicit risk review; use isolated testing where it materially reduces risk. Production smoke tests must avoid destructive operations on real user data.
+- Record actual deployment and observed verification separately from automated checks; do not claim untested features passed. Roll back the affected Worker or ship a targeted fix if a regression occurs. This policy is ALOHA-specific and does not change LifeSpace/HomeMew release requirements.
+
 ## Change completion
 
 Before declaring a change complete, inspect the coupled surfaces that apply: PWA manifest/scope, UI, Interaction Protocol, Context, Gateway, Agent Control, Runtime Contract/Adapter, Capability registry/adapter, authentication/authorization, confirmation, streaming/error semantics, docs, tests and deployment configuration.
