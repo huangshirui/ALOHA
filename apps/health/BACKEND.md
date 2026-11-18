@@ -85,3 +85,7 @@ Health 使用一个 Cloudflare Worker 项目 `aloha-app-health`：Production 接
 ## Workers Runtime 本地集成测试（PR #37）
 
 `npm run test -w @aloha/health` 依次运行纯 Vitest 单元测试及 `@cloudflare/vitest-plugin` 的 workerd SQLite DO 测试。后者通过 `apps/health/wrangler.test.jsonc` 装载与正式 Worker 相同的 DO 类，验证建表、写入、实例隔离和驱逐后重启读取；全部使用合成值，不调用 Staging。该通过不等于 Staging 已经配置 Access、发布模型或真实 CRUD。相关部署仍须走 Console 与 Preview 部署流程。
+
+## Workspace onboarding correction (candidate)
+
+This candidate supersedes earlier browser-local Space-selection instructions above. Health startup reads `GET /health/api/v1/workspace` through its authenticated BFF, validates the per-user cloud pointer against current Core memberships, and redirects to shared Settings only for unbound/reselect/uncertain state. Explicit create/bind lives in Settings; transient backend failures do not trigger selection or creation. Existing health record authorization and Person resolution remain Core-owned. No browser-local Space preference is used or migrated. Deploy Settings first in the corresponding environment; Health uses its read-only named Service Binding. No standalone Workspace service.

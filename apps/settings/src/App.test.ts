@@ -12,7 +12,7 @@ describe('ALOHA Settings responsive shell',()=>{
     expect(html).toContain('settings-rail')
     expect(html).toContain('settings-menu-button')
     expect(html).toContain('应用设置')
-    expect(html).toContain('默认空间')
+    expect(html).toContain('专属空间')
     expect(html).toContain('账号与安全')
     expect(html).toContain('https://account.aisr.online/')
     expect(html).toContain('href="/health/"')

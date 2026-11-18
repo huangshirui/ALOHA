@@ -1,15 +1,6 @@
-/** ALOHA selected Space is a browser preference, never a LifeSpace Grant.
- * Health uses it only after fetching current authorized spaces from its BFF.
- * An unset/revoked preference must be explicitly configured in Settings;
- * never infer a person or silently pick the first available Space.
- * Legacy Health-only keys are intentionally NOT adopted; Settings is now the
- * explicit owner of the current ALOHA Space choice.
- */
-export interface AuthorizedSpace {id:string}
-export interface SpacePreference {getItem(key:string):string|null}
-export function selectedAuthorizedHealthSpace(
-  available:readonly AuthorizedSpace[],storage:SpacePreference,
-):string|null {
-  const stored=storage.getItem('aloha.space')
-  return available.some(s=>s.id===stored)?stored:null
+import type {WorkspaceView} from '@aloha/contracts'
+/** Consume only a verified cloud binding; never guess from membership list or browser storage. */
+export function selectedAuthorizedHealthSpace(view:WorkspaceView):string|null{
+  if(view.status!=='bound'||!view.space)return null
+  return view.spaces.some(s=>s.id===view.space?.id)?view.space.id:null
 }

@@ -2,6 +2,7 @@
  * ALOHA Health same-origin BFF. The browser never receives LifeSpace credentials.
  * Identity verifies the raw Access assertion; Core owns Space/Model/Grant authorization.
  */
+import {parseWorkspaceSpaces,workspaceState,workspaceView,workspaceUserId,type WorkspaceService} from '@aloha/contracts'
 import { parsePresentationPatch, type PresentationScope } from './health-presentation'
 import { uploadHealthDocument, downloadHealthDocument } from './health-files'
 import { readHealthSession, makeHealthSessionCookie, signedTokenSubject, clearHealthSessionCookie } from './health-session'
@@ -15,6 +16,7 @@ export interface HealthPresentationNamespace {
 }
 
 export interface HealthEnv {
+  ALOHA_WORKSPACE?:WorkspaceService
   HEALTH_PRESENTATION?: HealthPresentationNamespace
   ASSETS?: { fetch(request: Request): Promise<Response> }
   LIFESPACE_IDENTITY_BASE_URL?: string
@@ -48,6 +50,7 @@ function routeFor(url: URL, method: string): Route | null {
   const p = url.pathname
   if(p==='/health/api/v1/profile'&&method==='GET')return {path:'@profile'}
   if(p==='/health/api/v1/profile/avatar'&&method==='GET')return {path:'@profile-avatar'}
+  if(p==='/health/api/v1/workspace'&&method==='GET')return {path:'@workspace'}
   if (p === '/health/api/v1/spaces' && method === 'GET') return { path: '/api/v1/me/spaces' }
   const upload = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/documents\/upload$/.exec(p)
   if (upload && method === 'POST') return {spaceId:upload[1],path:'@document-upload'}
@@ -522,6 +525,16 @@ export async function handleHealthApi(
   if(session instanceof Response)return session
   const {bearer,userId}=session
   const identityMs=performance.now()-identityStarted
+  if(route.path==='@workspace'){
+    if(!userId||!workspaceUserId.test(userId))return withSessionCookie(json('identity_session_mismatch',401),session.cookie)
+    const binding=await workspaceState(env.ALOHA_WORKSPACE,userId,'read')
+    if(binding instanceof Response)return withSessionCookie(binding,session.cookie)
+    const listed=await send(fetchImpl,core+'/api/v1/me/spaces',{method:'GET',headers:{Authorization:'Bearer '+bearer,Accept:'application/json'}})
+    if(!listed.ok)return withSessionCookie(json('spaces_unavailable',listed.status),session.cookie)
+    const spaces=parseWorkspaceSpaces(await listed.json().catch(()=>null))
+    if(!spaces)return withSessionCookie(json('invalid_spaces_response',502),session.cookie)
+    return withSessionCookie(Response.json({data:workspaceView(binding,spaces)},{headers:{'Cache-Control':'private, no-store'}}),session.cookie)
+  }
   if(route.path==='@profile'||route.path==='@profile-avatar'){
     const upstream=await send(fetchImpl,identity+'/api/v1/me',{
       method:'GET',headers:{Authorization:'Bearer '+bearer,Accept:'application/json'},

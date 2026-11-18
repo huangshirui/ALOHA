@@ -38,9 +38,23 @@
           "class_name": "HealthPresentationState"
         }
       ]
-    }
+    },
+    "services": [
+      {
+        "binding": "ALOHA_WORKSPACE",
+        "service": "aloha-app-settings-staging",
+        "entrypoint": "WorkspaceReader"
+      }
+    ]
   },
   "compatibility_flags": [
     "global_fetch_strictly_public"
+  ],
+  "services": [
+    {
+      "binding": "ALOHA_WORKSPACE",
+      "service": "aloha-app-settings",
+      "entrypoint": "WorkspaceReader"
+    }
   ]
 }

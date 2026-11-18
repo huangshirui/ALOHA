@@ -175,3 +175,7 @@ not grant permissions and it cannot be synchronized between distinct
 `workers.dev` staging hosts. The Health client migrates its previous
 `aloha.health.space` key only when it can independently verify membership
 against Core. Production stays unchanged until route activation is approved.
+
+## Workspace onboarding correction (candidate)
+
+This candidate supersedes earlier browser-local Space-selection instructions above. Health startup reads `GET /health/api/v1/workspace` through its authenticated BFF, validates the per-user cloud pointer against current Core memberships, and redirects to shared Settings only for unbound/reselect/uncertain state. Explicit create/bind lives in Settings; transient backend failures do not trigger selection or creation. Existing health record authorization and Person resolution remain Core-owned. No browser-local Space preference is used or migrated. Deploy Settings first in the corresponding environment; Health uses its read-only named Service Binding. No standalone Workspace service.

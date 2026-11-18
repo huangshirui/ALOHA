@@ -7,8 +7,9 @@ import {
   Sparkles,UserRound,
 } from 'lucide-vue-next'
 import AlohaHubSettings from '@aloha/ui/AlohaHubSettings.vue'
+import type {WorkspaceView} from '@aloha/contracts'
 import {
-  getProfile,getSpaces,selectedSpace,safeReturn,SettingsApiError,
+  getProfile,getWorkspace,bindWorkspace,createWorkspace,safeReturn,SettingsApiError,
   type Space,type UserProfile,
 } from './api'
 
@@ -16,6 +17,7 @@ const accountUrl='https://account.aisr.online/'
 const profile=ref<UserProfile|null>(null)
 const spaces=ref<Space[]>([])
 const selectedId=ref('')
+const workspace=ref<WorkspaceView|null>(null)
 const profileError=ref<Error|null>(null)
 const spaceError=ref<Error|null>(null)
 const profileBusy=ref(true)
@@ -23,7 +25,6 @@ const spaceBusy=ref(true)
 const message=ref('')
 const mobileMenu=ref(false)
 const backUrl=safeReturn(new URLSearchParams(window.location.search).get('from'))
-const previewIsolation=window.location.hostname.endsWith('.workers.dev')
 const displayName=computed(()=>profile.value?.displayName||'账号资料')
 const needsAccess=computed(()=>[profileError.value,spaceError.value].some(
   e=>e instanceof SettingsApiError&&(e.status===401||e.code==='access_required'),
@@ -38,28 +39,32 @@ async function refreshProfile(){
   catch(e){profile.value=null;profileError.value=e instanceof Error?e:new Error('无法读取账号资料')}
   finally{profileBusy.value=false}
 }
+function applyWorkspace(view:WorkspaceView){
+  workspace.value=view;spaces.value=view.spaces;selectedId.value=view.space?.id||''
+}
 async function refreshSpaces(){
   spaceBusy.value=true;spaceError.value=null;message.value=''
-  try{
-    const available=await getSpaces()
-    spaces.value=available
-    selectedId.value=selectedSpace(available,localStorage)
-    if(selectedId.value)localStorage.setItem('aloha.space',selectedId.value)
-    else if(!available.length)message.value='当前账号没有可访问的空间。'
-  }catch(e){
-    spaces.value=[];selectedId.value=''
-    spaceError.value=e instanceof Error?e:new Error('无法读取空间列表')
+  try{applyWorkspace(await getWorkspace())}
+  catch(e){
+    workspace.value=null;spaces.value=[];selectedId.value=''
+    spaceError.value=e instanceof Error?e:new Error('无法读取空间绑定')
   }finally{spaceBusy.value=false}
 }
-function refresh(){void Promise.all([refreshProfile(),refreshSpaces()])}
-function choose(id:string){
-  if(!spaces.value.some(s=>s.id===id)){spaceError.value=new Error('选择的空间不在当前授权列表中');return}
-  selectedId.value=id
-  localStorage.setItem('aloha.space',id)
-  spaceError.value=null
-  message.value=previewIsolation?
-    '已保存在 Settings Preview 当前域名；其他 Preview 域名不会同步此设置。':
-    '已保存为此浏览器的默认空间，返回应用后刷新生效。'
+function refresh(){if(!spaceBusy.value||!workspace.value)void Promise.all([refreshProfile(),refreshSpaces()])}
+async function configure(operation:()=>Promise<WorkspaceView>){
+  if(spaceBusy.value||!workspace.value||workspace.value.status==='bound'||workspace.value.status==='creating')return
+  spaceBusy.value=true;spaceError.value=null;message.value=''
+  try{applyWorkspace(await operation());message.value='专属空间已保存到云端，各设备和应用共用。'}
+  catch(e){
+    // Re-read the durable outcome; never infer failure means nothing was created.
+    const error=e instanceof Error?e:new Error('空间配置失败')
+    try{applyWorkspace(await getWorkspace())}catch{workspace.value=null;spaces.value=[];selectedId.value=''}
+    spaceError.value=error
+  }finally{spaceBusy.value=false}
+}
+function choose(id:string){void configure(()=>bindWorkspace(id))}
+function create(input:{name:string;timezone:string;acknowledgeUncertain:boolean}){
+  void configure(()=>createWorkspace(input.name,input.timezone,input.acknowledgeUncertain))
 }
 onMounted(refresh)
 </script>
@@ -78,7 +83,7 @@ onMounted(refresh)
           <Settings2 :size="20"/><span>通用设置</span>
         </a>
         <a href="#default-space" class="settings-nav-link" @click="mobileMenu=false">
-          <Layers3 :size="20"/><span>默认空间</span>
+          <Layers3 :size="20"/><span>专属空间</span>
         </a>
         <div class="settings-nav-group settings-nav-separator">账号与服务</div>
         <a v-for="item in accountItems" :key="item.label" class="settings-nav-link" :href="item.href"
@@ -132,22 +137,20 @@ onMounted(refresh)
         </div>
 
         <div v-if="spaceError&&!needsAccess" class="settings-inline-notice" role="status">
-          <CircleAlert :size="18"/><span>空间列表：{{spaceError.message}}</span>
+          <CircleAlert :size="18"/><span>专属空间：{{spaceError.message}}</span>
           <button type="button" @click="refreshSpaces">重试</button>
         </div>
 
         <AlohaHubSettings
-          :selected-space-id="selectedId" :spaces="spaces" :busy="spaceBusy"
+          :selected-space-id="selectedId" :spaces="spaces" :busy="spaceBusy" :workspace-status="workspace?.status||'unavailable'"
           :space-message="message" :back-url="backUrl" :account-url="accountUrl"
-          :embedded="true" @choose-space="choose" @retry="refreshSpaces"
+          :embedded="true" @choose-space="choose" @create-space="create" @retry="refreshSpaces"
         />
 
         <section id="settings-help" class="settings-help">
           <HelpCircle :size="19"/>
           <div><strong>关于这些设置</strong>
-            <p>默认空间仅是此站点浏览器的偏好，不会授予新权限。
-              <template v-if="previewIsolation">当前是独立 Preview 域名，与 Health Preview 的浏览器设置互不共享。</template>
-            </p>
+            <p>专属空间绑定随账号保存在云端，不会授予新权限。若空间已注销或你已退出，下次使用可重新配置。空间和成员的通用管理请前往账户中心。</p>
           </div>
         </section>
       </main>

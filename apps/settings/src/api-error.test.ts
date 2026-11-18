@@ -1,5 +1,5 @@
 import {describe,it,expect,vi,afterEach} from 'vitest'
-import {getProfile,getSpaces,SettingsApiError} from './api'
+import {getProfile,getWorkspace,SettingsApiError} from './api'
 afterEach(()=>vi.unstubAllGlobals())
 describe('Settings current-origin authentication errors',()=>{
   it('describes a 401 as no Access assertion, not an account-wide logout',async()=>{
@@ -8,7 +8,7 @@ describe('Settings current-origin authentication errors',()=>{
     await expect(getProfile()).rejects.toMatchObject({
       name:'SettingsApiError',status:401,code:'access_required',
     })
-    try{await getSpaces()}catch(e){
+    try{await getWorkspace()}catch(e){
       expect((e as SettingsApiError).message).toContain('缺少有效的 Cloudflare Access')
       expect((e as SettingsApiError).message).not.toContain('请先登录 ALOHA')
     }
@@ -16,7 +16,7 @@ describe('Settings current-origin authentication errors',()=>{
   it('does not mistake Core 403 for missing Access authentication',async()=>{
     vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(
       JSON.stringify({error:'access_denied'}),{status:403,headers:{'Content-Type':'application/json'}})))
-    await expect(getSpaces()).rejects.toMatchObject({
+    await expect(getWorkspace()).rejects.toMatchObject({
       name:'SettingsApiError',status:403,code:'access_denied',
     })
   })
@@ -45,7 +45,7 @@ describe('Settings current-origin authentication errors',()=>{
       if(input.endsWith('/me'))return Response.json({data:{displayName:'Synthetic Account',avatarUrl:null}})
       return Response.json({error:'spaces_unavailable'},{status:503})
     }))
-    const result=await Promise.allSettled([getProfile(),getSpaces()])
+    const result=await Promise.allSettled([getProfile(),getWorkspace()])
     expect(result[0]).toEqual({status:'fulfilled',value:{displayName:'Synthetic Account',avatarUrl:null}})
     expect(result[1].status).toBe('rejected')
   })

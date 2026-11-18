@@ -1,5 +1,6 @@
 export interface UserProfile {displayName:string;avatarUrl:string|null}
-export interface Space {id:string;name:string}
+import type {WorkspaceView,WorkspaceSpace} from '@aloha/contracts'
+export type Space=WorkspaceSpace
 
 /** The Settings origin has its own Access admission. A 401 means that this
  * origin lacks a valid assertion, not necessarily that another ALOHA app is logged out. */
@@ -14,14 +15,25 @@ export class SettingsApiError extends Error {
       application_scope_forbidden:'ALOHA Application 尚未允许 Settings 请求的权限范围',
       identity_exchange_forbidden:'LifeSpace Identity 拒绝了本次认证，请检查 Application 和 Access 配置',
       identity_service_unavailable:'LifeSpace Identity 当前无法验证登录请求',
+      workspace_storage_unavailable:'云端空间设置暂不可用，请重试；不会创建新空间',
+      workspace_conflict:'另一设备正在配置空间，请刷新后重试',
+      workspace_already_bound:'此账号已有有效 ALOHA 专属空间，请刷新',
+      workspace_not_member:'当前账号不是所选空间的成员',
+      workspace_creation_in_progress:'空间正在创建，请刷新查看结果',
+      workspace_creation_uncertain:'创建结果尚未确认，请先检查已有空间，不要重复创建',
+      workspace_create_denied:'LifeSpace 未允许创建空间，请检查应用授权或输入',
+      spaces_unavailable:'LifeSpace 空间列表暂不可用，不会自动创建或切换空间',
     }
     super(reason[code]??(status===403?'当前账号没有访问 Settings 的权限':
       status>=500?'Settings 服务暂时不可用':'设置数据读取失败'))
     this.name='SettingsApiError'
   }
 }
-async function fetchData<T>(path:string):Promise<T>{
-  const response=await fetch('/settings/api/v1/'+path,{credentials:'same-origin',headers:{Accept:'application/json'}})
+async function fetchData<T>(path:string,body?:Record<string,unknown>):Promise<T>{
+  const response=await fetch('/settings/api/v1/'+path,{
+    credentials:'same-origin',headers:{Accept:'application/json',...(body?{'Content-Type':'application/json','X-ALOHA-Intent':'configure-workspace'}:{})},
+    ...(body?{method:'POST',body:JSON.stringify(body)}:{}),
+  })
   if(!response.ok){
     const payload:unknown=await response.json().catch(()=>null)
     const code=payload&&typeof payload==='object'&&'error' in payload&&typeof payload.error==='string'?payload.error:'http_'+response.status
@@ -32,12 +44,9 @@ async function fetchData<T>(path:string):Promise<T>{
   return (result as {data:T}).data
 }
 export const getProfile=()=>fetchData<UserProfile>('me')
-export const getSpaces=()=>fetchData<Space[]>('spaces')
-/** A Space ID stored here is a per-origin browser preference, never a grant. */
-export function selectedSpace(spaces:Space[],storage:Pick<Storage,'getItem'>):string{
-  const stored=storage.getItem('aloha.space')||''
-  return spaces.some(s=>s.id===stored)?stored:''
-}
+export const getWorkspace=()=>fetchData<WorkspaceView>('workspace')
+export const bindWorkspace=(spaceId:string)=>fetchData<WorkspaceView>('workspace',{intent:'bind',spaceId})
+export const createWorkspace=(name:string,timezone:string,acknowledgeUncertain:boolean)=>fetchData<WorkspaceView>('workspace',{intent:'create',name,timezone,acknowledgeUncertain})
 /** Settings is hosted on a different preview origin from Health. A relative
  * /health/ return path points back to Settings and is broken in Preview.
  * Derive a same-account sibling Preview URL only for our known Worker hostname
@@ -46,7 +55,7 @@ export function selectedSpace(spaces:Space[],storage:Pick<Storage,'getItem'>):st
  */
 export const safeReturn=(from:string|null)=>{
   const host=typeof window==='undefined'?'':window.location.hostname
-  const prefix='staging-aloha-app-settings.'
+  const prefix='aloha-app-settings-staging.'
   const suffix=host.startsWith(prefix)?host.slice(prefix.length):''
   const siblingPreview=/^[a-z0-9-]+[.]workers[.]dev$/.test(suffix)
   const health=import.meta.env.VITE_ALOHA_HEALTH_URL||
