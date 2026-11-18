@@ -1,6 +1,7 @@
 import {describe,it,expect,vi} from 'vitest'
 import {handleSettingsApi,type SettingsEnv} from './worker'
-import workspaceWorker,{WorkspaceState} from '../../../workers/space-binding/src/worker'
+import {dispatchWorkspaceState,WorkspaceState} from './workspace-state'
+import settingsWorker from './worker'
 import {handleHealthApi} from '../../health/src/worker'
 const base='https://settings.example.com/settings/api/v1/workspace'
 const token='header.'+btoa(JSON.stringify({sub:'usr_synthetic'})).replace(/=/g,'')+'.signature'
@@ -27,7 +28,7 @@ function fixture(){
     LIFESPACE_IDENTITY_BASE_URL:'https://identity.example.com',
     LIFESPACE_CORE_BASE_URL:'https://core.example.com',
     LIFESPACE_APPLICATION_CREDENTIAL:'lsa_synthetic',
-    ALOHA_WORKSPACE:{fetch:request=>workspaceWorker.fetch(request,storageEnv)},
+    ...storageEnv,
   }
   let spaces=[initial],creates=0,failList=false,failCreate=false
   const calls:{path:string;body?:Record<string,unknown>}[]=[]
@@ -53,12 +54,19 @@ function fixture(){
   }),env,upstream)
   const health=()=>handleHealthApi(new Request('https://health.example.com/health/api/v1/workspace',{
     headers:{'Cf-Access-Jwt-Assertion':assertion},
-  }),env,upstream)
-  return {get,post,health,env,upstream,calls,get creates(){return creates},setSpaces:(next:typeof spaces)=>{spaces=next},failList:()=>{failList=true},failCreate:()=>{failCreate=true}}
+  }),{...env,ALOHA_WORKSPACE:{fetch:request=>dispatchWorkspaceState(request,storageEnv,true)}},upstream)
+  const reader=(path:string,payload:unknown)=>dispatchWorkspaceState(new Request('https://workspace.internal/'+path,{method:'POST',body:JSON.stringify(payload)}),storageEnv,true)
+  return {get,post,health,reader,env,upstream,calls,get creates(){return creates},setSpaces:(next:typeof spaces)=>{spaces=next},failList:()=>{failList=true},failCreate:()=>{failCreate=true}}
 }
 const bind={intent:'bind',spaceId:'spc_existing'}
 const create={intent:'create',name:'Synthetic workspace',timezone:'UTC',acknowledgeUncertain:false}
 describe('trusted cloud onboarding and Health cross-surface read',()=>{
+  it('does not expose raw binding operations on the public Settings handler or read-only entrypoint',async()=>{
+    const t=fixture()
+    expect((await settingsWorker.fetch(new Request('https://workspace.internal/read',{method:'POST',body:JSON.stringify({userId:'usr_synthetic'})}),t.env)).status).toBe(404)
+    for(const path of ['bind','reserve','finish'])expect((await t.reader(path,{userId:'usr_synthetic',expectedRevision:0,spaceId:'spc_other'})).status).toBe(404)
+    expect((await t.reader('read',{userId:'usr_synthetic'})).status).toBe(200)
+  })
   it('binds an existing member Space only explicitly, persists across browser origins, and does not allow switching valid binding',async()=>{
     const t=fixture()
     expect((await (await t.get()).json()).data.status).toBe('unbound')

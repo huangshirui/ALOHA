@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest'
-import worker,{WorkspaceState} from './worker'
+import {dispatchWorkspaceState,WorkspaceState} from './workspace-state'
 import {workspaceState,workspaceView} from '@aloha/contracts'
 function fixture(){
   const objects=new Map<string,WorkspaceState>()
@@ -18,7 +18,7 @@ function fixture(){
       return objects.get(key)!
     },
   }}
-  return {fetch:(request:Request)=>worker.fetch(request,env)}
+  return {fetch:(request:Request)=>dispatchWorkspaceState(request,env)}
 }
 describe('private ALOHA workspace state',()=>{
   it('serializes first setup, isolates users, and survives repeated reads',async()=>{

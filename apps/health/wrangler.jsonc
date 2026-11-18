@@ -42,7 +42,8 @@
     "services": [
       {
         "binding": "ALOHA_WORKSPACE",
-        "service": "aloha-space-binding-staging"
+        "service": "aloha-app-settings-staging",
+        "entrypoint": "WorkspaceReader"
       }
     ]
   },
@@ -52,7 +53,8 @@
   "services": [
     {
       "binding": "ALOHA_WORKSPACE",
-      "service": "aloha-space-binding"
+      "service": "aloha-app-settings",
+      "entrypoint": "WorkspaceReader"
     }
   ]
 }

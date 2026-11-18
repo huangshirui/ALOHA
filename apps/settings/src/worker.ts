@@ -3,8 +3,8 @@
  * Distinct from LifeSpace account editing (account.aisr.online) and Core auth.
  */
 import {parseWorkspaceSpaces,workspaceState,workspaceView,workspaceSpaceId,workspaceUserId,type WorkspaceService} from '@aloha/contracts'
-export interface SettingsEnv {
-  ALOHA_WORKSPACE?:WorkspaceService
+import {dispatchWorkspaceState,type WorkspaceStorageEnv} from './workspace-state'
+export interface SettingsEnv extends WorkspaceStorageEnv {
   LIFESPACE_IDENTITY_BASE_URL?:string
   LIFESPACE_CORE_BASE_URL?:string
   LIFESPACE_APPLICATION_CREDENTIAL?:string
@@ -62,7 +62,8 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
     }else return denied('invalid_request',400)
     input=parsed
   }
-  if(workspace&&!env.ALOHA_WORKSPACE)return denied('workspace_storage_unavailable',503)
+  if(workspace&&!env.WORKSPACE_STATE)return denied('workspace_storage_unavailable',503)
+  const storage:WorkspaceService={fetch:request=>dispatchWorkspaceState(request,env)}
   const identity=origin(env.LIFESPACE_IDENTITY_BASE_URL)
   const core=origin(env.LIFESPACE_CORE_BASE_URL)
   const credential=env.LIFESPACE_APPLICATION_CREDENTIAL
@@ -105,7 +106,7 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
     if(!profile||typeof profile.id!=='string'||!workspaceUserId.test(profile.id)||
       typeof profile.displayName!=='string'||!profile.displayName.trim())return denied('invalid_profile_response',502)
     const userId=profile.id
-    const binding=await workspaceState(env.ALOHA_WORKSPACE,userId,'read')
+    const binding=await workspaceState(storage,userId,'read')
     if(binding instanceof Response)return binding
     const listed=await upstream(fetcher,core+'/api/v1/me/spaces',{method:'GET',headers:auth})
     if(!listed.ok)return denied('spaces_unavailable',listed.status)
@@ -122,12 +123,12 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
     if(input.intent==='bind'){
       const selected=spaces.find(s=>s.id===input.spaceId)
       if(!selected)return denied('workspace_not_member',403)
-      const saved=await workspaceState(env.ALOHA_WORKSPACE,userId,'bind',{expectedRevision:binding.revision,spaceId:selected.id})
+      const saved=await workspaceState(storage,userId,'bind',{expectedRevision:binding.revision,spaceId:selected.id})
       if(saved instanceof Response)return saved
       return ok(workspaceView(saved,spaces))
     }
     if(view.status==='uncertain'&&input.acknowledgeUncertain!==true)return denied('workspace_creation_uncertain',409)
-    const reservation=await workspaceState(env.ALOHA_WORKSPACE,userId,'reserve',{
+    const reservation=await workspaceState(storage,userId,'reserve',{
       expectedRevision:binding.revision,acknowledgeUncertain:input.acknowledgeUncertain,
     })
     if(reservation instanceof Response)return reservation
@@ -140,7 +141,7 @@ export async function handleSettingsApi(request:Request,env:SettingsEnv,fetcher:
     const space=item&&typeof item.id==='string'&&workspaceSpaceId.test(item.id)&&typeof item.name==='string'&&item.name.trim()&&item.role==='owner'
       ?{id:item.id,name:item.name,role:'owner' as const}:null
     const outcome=space?'bound':([400,401,403,422].includes(created.status)?'unbound':'uncertain')
-    const finished=await workspaceState(env.ALOHA_WORKSPACE,userId,'finish',{
+    const finished=await workspaceState(storage,userId,'finish',{
       expectedRevision:reservation.revision,outcome,...(space?{spaceId:space.id}:{})
     })
     if(finished instanceof Response)return finished

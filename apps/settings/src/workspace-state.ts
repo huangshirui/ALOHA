@@ -4,7 +4,7 @@ interface State {
   storage:{get<T>(key:string):Promise<T|undefined>;put<T>(key:string,value:T):Promise<void>}
   blockConcurrencyWhile<T>(callback:()=>Promise<T>):Promise<T>
 }
-interface Env {WORKSPACE_STATE:{idFromName(name:string):unknown;get(id:unknown):{fetch(request:Request):Promise<Response>}}}
+export interface WorkspaceStorageEnv {WORKSPACE_STATE?:{idFromName(name:string):unknown;get(id:unknown):{fetch(request:Request):Promise<Response>}}}
 const obj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v)
 const reply=(data:unknown,status=200)=>Response.json({data},{status,headers:{'Cache-Control':'no-store'}})
 const fail=(status:number)=>Response.json({error:'workspace_request_denied'},{status,headers:{'Cache-Control':'no-store'}})
@@ -50,11 +50,12 @@ export class WorkspaceState {
     })
   }
 }
-export default {
-  async fetch(request:Request,env:Env):Promise<Response>{
-    // Deployment is private: no route, workers.dev or preview URL.
+export async function dispatchWorkspaceState(request:Request,env:WorkspaceStorageEnv,readOnly=false):Promise<Response>{
+    // Only Settings BFF or the named read-only Service Binding entrypoint calls this.
     const url=new URL(request.url)
     if(url.origin!=='https://workspace.internal'||request.method!=='POST'||!actions.has(url.pathname))return fail(404)
+    if(readOnly&&url.pathname!=='/read')return fail(404)
+    if(!env.WORKSPACE_STATE)return fail(503)
     const raw=await request.text()
     if(raw.length>2048)return fail(413)
     let body:unknown
@@ -65,5 +66,4 @@ export default {
       return await env.WORKSPACE_STATE.get(env.WORKSPACE_STATE.idFromName('user:'+userId)).fetch(
         new Request('https://workspace.internal'+url.pathname,{method:'POST',body:JSON.stringify(input)}))
     }catch{return fail(503)}
-  }
 }
