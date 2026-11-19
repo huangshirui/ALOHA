@@ -89,3 +89,8 @@ Health 使用一个 Cloudflare Worker 项目 `aloha-app-health`：Production 接
 ## Workspace onboarding correction (candidate)
 
 This candidate supersedes earlier browser-local Space-selection instructions above. Health startup reads `GET /health/api/v1/workspace` through its authenticated BFF, validates the per-user cloud pointer against current Core memberships, and redirects to shared Settings only for unbound/reselect/uncertain state. Explicit create/bind lives in Settings; transient backend failures do not trigger selection or creation. Existing health record authorization and Person resolution remain Core-owned. No browser-local Space preference is used or migrated. Deploy Settings first in the corresponding environment. Production Health uses its read-only named Service Binding; the existing named Health Preview uses authenticated HTTPS to the existing Settings Preview, with the original user assertion reverified and the returned user matched. No standalone Workspace or staging Worker.
+
+
+## 附件直接预览 / Attachment preview
+
+Health 文件详情使用现有同源授权 download 路径读取临时 Blob；不新增平台接口、存储、公开链接或权限。图片本地缩放，PDF 使用按需加载的本地 PDF.js Worker 渲染单页，支持翻页与缩放；独立下载按钮复用本次读取的文件。限制 15 MB 与四种 MIME，关闭时取消请求、撤销对象 URL、销毁 PDF Worker；不将文件写入 PWA 缓存。当前候选需要 CI、手机及桌面验证，特别是中文字体与扫描件。
