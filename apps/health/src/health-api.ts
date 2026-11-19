@@ -192,7 +192,7 @@ export async function readHealthDocument(spaceId:string,recordId:string,signal?:
   const url=base+'/spaces/'+encodeURIComponent(spaceId)+'/documents/'+encodeURIComponent(recordId)+'/download'
   const response=await fetch(url,{credentials:'same-origin',cache:'no-store',signal})
   if(!response.ok||!response.body)throw new Error('无法读取文件（HTTP '+response.status+'）')
-  const type=(response.headers.get('Content-Type')??'').split(';')[0].trim().toLowerCase()
+  const type=((response.headers.get('Content-Type')??'').split(';')[0]??'').trim().toLowerCase()
   if(!['application/pdf','image/png','image/jpeg','image/webp'].includes(type)){
     await response.body.cancel()
     throw new Error('不支持预览此文件类型')
