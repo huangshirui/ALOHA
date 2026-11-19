@@ -12,6 +12,8 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Large PDF renderer assets are loaded only on demand, not precached.
+      workbox: {globIgnores: ['**/pdf.worker*.mjs','**/pdf.worker*.js','**/pdf-assets/**']},
       manifest: {
         name: 'ALOHA Health',
         short_name: 'Health',

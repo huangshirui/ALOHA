@@ -13,7 +13,7 @@ import {
 import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   getAlohaWorkspace, getAlohaUserProfile, patchConcernPresentation,
-  getHealthSnapshot, updateHealthRecord, uploadHealthDocument, downloadHealthDocument,
+  getHealthSnapshot, updateHealthRecord, uploadHealthDocument,
   listConcernRelations,linkConcernRecord,unlinkConcernRecord,
   type FileUploadProgress,
   type HealthRecord } from './health-api'
@@ -22,6 +22,7 @@ import { concernTargetHasRelation,concernTargetModels,
   type ConcernRelation,type ConcernTargetKind } from './health-concern-relations'
 import AlohaHub from '@aloha/ui/AlohaHub.vue'
 import HealthPageHeader from './components/HealthPageHeader.vue'
+import HealthDocumentPreview from './components/HealthDocumentPreview.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import ConcernPager from './components/ConcernPager.vue'
 import ConcernLinkEditor from './components/ConcernLinkEditor.vue'
@@ -119,7 +120,6 @@ const draft = ref<Record<string,any>>({})
 const formError = ref('')
 const saving=ref(false)
 const uploadProgress=ref<FileUploadProgress|null>(null)
-const downloading=ref(false)
 const uploadFile=shallowRef<File|null>(null)
 /** Searchable Metric chooser and an inline quick-create path.
  * The Observation draft is kept intact while its Metric is created.
@@ -798,13 +798,6 @@ async function removeCurrent() {
     :'已从演示页面移除。'
   back()
 }
-async function downloadDocument(id:string) {
-  if(!liveMode||!selectedSpaceId.value||downloading.value)return
-  downloading.value=true;notice.value='正在准备文件下载…'
-  try {await downloadHealthDocument(selectedSpaceId.value,id);notice.value='文件下载已开始。'}
-  catch(e){notice.value=e instanceof Error?e.message:'文件下载失败'}
-  finally {downloading.value=false}
-}
 function togglePlan(id: string) {
   if(liveMode){notice.value='真实任务完成状态需要由 LifeSpace Task/Recurrence 管理，尚未接入。';return}
   completedPlanIds.value=completedPlanIds.value.includes(id) ? completedPlanIds.value.filter(x=>x!==id) : [...completedPlanIds.value,id]
@@ -1167,7 +1160,7 @@ function detailName(kind: HealthKind,record:any) {
                     <div v-else-if="referenceFor(current,demo.metrics.find(m=>m.id===current.metricId))?.reason==='unit_mismatch'"><dt>范围比较</dt><dd>单位不同，暂不比较</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl>
                 </template>
                 <template v-else-if="selected.kind==='event'"><p class="body-copy">{{ current.description || '没有补充说明' }}</p><dl class="detail-fields"><div><dt>事件类型</dt><dd>{{ eventName(current) }}</dd></div><div><dt>发生日期</dt><dd>{{ displayDate(current.date) }}</dd></div><div v-if="current.timeStart"><dt>发生时段</dt><dd>{{ current.timeStart }}—{{ current.timeEnd }}</dd></div><div><dt>地点</dt><dd>{{ current.location||'未填写' }}</dd></div></dl></template>
-                <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><button v-if="liveMode && current.artifactRef" type="button" class="soft-button" :disabled="downloading" @click="downloadDocument(current.id)"><FileText :size="16"/>{{ downloading?'正在准备…':'下载原始文件' }}</button><small v-if="liveMode">文件安全保存于 LifeSpace</small><small v-else>体验版仅保存文件名</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
+                <template v-else-if="selected.kind==='document'"><div class="document-preview"><FileHeart :size="40"/><span>{{ current.fileName }}</span><HealthDocumentPreview v-if="liveMode && current.artifactRef" :key="selectedSpaceId+':'+current.id" :space-id="selectedSpaceId" :record-id="current.id" :title="current.title || current.fileName"/><small v-if="liveMode">文件安全保存于 LifeSpace</small><small v-else>体验版仅保存文件名</small></div><dl class="detail-fields"><div><dt>资料类型</dt><dd>{{ docName(current) }}</dd></div><div><dt>资料日期</dt><dd>{{ displayDate(current.issuedDate) }}</dd></div><div><dt>出具机构</dt><dd>{{ current.issuerName||'未填写' }}</dd></div></dl></template>
                 <template v-else-if="selected.kind==='assessment'"><p class="body-copy">{{ current.content }}</p><dl class="detail-fields"><div><dt>评估日期</dt><dd>{{ displayDate(current.assessedDate) }}</dd></div><div><dt>来源说明</dt><dd>{{ current.sourceNote||'未填写' }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
                 <template v-else-if="selected.kind==='regimen'"><p class="body-copy">{{ current.instructions }}</p><dl class="detail-fields"><div><dt>方案类型</dt><dd>{{ labelFrom(regimenTypes,current.regimenType) }}</dd></div><div><dt>安排</dt><dd>{{ current.recurrence==='daily'?'每日':current.recurrence==='weekly'?'每周':'不重复' }}</dd></div><div><dt>首次执行</dt><dd>{{ displayDate(current.firstDueDate) }}</dd></div><div><dt>开始日期</dt><dd>{{ displayDate(current.startDate) }}</dd></div><div><dt>结束日期</dt><dd>{{ displayDate(current.endDate) }}</dd></div><div v-if="current.notes"><dt>备注</dt><dd>{{ current.notes }}</dd></div></dl></template>
                 <div class="relation-tags" v-if="current.concernIds?.length"><span class="mini-label">相关健康问题</span><button v-for="cid in current.concernIds" :key="cid" type="button" class="relation-pill" @click="show('concern',cid)"><Link2 :size="13"/>{{ nameOfConcern(cid) }}</button></div>

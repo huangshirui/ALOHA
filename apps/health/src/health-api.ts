@@ -186,18 +186,43 @@ export function uploadHealthDocument(
     xhr.send(form)
   })
 }
-export async function downloadHealthDocument(spaceId:string,recordId:string):Promise<void>{
+export const HEALTH_PREVIEW_MAX_BYTES = 15 * 1024 * 1024
+export interface HealthDocumentFile { blob:Blob; name:string }
+export async function readHealthDocument(spaceId:string,recordId:string,signal?:AbortSignal):Promise<HealthDocumentFile>{
   const url=base+'/spaces/'+encodeURIComponent(spaceId)+'/documents/'+encodeURIComponent(recordId)+'/download'
-  const response=await fetch(url,{credentials:'same-origin'})
-  if(!response.ok)throw new Error('文件下载失败（HTTP '+response.status+'）')
+  const response=await fetch(url,{credentials:'same-origin',cache:'no-store',signal})
+  if(!response.ok||!response.body)throw new Error('无法读取文件（HTTP '+response.status+'）')
+  const type=((response.headers.get('Content-Type')??'').split(';')[0]??'').trim().toLowerCase()
+  if(!['application/pdf','image/png','image/jpeg','image/webp'].includes(type)){
+    await response.body.cancel()
+    throw new Error('不支持预览此文件类型')
+  }
+  const reader=response.body.getReader()
+  const chunks:BlobPart[]=[]
+  let size=0
+  try{
+    while(true){
+      const {done,value}=await reader.read()
+      if(done)break
+      size+=value.byteLength
+      if(size>HEALTH_PREVIEW_MAX_BYTES){await reader.cancel();throw new Error('文件超过 15 MB')}
+      chunks.push(new Uint8Array(value))
+    }
+  }finally{reader.releaseLock()}
+  if(!size)throw new Error('文件为空')
   const header=response.headers.get('Content-Disposition')??''
   const encoded=/filename\*=UTF-8''([^;]+)/i.exec(header)?.[1]
-  let name='健康资料'
-  if(encoded)try{name=decodeURIComponent(encoded)}catch{/* Use safe fallback. */}
-  const objectUrl=URL.createObjectURL(await response.blob())
-  try {
-    const link=document.createElement('a')
-    link.href=objectUrl;link.download=name
-    document.body.append(link);link.click();link.remove()
-  } finally {URL.revokeObjectURL(objectUrl)}
+  const extension=({'application/pdf':'.pdf','image/png':'.png','image/jpeg':'.jpg','image/webp':'.webp'} as Record<string,string>)[type]
+  let name='健康资料'+extension
+  if(encoded)try{name=decodeURIComponent(encoded)}catch{/* safe fallback */}
+  return {blob:new Blob(chunks,{type}),name}
+}
+export function saveHealthDocument(file:HealthDocumentFile):void{
+  const objectUrl=URL.createObjectURL(file.blob)
+  const link=document.createElement('a')
+  try{link.href=objectUrl;link.download=file.name;document.body.append(link);link.click()}
+  finally{link.remove();window.setTimeout(()=>URL.revokeObjectURL(objectUrl),1000)}
+}
+export async function downloadHealthDocument(spaceId:string,recordId:string):Promise<void>{
+  saveHealthDocument(await readHealthDocument(spaceId,recordId))
 }

@@ -31,3 +31,6 @@ coverage/
 *.log
 .vscode/
 .idea/
+
+# Generated PDF.js runtime assets
+apps/health/public/pdf-assets/

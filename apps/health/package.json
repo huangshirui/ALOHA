@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "node prepare-pdf-assets.mjs && vite",
+    "build": "node prepare-pdf-assets.mjs && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run src && vitest run --config vitest.workers.config.ts",
@@ -17,7 +17,8 @@
     "@fontsource/exo-2": "^5.3.0",
     "vue": "^3.5.42",
     "lucide-vue-next": "^0.468.0",
-    "@aloha/contracts": "*"
+    "@aloha/contracts": "*",
+    "pdfjs-dist": "5.4.624"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
