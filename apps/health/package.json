@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "node prepare-pdf-assets.mjs && vite",
+    "build": "node prepare-pdf-assets.mjs && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run src && vitest run --config vitest.workers.config.ts",

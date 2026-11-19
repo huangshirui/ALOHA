@@ -94,3 +94,5 @@ This candidate supersedes earlier browser-local Space-selection instructions abo
 ## 附件直接预览 / Attachment preview
 
 Health 文件详情使用现有同源授权 download 路径读取临时 Blob；不新增平台接口、存储、公开链接或权限。图片本地缩放，PDF 使用按需加载的本地 PDF.js Worker 渲染单页，支持翻页与缩放；独立下载按钮复用本次读取的文件。限制 15 MB 与四种 MIME，关闭时取消请求、撤销对象 URL、销毁 PDF Worker；不将文件写入 PWA 缓存。当前候选需要 CI、手机及桌面验证，特别是中文字体与扫描件。
+
+- 中文 CMap、标准字体、WASM 解码器和 ICC 资源随构建从固定版本依赖复制到本地静态目录，使用兼容性更好的 legacy Worker；不依赖 CDN。PWA 不预缓存该静态资源目录；用户文件仍仅临时保留。

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import {nextTick,onBeforeUnmount,onMounted,ref} from 'vue'
-import {getDocument,GlobalWorkerOptions,type PDFDocumentProxy,type PDFDocumentLoadingTask,type RenderTask} from 'pdfjs-dist'
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import {getDocument,GlobalWorkerOptions,type PDFDocumentProxy,type PDFDocumentLoadingTask,type RenderTask} from 'pdfjs-dist/legacy/build/pdf.mjs'
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 GlobalWorkerOptions.workerSrc=workerUrl
+const assets=import.meta.env.BASE_URL+'pdf-assets/'
 const props=defineProps<{blob:Blob}>()
 const canvas=ref<HTMLCanvasElement|null>(null),container=ref<HTMLDivElement|null>(null)
 const page=ref(1),pages=ref(0),zoom=ref(1),busy=ref(true),error=ref('')
@@ -34,7 +35,7 @@ onMounted(async()=>{
   try{
     const data=new Uint8Array(await props.blob.arrayBuffer())
     if(closed)return
-    task=getDocument({data,isEvalSupported:false,useWasm:false,enableXfa:false})
+    task=getDocument({data,isEvalSupported:false,enableXfa:false,cMapUrl:assets+'cmaps/',cMapPacked:true,standardFontDataUrl:assets+'standard_fonts/',wasmUrl:assets+'wasm/',iccUrl:assets+'iccs/'})
     doc=await task.promise
     if(closed)return
     pages.value=doc.numPages
