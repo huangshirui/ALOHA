@@ -586,7 +586,7 @@ export async function handleHealthApi(
       const payload:unknown=await current.json().catch(()=>null)
       const data=object(payload)&&object(payload.data)?payload.data:null
       if(!data||!Array.isArray(data.items)||data.items.length>20
-        ||(data.nextOffset!==null&&!(Number.isInteger(data.nextOffset)&&data.nextOffset>=0&&data.nextOffset<=9999)))
+        ||(data.nextOffset!==null&&!(typeof data.nextOffset==='number'&&Number.isInteger(data.nextOffset)&&data.nextOffset>=0&&data.nextOffset<=9999)))
         return json('invalid_approval_response',502)
       const items=[]
       for(const value of data.items){
