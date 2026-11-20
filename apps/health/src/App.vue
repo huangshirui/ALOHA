@@ -1434,7 +1434,7 @@ function detailName(kind: HealthKind,record:any) {
             <p><b>申请编号：</b><code>{{ selectedApproval.id }}</code></p>
             <label class="agent-approval-lifetime">
               <span>授权有效方式</span>
-              <select v-model="approvalLifetime" :disabled="approvalBusy">
+              <select v-model="approvalLifetime" :disabled="approvalBusy" @change="approvalConfirmed=false">
                 <option v-for="choice in approvalLifetimeOptions" :key="choice.value" :value="choice.value"
                   :disabled="selectedApproval.operation==='file_upload'&&choice.value==='once'">{{ choice.label }}</option>
               </select>
