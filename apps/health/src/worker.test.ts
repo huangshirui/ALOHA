@@ -682,3 +682,78 @@ describe('Health trusted BFF', () => {
   })
 
 })
+
+describe('ALOHA Health trusted OAuth Delegation approval BFF',()=>{
+  const base='https://health.example.com/health/api/v1/agent-approvals'
+  // Synthetic signed-format token issued by mocked Identity, not real authority.
+  const userBearer='eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c3Jfc3ludGhldGljIn0.fake'
+  const requestId='arq_'+'a'.repeat(32)
+  const granted={id:requestId,status:'pending',spaceId:'spc_synthetic',clientId:'ocli_synthetic',
+    modelKey:'health_document',operation:'file_read',reason:'Read one medical report',
+    expiresAt:'2026-12-01T00:00:00Z',authorizationId:'oaz_'+'b'.repeat(32)}
+  function local(method='GET',path=base,body?:unknown,headers:Record<string,string>={}){
+    return make(path,method,body,{...(method==='POST'?{
+      'Sec-Fetch-Site':'same-origin','X-Aloha-Approval-Intent':'confirm-user-delegation',
+    }:{}),...headers})
+  }
+  function mock(upstreamStatus=200){
+    const calls:Array<{path:string;init?:RequestInit}>=[]
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const path=new URL(String(input)).pathname
+      calls.push({path,init})
+      if(path==='/internal/v1/access/tokens')
+        return success({accessToken:userBearer,expiresIn:0})
+      if(path==='/api/v1/me/oauth/application-delegation-requests')
+        return upstreamStatus===200?success({items:[granted],nextOffset:null})
+          :Response.json({error:{code:'FORBIDDEN'}},{status:upstreamStatus})
+      if(path.endsWith('/'+requestId+'/approve'))return success({id:requestId,status:'approved',delegations:[{id:'dlg_synthetic'}]})
+      if(path.endsWith('/'+requestId+'/deny'))return success({id:requestId,status:'denied'})
+      return Response.json({error:'unexpected'},{status:404})
+    })
+    return {f,calls}
+  }
+  it('projects only bounded pending requests for current verified User',async()=>{
+    const {f,calls}=mock()
+    const response=await handleHealthApi(local(),env,f)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toEqual({items:[granted],nextOffset:null})
+    expect(response.headers.get('cache-control')).toContain('no-store')
+    expect(calls.filter(x=>x.path==='/api/v1/me/oauth/application-delegation-requests')).toHaveLength(1)
+    const req=calls.find(x=>x.path==='/api/v1/me/oauth/application-delegation-requests')!
+    expect(new Headers(req.init?.headers).get('Authorization')).toBe('Bearer '+userBearer)
+    expect((await handleHealthApi(local('GET',base+'?authorizationId=bad'),env,f)).status).toBe(400)
+    expect((await handleHealthApi(local('GET',base+'?offset=0&offset=1'),env,f)).status).toBe(400)
+  })
+  it('requires independent browser confirmation, exact request ID and bounded lifetime',async()=>{
+    const {f,calls}=mock()
+    const endpoint=base+'/'+requestId+'/approve'
+    const valid={confirmRequestId:requestId,mode:'timed',durationMinutes:60}
+    expect((await handleHealthApi(local('POST',endpoint,valid,{'Sec-Fetch-Site':'cross-site'}),env,f)).status).toBe(403)
+    expect((await handleHealthApi(local('POST',endpoint,valid,{'X-Aloha-Approval-Intent':''}),env,f)).status).toBe(403)
+    expect((await handleHealthApi(local('POST',endpoint,{...valid,confirmRequestId:'arq_wrong'}),env,f)).status).toBe(400)
+    expect((await handleHealthApi(local('POST',endpoint,{...valid,durationMinutes:100000}),env,f)).status).toBe(400)
+    expect((await handleHealthApi(local('POST',endpoint,{...valid,userId:'usr_other'}),env,f)).status).toBe(400)
+    const before=calls.filter(x=>x.path.endsWith('/approve'))
+    expect(before).toHaveLength(0)
+    const ok=await handleHealthApi(local('POST',endpoint,valid),env,f)
+    expect(ok.status).toBe(200)
+    expect((await ok.json()).data).toEqual({id:requestId,status:'approved'})
+    const call=calls.find(x=>x.path.endsWith('/approve'))!
+    expect(JSON.parse(String(call.init?.body))).toEqual({mode:'timed',durationMinutes:60})
+    expect(new Headers(call.init?.headers).get('Authorization')).toBe('Bearer '+userBearer)
+    expect(String(call.init?.body)).not.toContain('usr_')
+    expect((await handleHealthApi(local('POST',base+'/'+requestId+'/deny',{confirmRequestId:requestId}),env,f)).status).toBe(200)
+    expect((await handleHealthApi(local('POST',base+'/'+requestId+'/deny',{confirmRequestId:requestId,mode:'once'}),env,f)).status).toBe(400)
+  })
+  it('does not invent User or Application authority on a Core denial',async()=>{
+    const {f}=mock(403)
+    expect((await handleHealthApi(local(),env,f)).status).toBe(403)
+    expect((await handleHealthApi(new Request(base),env,f)).status).toBe(401)
+    const wrongUser=vi.fn(async(input:RequestInfo|URL)=>{
+      const path=new URL(String(input)).pathname
+      if(path==='/internal/v1/access/tokens')return success({accessToken:'unparseable',expiresIn:0})
+      throw new Error('Approval Core must not be contacted without a verified user')
+    })
+    expect((await handleHealthApi(local(),env,wrongUser)).status).toBe(401)
+  })
+})
