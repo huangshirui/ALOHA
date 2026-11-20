@@ -49,12 +49,16 @@ function configuredOrigin(value: string | undefined): string | null {
       url.pathname === '/' && !url.search && !url.hash ? url.origin : null
   } catch { return null }
 }
-type Route = { path: string; modelKey?: string; spaceId?: string; recordId?: string; relationId?: string }
+type Route = { path: string; modelKey?: string; spaceId?: string; recordId?: string; relationId?: string; approvalId?: string; decision?: "approve" | "deny" }
 function routeFor(url: URL, method: string): Route | null {
   const p = url.pathname
   if(p==='/health/api/v1/profile'&&method==='GET')return {path:'@profile'}
   if(p==='/health/api/v1/profile/avatar'&&method==='GET')return {path:'@profile-avatar'}
   if(p==='/health/api/v1/workspace'&&method==='GET')return {path:'@workspace'}
+  if(p==='/health/api/v1/agent-approvals'&&method==='GET')return {path:'@agent-approvals'}
+  const approval=/^\/health\/api\/v1\/agent-approvals\/(arq_[A-Za-z0-9_-]{1,128})\/(approve|deny)$/.exec(p)
+  if(approval&&method==='POST')return {path:'@agent-approval-decision',approvalId:approval[1],
+    decision:approval[2] as "approve"|"deny"}
   if (p === '/health/api/v1/spaces' && method === 'GET') return { path: '/api/v1/me/spaces' }
   const upload = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/documents\/upload$/.exec(p)
   if (upload && method === 'POST') return {spaceId:upload[1],path:'@document-upload'}
@@ -559,6 +563,88 @@ export async function handleHealthApi(
   if(session instanceof Response)return session
   const {bearer,userId}=session
   const identityMs=performance.now()-identityStarted
+  if(route.path==='@agent-approvals'||route.path==='@agent-approval-decision'){
+    // ALOHA's verified Access→Identity User session, not Hermes, owns the
+    // approval path. Neither Agent ID nor target User ID comes from browser.
+    if(!userId||!/^usr_[A-Za-z0-9_-]+$/.test(userId))
+      return withSessionCookie(json('identity_session_mismatch',401),session.cookie)
+    const upstreamBase=core+'/api/v1/me/oauth/application-delegation-requests'
+    if(route.path==='@agent-approvals'){
+      const query=url.searchParams
+      if([...query.keys()].some(key=>!['offset','authorizationId'].includes(key)
+        ||query.getAll(key).length!==1))return json('invalid_approval_query',400)
+      const offset=query.get('offset')??'0'
+      const auth=query.get('authorizationId')
+      if(!/^(0|[1-9][0-9]{0,3})$/.test(offset)
+        ||(auth!==null&&!/^oaz_[A-Za-z0-9_-]{10,128}$/.test(auth)))
+        return json('invalid_approval_query',400)
+      const current=await send(fetchImpl,upstreamBase+'?'+new URLSearchParams({
+        offset,...(auth?{authorizationId:auth}:{})}).toString(),{
+        method:'GET',headers:{Authorization:'Bearer '+bearer,Accept:'application/json'},
+      })
+      if(!current.ok)return withSessionCookie(proxyResponse(current),session.cookie)
+      const payload:unknown=await current.json().catch(()=>null)
+      const data=object(payload)&&object(payload.data)?payload.data:null
+      if(!data||!Array.isArray(data.items)||data.items.length>20
+        ||(data.nextOffset!==null&&!(Number.isInteger(data.nextOffset)&&data.nextOffset>=0&&data.nextOffset<=9999)))
+        return json('invalid_approval_response',502)
+      const items=[]
+      for(const value of data.items){
+        if(!object(value)||typeof value.id!=='string'||!/^arq_[A-Za-z0-9_-]+$/.test(value.id)
+          ||value.status!=='pending'||typeof value.modelKey!=='string'
+          ||typeof value.operation!=='string'||typeof value.reason!=='string'
+          ||typeof value.spaceId!=='string'||!spacePattern.test(value.spaceId)
+          ||typeof value.expiresAt!=='string'||typeof value.clientId!=='string')
+          return json('invalid_approval_response',502)
+        items.push({id:value.id,status:'pending',modelKey:value.modelKey,
+          operation:value.operation,reason:value.reason,spaceId:value.spaceId,
+          clientId:value.clientId,expiresAt:value.expiresAt,
+          ...(typeof value.authorizationId==='string'?{authorizationId:value.authorizationId}:{})})
+      }
+      return withSessionCookie(Response.json({data:{items,nextOffset:data.nextOffset}},
+        {headers:{'Cache-Control':'private, no-store'}}),session.cookie)
+    }
+    // Browser-origin authorization alone is insufficient. The user explicitly
+    // chooses a request and lifetime and reconfirms its exact opaque ID.
+    if(request.headers.get('sec-fetch-site')!=='same-origin'
+      ||request.headers.get('x-aloha-approval-intent')!=='confirm-user-delegation'
+      ||!request.headers.get('content-type')?.toLowerCase().startsWith('application/json'))
+      return json('approval_confirmation_required',403)
+    const raw=await request.text()
+    if(raw.length>600)return json('invalid_approval_body',400)
+    let input:unknown
+    try{input=JSON.parse(raw)}catch{return json('invalid_approval_body',400)}
+    if(!object(input)||Object.keys(input).some(key=>!['confirmRequestId','mode','durationMinutes'].includes(key))
+      ||input.confirmRequestId!==route.approvalId)
+      return json('approval_confirmation_required',400)
+    const decision=route.decision
+    if(decision!=='approve'&&decision!=='deny')return json('invalid_approval_decision',400)
+    let options:Record<string,unknown>={}
+    if(decision==='deny'){
+      if(Object.keys(input).length!==1)return json('invalid_approval_body',400)
+    } else {
+      const mode=input.mode??'once'
+      if(!['once','timed','until_revoked'].includes(String(mode))
+        ||(mode==='timed'?![60,1440,10080].includes(Number(input.durationMinutes))
+          :input.durationMinutes!==undefined)
+        ||(input.mode!==undefined&&typeof input.mode!=='string'))
+        return json('invalid_approval_body',400)
+      options={mode,...(mode==='timed'?{durationMinutes:input.durationMinutes}:{})}
+    }
+    const confirmed=await send(fetchImpl,upstreamBase+'/'+encodeURIComponent(route.approvalId!)
+      +'/'+decision,{
+      method:'POST',headers:{Authorization:'Bearer '+bearer,'Content-Type':'application/json',Accept:'application/json'},
+      body:JSON.stringify(options),
+    })
+    if(!confirmed.ok)return withSessionCookie(proxyResponse(confirmed),session.cookie)
+    const payload:unknown=await confirmed.json().catch(()=>null)
+    if(!object(payload)||!object(payload.data)||payload.data.id!==route.approvalId
+      ||payload.data.status!==(decision==='approve'?'approved':'denied'))
+      return json('invalid_approval_response',502)
+    // dlg_* stays in Core and the authorized Agent status flow, not ALOHA UI.
+    return withSessionCookie(Response.json({data:{id:route.approvalId,status:payload.data.status}},
+      {headers:{'Cache-Control':'private, no-store'}}),session.cookie)
+  }
   if(route.path==='@workspace'){
     if(!userId||!workspaceUserId.test(userId))return withSessionCookie(json('identity_session_mismatch',401),session.cookie)
     const service=env.ALOHA_WORKSPACE_MODE===workspacePreviewMode
