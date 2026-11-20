@@ -96,3 +96,9 @@ This candidate supersedes earlier browser-local Space-selection instructions abo
 Health 文件详情使用现有同源授权 download 路径读取临时 Blob；不新增平台接口、存储、公开链接或权限。图片本地缩放，PDF 使用按需加载的本地 PDF.js Worker 渲染单页，支持翻页与缩放；独立下载按钮复用本次读取的文件。限制 15 MB 与四种 MIME，关闭时取消请求、撤销对象 URL、销毁 PDF Worker；不将文件写入 PWA 缓存。当前候选需要 CI、手机及桌面验证，特别是中文字体与扫描件。
 
 - 中文 CMap、标准字体、WASM 解码器和 ICC 资源随构建从固定版本依赖复制到本地静态目录，使用兼容性更好的 legacy Worker；不依赖 CDN。PWA 不预缓存该静态资源目录；用户文件仍仅临时保留。
+
+## OAuth User Delegation approval Inbox (candidate)
+
+ALOHA Health may display a real, independently authenticated User's pending OAuth requests even while the Health AI drawer remains demo-only. The BFF exposes bounded `GET /health/api/v1/agent-approvals` and `POST /health/api/v1/agent-approvals/{arq_*}/approve|deny` through its established Access → Identity verified User session. It forwards only fixed request paths and lifetime options to Core's `/api/v1/me/oauth/application-delegation-requests`; no runtime callback or Agent credential is used. The browser supplies exact request confirmation, never a User, Agent or Space identity override. Core owns the current Application opt-in, request state and immutable delegated authority. The browser receives only the final status, not `dlg_*` or User bearer. All HTTP results are no-store.
+
+Deployment dependency: compatible LifeSpace Identity/Core/Console PR #634, current ALOHA Application set to trustedBackend + application approval mode. The UI is not a Hermes Run/Agent chat integration and will show no synthetic approvals on backend failure. Production and live end-to-end acceptance remain pending.

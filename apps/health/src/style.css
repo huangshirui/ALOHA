@@ -687,3 +687,41 @@
 .quick-metric-heading b {font-size:.85rem}
 .quick-metric .soft-button {justify-self:start}
 .toast-error {background:var(--health-ink);color:var(--health-surface)}
+
+/* Explicit, real LifeSpace User approval—not the Health demo Agent drawer. */
+.agent-approval-access{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:.45rem .85rem;padding:.25rem 0 .75rem;}
+.agent-approval-access small{font-size:.72rem;color:var(--health-muted);}
+.agent-approval-open{display:inline-flex;align-items:center;gap:.45rem;min-height:2.35rem;border:1px solid var(--health-border);border-radius:var(--health-radius-pill);background:var(--health-surface);color:var(--health-ink);font-size:.79rem;font-weight:650;padding:.42rem .9rem;}
+.agent-approval-open:hover{background:var(--health-brand-subtle);color:var(--health-brand-strong);}
+.agent-approval-open:focus-visible,.agent-approval-item:focus-visible{outline:2px solid var(--health-brand);outline-offset:2px;}
+.agent-approval-drawer{max-width:min(620px,calc(100vw - 1rem));}
+.agent-approval-body{display:grid;gap:.85rem;max-height:min(72vh,760px);overflow:auto;padding:0 1.25rem 1.35rem;}
+.agent-approval-body>.helper-copy{margin:0;line-height:1.55;}
+.agent-approval-toolbar,.agent-approval-actions{display:flex;align-items:center;justify-content:space-between;gap:.7rem;flex-wrap:wrap;}
+.agent-approval-toolbar>span{color:var(--health-ink);font-size:.8rem;font-weight:650;}
+.agent-approval-list{display:grid;gap:.5rem;}
+.agent-approval-item{display:grid;gap:.35rem;min-width:0;padding:.85rem;text-align:left;border:1px solid var(--health-border);border-radius:var(--health-radius-control);background:var(--health-surface);color:var(--health-ink);}
+.agent-approval-item:hover,.agent-approval-item.selected{border-color:var(--health-brand);background:var(--health-brand-subtle);}
+.agent-approval-item>small{font-size:.69rem;color:var(--health-muted);overflow-wrap:anywhere;}
+.agent-approval-item-head{display:flex;align-items:center;justify-content:space-between;gap:.7rem;font-size:.82rem;overflow-wrap:anywhere;}
+.agent-approval-item-head small{font-size:.68rem;color:var(--health-brand-strong);white-space:nowrap;}
+.agent-approval-reason{font-size:.79rem;line-height:1.5;overflow-wrap:anywhere;}
+.agent-approval-empty{margin:0;padding:1rem;text-align:center;border:1px dashed var(--health-border);border-radius:var(--health-radius-control);font-size:.8rem;color:var(--health-muted);}
+.agent-approval-review{display:grid;gap:.6rem;padding:.9rem;border:1px solid var(--health-border);border-radius:var(--health-radius-control);background:var(--health-surface-secondary);}
+.agent-approval-review h3{margin:0 0 .15rem;font-size:.9rem;}
+.agent-approval-review p{margin:0;font-size:.78rem;line-height:1.5;overflow-wrap:anywhere;}
+.agent-approval-review p b{font-weight:680;}
+.agent-approval-review code{font-size:.7rem;overflow-wrap:anywhere;}
+.agent-approval-lifetime{display:grid;gap:.4rem;font-size:.78rem;font-weight:650;}
+.agent-approval-lifetime select{min-height:2.5rem;width:100%;padding:.5rem;border:1px solid var(--health-border);border-radius:var(--health-radius-control);color:var(--health-ink);background-color:var(--health-surface);}
+.agent-approval-ack{display:flex;align-items:flex-start;gap:.5rem;font-size:.78rem;line-height:1.45;cursor:pointer;}
+.agent-approval-ack input{margin-top:.22rem;accent-color:var(--health-brand);flex:none;}
+.agent-approval-security{display:flex;align-items:flex-start;gap:.45rem;color:var(--health-muted);font-size:.7rem!important;line-height:1.55;}
+.agent-approval-security svg{flex:none;}
+@media(max-width:720px){
+  .agent-approval-access{justify-content:flex-start;}
+  .agent-approval-access small{flex-basis:100%;}
+  .agent-approval-drawer{max-width:100%;}
+  .agent-approval-body{max-height:70vh;padding:0 1rem 1rem;}
+  .agent-approval-actions>button{flex:1;}
+}

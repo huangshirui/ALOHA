@@ -226,3 +226,49 @@ export function saveHealthDocument(file:HealthDocumentFile):void{
 export async function downloadHealthDocument(spaceId:string,recordId:string):Promise<void>{
   saveHealthDocument(await readHealthDocument(spaceId,recordId))
 }
+
+/** OAuth User Delegation is separately authorized, and the Agent never confirms itself.
+ * One ALOHA Application can host many Users' independent pending requests.
+ */
+export interface PendingAgentApproval {
+  id:string
+  status:'pending'
+  spaceId:string
+  clientId:string
+  modelKey:string
+  operation:string
+  reason:string
+  expiresAt:string
+  authorizationId?:string
+}
+export interface PendingAgentApprovals {
+  items:PendingAgentApproval[]
+  nextOffset:number|null
+}
+export type AgentApprovalLifetime = 'once'|'hour'|'day'|'week'|'until_revoked'
+export const listPendingAgentApprovals = (authorizationId?:string) =>
+  api<PendingAgentApprovals>('/agent-approvals'+(authorizationId
+    ?'?'+new URLSearchParams({authorizationId}).toString():''))
+export async function decideAgentApproval(
+  requestId:string,decision:'approve'|'deny',lifetime:AgentApprovalLifetime='once',
+):Promise<{id:string;status:'approved'|'denied'}>{
+  if(!/^arq_[A-Za-z0-9_-]{1,128}$/.test(requestId))throw new Error('授权请求编号无效')
+  const options=lifetime==='hour'?{mode:'timed',durationMinutes:60}
+    :lifetime==='day'?{mode:'timed',durationMinutes:1440}
+    :lifetime==='week'?{mode:'timed',durationMinutes:10080}
+    :lifetime==='until_revoked'?{mode:'until_revoked'}:{mode:'once'}
+  const response=await fetch(base+'/agent-approvals/'+encodeURIComponent(requestId)+'/'+decision,{
+    method:'POST',credentials:'same-origin',cache:'no-store',
+    headers:{Accept:'application/json','Content-Type':'application/json',
+      'X-Aloha-Approval-Intent':'confirm-user-delegation'},
+    body:JSON.stringify({confirmRequestId:requestId,...(decision==='approve'?options:{})}),
+  })
+  if(!response.ok)throw new HealthApiError(response.status,null)
+  const payload:unknown=await response.json().catch(()=>null)
+  if(!payload||typeof payload!=='object'||!('data' in payload)||!payload.data
+    ||typeof payload.data!=='object'||!('id' in payload.data)
+    ||payload.data.id!==requestId||!('status' in payload.data)
+    ||payload.data.status!==(decision==='approve'?'approved':'denied'))
+    throw new Error('授权确认响应无效')
+  return payload.data as {id:string;status:'approved'|'denied'}
+}

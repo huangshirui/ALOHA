@@ -15,6 +15,8 @@ import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   getAlohaWorkspace, getAlohaUserProfile, patchConcernPresentation,
   getHealthSnapshot, updateHealthRecord, uploadHealthDocument,
   listConcernRelations,linkConcernRecord,unlinkConcernRecord,
+  listPendingAgentApprovals, decideAgentApproval,
+  type PendingAgentApproval, type AgentApprovalLifetime,
   type FileUploadProgress,
   type HealthRecord } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
@@ -196,6 +198,86 @@ watch(notice,(message)=>{
     noticeIsError.value?7500:4200)
 })
 onBeforeUnmount(()=>{if(noticeTimeout)clearTimeout(noticeTimeout)})
+// This approval inbox is independent of the demo-only Agent drawer.
+// Core validates the direct authenticated ALOHA User and current Application.
+const approvalsOpen=ref(false)
+const approvalsLoading=ref(false)
+const approvalBusy=ref(false)
+const approvalsError=ref('')
+const pendingApprovals=ref<PendingAgentApproval[]>([])
+const selectedApproval=ref<PendingAgentApproval|null>(null)
+const approvalLifetime=ref<AgentApprovalLifetime>('once')
+const approvalConfirmed=ref(false)
+const approvalStatus=ref('')
+const approvalLifetimeOptions:ReadonlyArray<{value:AgentApprovalLifetime;label:string}>=[
+  {value:'once',label:'仅执行一次（默认）'},
+  {value:'hour',label:'1 小时内可重复执行'},
+  {value:'day',label:'24 小时内可重复执行'},
+  {value:'week',label:'7 天内可重复执行'},
+  {value:'until_revoked',label:'长期有效，直到我撤销'},
+]
+async function refreshAgentApprovals(){
+  if(approvalsLoading.value||approvalBusy.value)return
+  approvalsLoading.value=true
+  approvalsError.value=''
+  try{
+    const result=await listPendingAgentApprovals()
+    pendingApprovals.value=result.items
+    const current=selectedApproval.value
+    if(current){
+      selectedApproval.value=result.items.find(item=>item.id===current.id)??null
+      if(!selectedApproval.value)approvalConfirmed.value=false
+    }
+  }catch{
+    pendingApprovals.value=[]
+    selectedApproval.value=null
+    approvalsError.value='无法读取当前待确认申请。请检查 LifeSpace 授权连接及 ALOHA 应用确认策略。'
+  }finally{
+    approvalsLoading.value=false
+  }
+}
+async function openAgentApprovals(){
+  approvalsOpen.value=true
+  selectedApproval.value=null
+  approvalConfirmed.value=false
+  approvalStatus.value=''
+  await refreshAgentApprovals()
+}
+function closeAgentApprovals(){
+  if(approvalBusy.value)return
+  approvalsOpen.value=false
+  selectedApproval.value=null
+  approvalConfirmed.value=false
+}
+function chooseAgentApproval(item:PendingAgentApproval){
+  selectedApproval.value=item
+  approvalLifetime.value=item.operation==='file_upload'?'hour':'once'
+  approvalConfirmed.value=false
+  approvalStatus.value=''
+}
+async function decideSelectedAgentApproval(decision:'approve'|'deny'){
+  const item=selectedApproval.value
+  if(!item||!approvalConfirmed.value||approvalBusy.value)return
+  approvalBusy.value=true
+  approvalsError.value=''
+  approvalStatus.value=''
+  try{
+    const result=await decideAgentApproval(item.id,decision,approvalLifetime.value)
+    if(result.status!==(decision==='approve'?'approved':'denied'))throw new Error('unexpected status')
+    approvalStatus.value=decision==='approve'?'你已确认此项委托。Agent 需要重新查询授权状态后才能使用。':'你已拒绝此项委托。'
+    selectedApproval.value=null
+    approvalConfirmed.value=false
+    // A decision has its own trustworthy Core result; follow with a fresh
+    // current-state list, never speculate about the next Hermes Run.
+    pendingApprovals.value=pendingApprovals.value.filter(x=>x.id!==item.id)
+  }catch{
+    approvalsError.value='确认未完成。请检查申请是否到期、授权是否仍有效，刷新后再试。'
+  }finally{
+    approvalBusy.value=false
+  }
+}
+const formatApprovalExpiry=(value:string)=>Number.isFinite(Date.parse(value))
+  ?new Date(value).toLocaleString():'到期时间未知'
 const agentSession = useDemoAgentSession()
 const agentOpen = agentSession.open
 const agentMessages = agentSession.messages
@@ -851,6 +933,7 @@ async function suggestAgent(question: string) {
   await sendAgent()
 }
 function handleEscape() {
+  if (approvalsOpen.value){closeAgentApprovals();return}
   if (sheet.value) closeSheet()
   else if (agentOpen.value) closeAgent()
 }
@@ -893,6 +976,12 @@ function detailName(kind: HealthKind,record:any) {
     </aside>
     <div class="page-frame">
       <main class="content">
+        <div v-if="liveMode" class="agent-approval-access">
+          <button class="agent-approval-open" type="button" @click="openAgentApprovals">
+            <ShieldCheck :size="17"/><span>待确认委托</span>
+          </button>
+          <small>Health Agent 的访问请求由你本人决定，AI 无法自行确认。</small>
+        </div>
         <div v-if="liveMode&&(liveStatus==='error'||!selectedSpaceId)" class="health-entry-state"
           :role="liveStatus==='error'?'alert':'status'">
           <template v-if="liveStatus==='error'">
@@ -1307,6 +1396,67 @@ function detailName(kind: HealthKind,record:any) {
       </button>
 
     </nav>
+
+    <div v-if="approvalsOpen" class="modal-backdrop" @click.self="closeAgentApprovals">
+      <section class="drawer agent-approval-drawer" role="dialog" aria-modal="true" aria-label="Health Agent 委托确认">
+        <header class="drawer-heading">
+          <div><span class="eyebrow">LifeSpace · 用户授权</span><h2>待确认委托</h2></div>
+          <button class="icon-button" type="button" aria-label="关闭授权确认" :disabled="approvalBusy" @click="closeAgentApprovals"><X :size="20"/></button>
+        </header>
+        <div class="agent-approval-body">
+          <p class="helper-copy">这里只显示你的 ALOHA Application 待确认申请。查看申请不会授权；只有你明确确认后，LifeSpace 才能签发限定范围的委托。</p>
+          <div class="agent-approval-toolbar">
+            <span>当前待确认：{{ pendingApprovals.length }} 项</span>
+            <button class="quiet-button" type="button" :disabled="approvalsLoading||approvalBusy" @click="refreshAgentApprovals">
+              {{ approvalsLoading?'正在刷新…':'刷新申请' }}
+            </button>
+          </div>
+          <p v-if="approvalsError" class="form-error" role="alert">{{ approvalsError }}</p>
+          <p v-if="approvalStatus" class="save-progress" role="status">{{ approvalStatus }}</p>
+          <p v-if="approvalsLoading" class="helper-copy" role="status">正在查询 LifeSpace 待确认申请…</p>
+          <p v-else-if="!pendingApprovals.length&&!approvalsError" class="agent-approval-empty">当前没有待确认的委托。</p>
+          <div v-else class="agent-approval-list">
+            <button v-for="item in pendingApprovals" :key="item.id" type="button"
+              :class="['agent-approval-item',{selected:selectedApproval?.id===item.id}]"
+              :disabled="approvalBusy" @click="chooseAgentApproval(item)">
+              <span class="agent-approval-item-head"><strong>{{ item.modelKey }} · {{ item.operation }}</strong><small>待确认</small></span>
+              <span class="agent-approval-reason">{{ item.reason }}</span>
+              <small>Space：{{ item.spaceId }} · Client：{{ item.clientId }}</small>
+              <small>申请将于 {{ formatApprovalExpiry(item.expiresAt) }} 到期</small>
+            </button>
+          </div>
+          <div v-if="selectedApproval" class="agent-approval-review">
+            <h3>确认这项具体申请</h3>
+            <p><b>操作：</b>{{ selectedApproval.modelKey }} · {{ selectedApproval.operation }}</p>
+            <p><b>原因：</b>{{ selectedApproval.reason }}</p>
+            <p><b>空间：</b>{{ selectedApproval.spaceId }}</p>
+            <p><b>客户端：</b>{{ selectedApproval.clientId }}</p>
+            <p><b>申请编号：</b><code>{{ selectedApproval.id }}</code></p>
+            <label class="agent-approval-lifetime">
+              <span>授权有效方式</span>
+              <select v-model="approvalLifetime" :disabled="approvalBusy" @change="approvalConfirmed=false">
+                <option v-for="choice in approvalLifetimeOptions" :key="choice.value" :value="choice.value"
+                  :disabled="selectedApproval.operation==='file_upload'&&choice.value==='once'">{{ choice.label }}</option>
+              </select>
+            </label>
+            <p class="helper-copy">授权范围是指定模型的操作，不仅限当前一条记录。长期委托需主动撤销；撤销入口在 LifeSpace Account。用户和 Space 的实时权限仍会限制执行。</p>
+            <label class="agent-approval-ack">
+              <input v-model="approvalConfirmed" type="checkbox" :disabled="approvalBusy"/>
+              <span>我已核对操作、空间及有效方式，确认由我本人决定。</span>
+            </label>
+            <div class="agent-approval-actions">
+              <button class="quiet-button" type="button" :disabled="!approvalConfirmed||approvalBusy"
+                @click="decideSelectedAgentApproval('deny')">拒绝申请</button>
+              <button class="primary-button" type="button" :disabled="!approvalConfirmed||approvalBusy"
+                @click="decideSelectedAgentApproval('approve')">
+                {{ approvalBusy?'正在提交…':'确认授权' }}
+              </button>
+            </div>
+          </div>
+          <p class="agent-approval-security"><ShieldCheck :size="15"/> ALOHA 只提交你的确认决定，不将用户凭证或委托凭证交给 Hermes。</p>
+        </div>
+      </section>
+    </div>
 
     <div v-if="sheet" class="modal-backdrop" @click.self="closeSheet">
       <section class="drawer" role="dialog" aria-modal="true" :aria-label="sheet==='edit'?'编辑健康记录':'整理报告'">
