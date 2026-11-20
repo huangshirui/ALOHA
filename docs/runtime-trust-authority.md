@@ -219,3 +219,9 @@ For the current M2 slice:
 - confirmation enforcement is implemented when the first capability that actually requires it is introduced.
 
 The purpose of this baseline is to prevent future work from assuming that Capability exposure or Prompt policy can restrict authority that a Runtime already possesses independently.
+
+### Health approval Inbox is not Runtime authority (candidate)
+
+The Health BFF's Identity-signed verified User bearer is server-only; the UI can only submit a request-specific, same-origin, user-acknowledged approve/deny operation. No arbitrary principal, Agent, Application, Space, callback, or upstream URL can be injected. Core's own current policy and immutable OAuth arq_* binding must still authorize the decision. The independent Hermes (or n8n) Runtime receives neither a confirming User bearer nor a Core trusted confirmation credential and must separately query the approved Delegation through its authenticated MCP OAuth context. LifeSpace Account remains the default approval channel for non-opted-in Applications.
+
+The first Health UI does not imply Agent Control Run tracking, model reasoning, or automatic continuation; those are separate product tasks. The maximum authority of a compromised Runtime remains its independently granted Agent access and explicitly consented current User Delegation—not LifeSpace's User confirmation action.
