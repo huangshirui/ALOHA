@@ -262,3 +262,11 @@ ALOHA-managed capability registry/adapters. Do not use this package as a generic
 3. When LifeSpace-dependent Assistant work is ready, finish Assistant integration and separately cut Assistant production from root/Gateway static hosting to its independent `/assistant/` PWA Worker.
 4. Activate Health production routing only when Health has a release-ready UI, final icon assets and an explicitly designed trusted data/API boundary.
 5. Add Finance or other surfaces only when their product scope is concrete; reuse the same independent-PWA pattern rather than copying Assistant internals.
+
+### Health User Delegation approval UX (candidate, 2026-11-20)
+
+ALOHA Health's real-user Approval Inbox is a separate user-facing surface from the still demo-only Health Agent chat. The Health same-origin BFF uses its existing verified Access → Identity User JWT and calls the **LifeSpace Core-owned** current-User/Application OAuth request list and decision endpoints. Core independently binds current OAuth consent, User, Application, Space, Agent, operation and policy and issues existing arq_*/dlg_* authority after an explicit human decision. ALOHA never stores a second Delegation state or accepts a browser-provided User ID.
+
+The browser sees only bounded pending-request metadata and the approved/denied outcome, not a delegated bearer, User JWT, Agent credential, or Core-issued dlg_* selector. Approval requires exact request ID, current user proof, same Origin, Fetch Metadata, an explicit confirmation intent, strict lifetime choice and request-specific human acknowledgment. ALOHA's BFF is not a public approval proxy or a second authority. Untrusted Hermès Runtime cannot call this path with a User token.
+
+Run association, pending notifications, Hermes session context injection, and Health Agent model interaction are **not implemented** by this UI slice; pending requests can be discovered through explicit refresh. ALOHA Agent Control remains the owner of future Run orchestration. This feature requires LifeSpace's paired Application-governed OAuth approval candidate and is not deployed or live-verified.
