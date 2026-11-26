@@ -288,6 +288,8 @@ let metricHistoryController:AbortController|null=null
 let metricTrendController:AbortController|null=null
 const metricHistoryRows=ref<Observation[]>([])
 const metricHistoryCursor=ref<string|null>(null)
+let metricHistoryPages=0
+const metricHistoryRebuild=ref(false)
 const metricHistoryReady=ref(false)
 const metricHistoryLoading=ref(false)
 const metricHistoryError=ref('')
@@ -304,7 +306,7 @@ function cancelMetricDetail(){
 }
 function resetMetricDetail(){
   cancelMetricDetail()
-  metricHistoryRows.value=[];metricHistoryCursor.value=null;metricHistoryReady.value=false;metricHistoryError.value=''
+  metricHistoryRows.value=[];metricHistoryCursor.value=null;metricHistoryReady.value=false;metricHistoryError.value='';metricHistoryPages=0;metricHistoryRebuild.value=false
   metricTrendRows.value=[];metricTrendError.value='';metricTrendReady.value=false
 }
 function trendDateWindow(date:string,range:typeof trendRange.value){
@@ -689,109 +691,140 @@ async function loadReferenceIndex(force=false){
     if(hit)failView(e,true);else{referenceError.value=e instanceof Error?e.message:'参考范围统计失败';liveStatus.value='ready'}
   }finally{if(valid()){pageController=null;viewRefreshing.value=false}}
 }
-async function loadMetricTrend(metricId:string){
+async function loadMetricTrend(metricId:string,force=false){
   metricTrendController?.abort()
   const controller=new AbortController();metricTrendController=controller
   const spaceId=selectedSpaceId.value,version=liveLoadSequence,range=trendRange.value
   const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='metric'&&selected.value.id===metricId&&!controller.signal.aborted
-  metricTrendRows.value=[];metricTrendError.value='';metricTrendReady.value=false;metricTrendLoading.value=true
+  const latest=metricHistoryRows.value[0]
+  const key=scopeKey('trend',metricId,range,latest?.observedDate??null)
+  const hit=queryState.get<Observation[]>(key)
+  metricTrendRows.value=hit?.data??[];metricTrendError.value='';metricTrendReady.value=!!hit
+  if(hit?.fresh&&!force){metricTrendController=null;return}
+  metricTrendLoading.value=true
   try{
-    const latest=metricHistoryRows.value[0]
     if(!metricHistoryReady.value)throw Error('请先加载最新测量')
-    if(!latest){metricTrendReady.value=true;return}
-    const window=trendDateWindow(latest.observedDate,range)
-    // A completed history page is a valid complete source for the selected window.
-    if(metricHistoryCursor.value===null){
-      metricTrendRows.value=metricHistoryRows.value.filter(row=>!window.from||row.observedDate>=window.from)
-      metricTrendReady.value=true;return
+    let rows:Observation[]=[]
+    if(latest){
+      const window=trendDateWindow(latest.observedDate,range)
+      if(metricHistoryCursor.value===null&&!metricHistoryError.value&&!metricHistoryRebuild.value){
+        rows=metricHistoryRows.value.filter(row=>!window.from||row.observedDate>=window.from)
+      }else{
+        const result=await rebuildCursorWindow(40,async cursor=>{
+          const params=new URLSearchParams({limit:'50',metricId,...window})
+          if(cursor)params.set('cursor',cursor)
+          const page=await getHealthPage(spaceId,'health_observation',params,controller.signal)
+          if(!valid())throw Error('请求已取消')
+          assertOwnScope(page.personId)
+          return page
+        })
+        if(result.cursor)throw Error('该时间范围记录较多，请缩短趋势时间范围')
+        if(!valid())return
+        mergeHealthRecords('observation',result.items)
+        rows=result.items.map(raw=>decodeHealthRecord('observation',raw) as Observation)
+      }
     }
-    let cursor:string|null=null
-    const rows:Observation[]=[]
-    for(let i=0;i<40;i++){
-      const params=new URLSearchParams({limit:'50',metricId,...window})
-      if(cursor)params.set('cursor',cursor)
-      const page=await getHealthPage(spaceId,'health_observation',params,controller.signal)
-      if(!valid())return
-      assertOwnScope(page.personId)
-      rows.push(...page.items.map(raw=>decodeHealthRecord('observation',raw) as Observation))
-      mergeHealthRecords('observation',page.items)
-      cursor=page.nextCursor
-      if(!cursor)break
+    if(valid()){
+      metricTrendRows.value=[...new Map(rows.map(row=>[row.id,row])).values()];metricTrendReady.value=true
+      queryState.set(key,metricTrendRows.value,['metric','observation'],metricTrendRows.value.length)
     }
-    if(cursor)throw Error('该时间范围记录较多，请缩短趋势时间范围')
-    if(valid()){metricTrendRows.value=[...new Map(rows.map(row=>[row.id,row])).values()];metricTrendReady.value=true}
   }catch(e){
     if(!valid()||optionDenied(e))return
-    metricTrendError.value=e instanceof Error?e.message:'趋势读取失败'
+    metricTrendError.value=(hit?'趋势更新失败，显示上次数据：':'')+(e instanceof Error?e.message:'趋势读取失败')
   }finally{if(valid()){metricTrendLoading.value=false;metricTrendController=null}}
 }
-async function loadMetricHistory(metricId:string,more=false){
+type HistoryProjection={rows:Observation[];cursor:string|null;pages:number}
+function applyHistory(p:HistoryProjection){metricHistoryRows.value=p.rows;metricHistoryCursor.value=p.cursor;metricHistoryPages=p.pages;metricHistoryReady.value=true}
+async function loadMetricHistory(metricId:string,more=false,force=false,rebuild=false){
   if(!selectedSpaceId.value||more&&(!metricHistoryCursor.value||metricHistoryLoading.value))return
   metricHistoryController?.abort()
   const controller=new AbortController();metricHistoryController=controller
   const spaceId=selectedSpaceId.value,version=liveLoadSequence
   const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='metric'&&selected.value.id===metricId&&!controller.signal.aborted
-  if(!more){metricHistoryReady.value=false;metricHistoryRows.value=[];metricHistoryCursor.value=null;metricTrendRows.value=[];metricTrendError.value='';metricTrendReady.value=false}
-  metricHistoryLoading.value=true;metricHistoryError.value=''
+  const key=scopeKey('history',metricId),hit=queryState.get<HistoryProjection>(key)
+  const previous=more?{rows:metricHistoryRows.value,cursor:metricHistoryCursor.value,pages:metricHistoryPages}:hit?.data
+  metricHistoryError.value='';metricHistoryRebuild.value=false
+  if(!more){
+    metricHistoryReady.value=!!previous;metricHistoryRows.value=previous?.rows??[];metricHistoryCursor.value=previous?.cursor??null;metricHistoryPages=previous?.pages??0
+    if(hit?.fresh&&!force){metricHistoryController=null;return}
+    if(!rebuild&&previous&&previous.pages>HEALTH_REFRESH_PAGES){metricHistoryRebuild.value=true;metricHistoryController=null;return}
+  }
+  metricHistoryLoading.value=true
   try{
-    const params=new URLSearchParams({limit:'30',metricId})
-    if(more&&metricHistoryCursor.value)params.set('cursor',metricHistoryCursor.value)
-    const page=await getHealthPage(spaceId,'health_observation',params,controller.signal)
+    const window=await rebuildCursorWindow(more||rebuild?1:Math.max(1,previous?.pages??1),async cursor=>{
+      const params=new URLSearchParams({limit:'30',metricId})
+      if(cursor)params.set('cursor',cursor)
+      const page=await getHealthPage(spaceId,'health_observation',params,controller.signal)
+      if(!valid())throw Error('请求已取消')
+      assertOwnScope(page.personId)
+      return page
+    },more?previous?.cursor??null:null)
     if(!valid())return
-    assertOwnScope(page.personId)
-    const rows=page.items.map(raw=>decodeHealthRecord('observation',raw) as Observation)
-    mergeHealthRecords('observation',page.items)
-    metricHistoryRows.value=[...new Map([...metricHistoryRows.value,...rows].map(row=>[row.id,row])).values()]
-    metricHistoryCursor.value=page.nextCursor;metricHistoryReady.value=true
+    const rows=window.items.map(raw=>decodeHealthRecord('observation',raw) as Observation)
+    mergeHealthRecords('observation',window.items)
+    const projection={rows:[...new Map([...(more?previous?.rows??[]:[]),...rows].map(row=>[row.id,row])).values()],cursor:window.cursor,pages:(more?previous?.pages??0:0)+window.pages}
+    applyHistory(projection)
+    const now=Date.now()
+    queryState.set(key,projection,['observation','metric'],projection.rows.length,now,more?hit?.updatedAt??now:now)
   }catch(e){
     if(!valid()||optionDenied(e))return
-    metricHistoryError.value=e instanceof Error?e.message:'历史记录读取失败'
+    metricHistoryError.value=(previous&&!more?'更新失败，显示上次记录：':'')+(e instanceof Error?e.message:'历史记录读取失败')
   }finally{if(valid()){metricHistoryLoading.value=false;metricHistoryController=null}}
 }
 async function retryMetricHistory(metricId:string){
-  const more=metricHistoryReady.value&&!!metricHistoryCursor.value
-  await loadMetricHistory(metricId,more)
-  if(!more&&metricHistoryReady.value&&selected.value?.id===metricId&&current.value?.valueType==='number')void loadMetricTrend(metricId)
+  await loadMetricHistory(metricId,false,true)
+  if(metricHistoryReady.value&&selected.value?.id===metricId&&current.value?.valueType==='number')void loadMetricTrend(metricId,true)
 }
 function changeTrendRange(){
   if(selected.value?.kind==='metric'&&metricHistoryReady.value)void loadMetricTrend(selected.value.id)
 }
-async function loadMetricDetail(metricId:string){
-  cancelPage();cancelSnapshot();resetMetricDetail()
+async function loadMetricDetail(metricId:string,force=false,rebuild=false){
+  cancelPage();cancelSnapshot();cancelMetricDetail()
   const spaceId=selectedSpaceId.value,version=++liveLoadSequence
   const controller=new AbortController();snapshotController=controller
   const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='metric'&&selected.value.id===metricId&&!controller.signal.aborted
-  liveStatus.value=current.value?'ready':'loading'
+  const key=scopeKey('detail','metric',metricId),hit=queryState.get<boolean>(key)
+  beginView(hit);if(current.value){viewHasData.value=true;liveStatus.value='ready'}
+  metricTrendRows.value=[];metricTrendReady.value=false;metricTrendError.value=''
+  const history=loadMetricHistory(metricId,false,force,rebuild)
+  const trendHit=queryState.get<Observation[]>(scopeKey('trend',metricId,trendRange.value,metricHistoryRows.value[0]?.observedDate??null))
+  if(trendHit&&metricHistoryReady.value){metricTrendRows.value=trendHit.data;metricTrendReady.value=true}
   try{
-    const header=readSelectedRows(spaceId,'metric',[metricId],controller.signal,valid).then(()=>{
-      if(valid()){liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'}
+    const header=hit?.fresh&&!force&&current.value?Promise.resolve():readSelectedRows(spaceId,'metric',[metricId],controller.signal,valid).then(()=>{
+      if(valid()){queryState.set(key,true,['metric']);viewHasData.value=true;liveStatus.value='ready'}
     })
-    await Promise.all([header,loadMetricHistory(metricId)])
-    if(valid()&&metricHistoryReady.value&&current.value?.valueType==='number')void loadMetricTrend(metricId)
+    await Promise.all([header,history])
+    if(!valid())return
+    if(metricHistoryReady.value&&current.value?.valueType==='number')await loadMetricTrend(metricId,force&&!metricHistoryError.value)
+    if(valid())finishView(hit?.fresh&&!force?hit.updatedAt:Date.now())
   }catch(e){
     if(!valid()||optionDenied(e))return
-    cancelMetricDetail()
-    liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'指标读取失败'
-  }finally{if(valid())snapshotController=null}
+    if(e instanceof HealthApiError&&e.status===404){removeMissingDetail('metric',metricId);return}
+    failView(e,!!current.value)
+  }finally{if(valid()){snapshotController=null;viewRefreshing.value=false}}
 }
 const documentRelatedActivated=ref(false)
+const documentRelatedRefreshing=ref(false)
 const documentRelatedState=ref<'idle'|'loading'|'ready'|'error'>('idle')
 const documentRelatedError=ref('')
 const documentRelatedIds=ref<string[]>([])
 let documentRelatedController:AbortController|null=null
 function resetDocumentRelated(){
   documentRelatedController?.abort();documentRelatedController=null
-  documentRelatedState.value='idle';documentRelatedError.value='';documentRelatedIds.value=[]
+  documentRelatedState.value='idle';documentRelatedError.value='';documentRelatedIds.value=[];documentRelatedRefreshing.value=false
 }
 onBeforeUnmount(resetDocumentRelated)
-async function loadDocumentRelated(id:string){
-  if(!selectedSpaceId.value||documentRelatedState.value==='loading')return
+async function loadDocumentRelated(id:string,force=false){
+  if(!selectedSpaceId.value||documentRelatedState.value==='loading'||documentRelatedRefreshing.value)return
   documentRelatedActivated.value=true
   resetDocumentRelated()
+  const key=scopeKey('document-related',id),hit=queryState.get<string[]>(key)
+  if(hit){documentRelatedIds.value=hit.data;documentRelatedState.value='ready';if(hit.fresh&&!force)return}
   const controller=new AbortController();documentRelatedController=controller
   const spaceId=selectedSpaceId.value,version=liveLoadSequence
   const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='document'&&selected.value.id===id&&!controller.signal.aborted
-  documentRelatedState.value='loading'
+  documentRelatedRefreshing.value=!!hit
+  if(!hit)documentRelatedState.value='loading'
   try{
     // The candidate contract does not declare sourceDocumentId filterable.
     // Preserve exact inverse-link semantics; defer this collection read.
@@ -805,39 +838,61 @@ async function loadDocumentRelated(id:string){
     mergeHealthRecords('observation',records)
     documentRelatedIds.value=records.map(record=>record.id)
     documentRelatedState.value='ready'
+    queryState.set(key,documentRelatedIds.value,['document','observation','metric'],documentRelatedIds.value.length)
   }catch(e){
     if(!valid()||optionDenied(e))return
-    documentRelatedState.value='error';documentRelatedError.value=e instanceof Error?e.message:'关联测量读取失败'
-  }finally{if(valid())documentRelatedController=null}
+    documentRelatedState.value=hit?'ready':'error';documentRelatedError.value=(hit?'更新失败，显示上次数据：':'')+(e instanceof Error?e.message:'关联测量读取失败')
+  }finally{if(valid()){documentRelatedController=null;documentRelatedRefreshing.value=false}}
 }
 const documentRelatedRows=computed(()=>liveMode?documentRelatedIds.value.map(id=>demo.observations.find(row=>row.id===id)).filter((row):row is Observation=>!!row):demo.observations.filter(row=>row.sourceDocumentId===current.value?.id))
-async function loadSelectedDetail(kind:'observation'|'regimen'|'assessment'|'event'|'document',id:string){
+const detailMissing=ref(false)
+function removeMissingDetail(kind:HealthKind,id:string){
+  queryState.remove(scopeKey('detail',kind,id));queryState.invalidate(kind)
+  const rows=getList(kind),index=rows.findIndex(row=>row.id===id)
+  if(index>=0)rows.splice(index,1)
+  detailMissing.value=true;viewHasData.value=false;viewError.value='';viewRefreshing.value=false;liveStatus.value='ready'
+}
+async function loadSelectedDetail(kind:Exclude<HealthKind,'metric'>,id:string,force=false){
   cancelPage();cancelSnapshot();cancelMetricDetail();resetDocumentRelated()
   const spaceId=selectedSpaceId.value,version=++liveLoadSequence
   const controller=new AbortController();snapshotController=controller
   const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind===kind&&selected.value.id===id&&!controller.signal.aborted
-  liveStatus.value='loading'
+  const key=scopeKey('detail',kind,id),hit=queryState.get<boolean>(key)
+  beginView(hit);detailMissing.value=false
+  if(current.value){viewHasData.value=true;liveStatus.value='ready'}
   try{
-    const records=await readSelectedRows(spaceId,kind,[id],controller.signal,valid)
-    if(!valid())return
-    const row=records[0]
-    if(!row)throw Error('记录读取失败')
-    await Promise.all([
-      kind==='observation'?readSelectedRows(spaceId,'metric',[String(row.metricId??'')],controller.signal,valid):Promise.resolve([]),
-      kind==='observation'||kind==='regimen'?readSelectedRows(spaceId,'document',[String(row.sourceDocumentId??'')],controller.signal,valid):Promise.resolve([]),
-      kind==='document'?readSelectedRows(spaceId,'event',[String(row.eventId??'')],controller.signal,valid):Promise.resolve([]),
-    ])
-    if(valid()){liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'}
-  }catch(e){if(valid()&&!optionDenied(e)){liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'记录读取失败'}}
-  finally{if(valid())snapshotController=null}
+    if(!hit?.fresh||force||!current.value){
+      let records:HealthRecord[]
+      try{records=await readSelectedRows(spaceId,kind,[id],controller.signal,valid)}
+      catch(e){if(valid()&&e instanceof HealthApiError&&e.status===404){removeMissingDetail(kind,id);return}throw e}
+      if(!valid())return
+      const row=records[0]
+      if(!row)throw Error('记录读取失败')
+      viewHasData.value=true;liveStatus.value='ready'
+      await Promise.all([
+        kind==='observation'?readSelectedRows(spaceId,'metric',[String(row.metricId??'')],controller.signal,valid):Promise.resolve([]),
+        kind==='observation'||kind==='regimen'?readSelectedRows(spaceId,'document',[String(row.sourceDocumentId??'')],controller.signal,valid):Promise.resolve([]),
+        kind==='document'?readSelectedRows(spaceId,'event',[String(row.eventId??'')],controller.signal,valid):Promise.resolve([]),
+      ])
+      if(!valid())return
+      const tags:QueryTag[]=[kind]
+      if(kind==='observation')tags.push('metric','document')
+      if(kind==='regimen')tags.push('document')
+      if(kind==='document')tags.push('event')
+      queryState.set(key,true,tags)
+    }
+    if(valid())finishView(hit?.fresh&&!force?hit.updatedAt:Date.now())
+  }catch(e){if(valid())failView(e,!!current.value)}
+  finally{if(valid()){snapshotController=null;viewRefreshing.value=false}}
 }
 async function loadLiveRecords(section:BodyTab|'detail'='focus',force=false,rebuild=false) {
   if(!selectedSpaceId.value)return
   cancelSnapshot()
   if(section==='timeline'){await loadTimeline(false,force,rebuild);return}
-  if(section==='detail'&&selected.value?.kind==='metric'){await loadMetricDetail(selected.value.id);return}
-  if(section==='detail'&&selected.value&&['observation','regimen','assessment','event','document'].includes(selected.value.kind)){
-    await loadSelectedDetail(selected.value.kind as 'observation'|'regimen'|'assessment'|'event'|'document',selected.value.id);return
+  if(section==='detail'&&selected.value?.kind==='metric'){await loadMetricDetail(selected.value.id,force,rebuild);return}
+  if(section==='detail'&&selected.value&&selected.value.kind!=='metric'){
+    const {kind,id}=selected.value
+    await loadSelectedDetail(kind,id,force);return
   }
   if(section==='metrics'&&metricReferenceFilter.value!=='all'){await loadReferenceIndex(force);return}
   if(usesPagedSection(section)){await loadPagedSection(section,false,force,rebuild);return}
@@ -1168,15 +1223,15 @@ function leaveView(){
   ++liveLoadSequence;++relationSequence
   cancelPage();cancelSnapshot();cancelMetricDetail();resetDocumentRelated();resetConcernReads();cancelRelationOptions()
   activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle';relationReadError.value='';relationError.value='';concernLinks.value=[]
-  viewError.value='';viewUpdatedAt.value=null;viewHasData.value=false;rebuildRequired.value=false
+  detailMissing.value=false;viewError.value='';viewUpdatedAt.value=null;viewHasData.value=false;rebuildRequired.value=false
 }
-const viewBusy=computed(()=>viewRefreshing.value||liveStatus.value==='loading'||pagedLoadingMore.value||metricSummaryLoading.value||timelineLoading.value||metricHistoryLoading.value||metricTrendLoading.value||relationLoading.value||documentRelatedState.value==='loading')
+const viewBusy=computed(()=>viewRefreshing.value||liveStatus.value==='loading'||pagedLoadingMore.value||metricSummaryLoading.value||timelineLoading.value||metricHistoryLoading.value||metricTrendLoading.value||relationLoading.value||documentRelatedState.value==='loading'||documentRelatedRefreshing.value)
 async function activateHealthView(force=false,rebuild=false){
   if(!liveMode||!selectedSpaceId.value||activeTab.value!=='body')return
   const record=selected.value
   await loadLiveRecords(record?'detail':bodyTab.value,force,rebuild)
   if(record?.kind==='concern'&&selected.value?.kind==='concern'&&selected.value.id===record.id)await refreshConcernLinks(record.id)
-  if(record?.kind==='document'&&selected.value?.kind==='document'&&selected.value.id===record.id&&documentRelatedActivated.value)await loadDocumentRelated(record.id)
+  if(record?.kind==='document'&&selected.value?.kind==='document'&&selected.value.id===record.id&&documentRelatedActivated.value)await loadDocumentRelated(record.id,force)
 }
 function refreshCurrentView(rebuild=false){
   if(!liveMode||viewBusy.value||scopeChecking.value||sheet.value||saving.value||relationBusy.value)return
