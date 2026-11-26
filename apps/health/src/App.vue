@@ -193,7 +193,6 @@ const metricReferenceChoices=[
  {value:'outside' as const,label:'超出范围'},
  {value:'unknown' as const,label:'未判定'},
 ]
-const timelineScrollPosition = ref(0)
 const notice = ref('')
 const noticeIsError=computed(()=>/失败|出错|错误|请先|无法|超时|未同步|未连接|拒绝|没有.*权限|不完整/.test(notice.value))
 let noticeTimeout:ReturnType<typeof setTimeout>|undefined
@@ -252,11 +251,14 @@ const getSelectedHealthRecords=(spaceId:string,model:HealthModelKey,ids:string[]
 const getHealthSnapshot=(spaceId:string,models:HealthModelKey[],signal?:AbortSignal)=>readCoordinator.read(readKey(spaceId,'snapshot',...models),s=>apiSnapshot(spaceId,models,s),signal)
 const listConcernRelations=(spaceId:string,id:string,signal?:AbortSignal)=>readCoordinator.read(readKey(spaceId,'relations',id),s=>apiRelations(spaceId,id,s),signal)
 const pagedRefreshing=ref(false)
+const viewHasData=ref(false)
+const focusIds=ref<string[]>([])
+const focusConcerns=computed(()=>liveMode?focusIds.value.map(id=>demo.concerns.find(c=>c.id===id)).filter((c):c is typeof demo.concerns[number]=>!!c):demo.concerns)
 const viewRefreshing=ref(false)
 const viewError=ref('')
 const viewUpdatedAt=ref<number|null>(null)
 const rebuildRequired=ref(false)
-const viewStates=new HealthViewState<{search:string;timelineKind:TimelineFilter;metricFilter:MetricReferenceFilter;scroll:number;visibleLimit:number;trendRange:'1'|'3'|'5'|'all';mapView:BodyView;mapSelected:string|null;concernPages:Record<ConcernList,number>}>()
+const viewStates=new HealthViewState<{search:string;timelineKind:TimelineFilter;metricFilter:MetricReferenceFilter;scroll:number;visibleLimit:number;trendRange:'1'|'3'|'5'|'all';mapView:BodyView;mapSelected:string|null;concernPages:Record<ConcernList,number>;documentRelated:boolean}>()
 let restoringView=false
 function invalidateHealth(...tags:QueryTag[]){
   queryState.invalidate(...tags)
@@ -265,12 +267,12 @@ function invalidateHealth(...tags:QueryTag[]){
 }
 function beginView(hit:{updatedAt:number}|undefined){
   viewError.value='';rebuildRequired.value=false;viewUpdatedAt.value=hit?.updatedAt??null
-  liveStatus.value=hit?'ready':'loading';viewRefreshing.value=!!hit
+  viewHasData.value=!!hit;liveStatus.value=hit?'ready':'loading';viewRefreshing.value=!!hit
 }
-function finishView(now=Date.now()){viewUpdatedAt.value=now;viewRefreshing.value=false;liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'}
+function finishView(now=Date.now()){viewHasData.value=true;viewUpdatedAt.value=now;viewRefreshing.value=false;liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'}
 function failView(e:unknown,hasData:boolean){
   if(optionDenied(e))return
-  viewError.value=(hasData?'更新失败，显示上次成功加载的数据：':'')+(e instanceof Error?e.message:'读取失败')
+  viewHasData.value=hasData;viewError.value=(hasData?'更新失败，显示上次成功加载的数据：':'')+(e instanceof Error?e.message:'读取失败')
   viewRefreshing.value=false;liveStatus.value='ready'
 }
 let snapshotController:AbortController|null=null
@@ -363,7 +365,7 @@ const relationReadState=ref<'idle'|'loading'|'ready'|'error'>('idle')
 const relationReadError=ref('')
 const concernContent=computed(()=>concernContentState(liveMode,liveStatus.value,relationReadState.value))
 const metricVisibleLimit=ref(40)
-watch([search,metricReferenceFilter],()=>{metricVisibleLimit.value=40})
+watch([search,metricReferenceFilter],()=>{if(!restoringView)metricVisibleLimit.value=40},{flush:'sync'})
 const relationBusy=ref(false)
 const relationError=ref('')
 const relationKind=ref<ConcernTargetKind>('metric')
@@ -486,7 +488,7 @@ function clearLiveRecords() {
   relationReadState.value='idle';relationReadError.value=''
   relationError.value=''
   relationTargetId.value=''
-  ++scopeGeneration;queryState.clear();viewStates.clear();readCoordinator.clear();cancelSnapshot();cancelFormChoices();cancelFormOptions();viewError.value='';viewUpdatedAt.value=null;viewRefreshing.value=false;rebuildRequired.value=false
+  ++scopeGeneration;queryState.clear();viewStates.clear();readCoordinator.clear();cancelSnapshot();cancelFormChoices();cancelFormOptions();viewError.value='';viewUpdatedAt.value=null;viewRefreshing.value=false;viewHasData.value=false;focusIds.value=[];rebuildRequired.value=false;lastBodyLocation=null;lastBodyStack=[]
   timelineEntries.value=[];timelineStreams=[];timelineMore.value=false;timelineError.value='';invalidateReferenceIndex()
   for(const kind of healthKinds) getList(kind).splice(0)
   // Never retain another Space/Person's coordinates or attention when switching.
@@ -542,7 +544,7 @@ async function loadPagedSection(section:PagedSection,more=false,force=false,rebu
     const latest=new Map(more?previous?.latest:[])
     const ready=new Set(more?previous?.ready:[])
     const projection:ListProjection={ids:[...new Set([...(more?previous?.ids??[]:[]),...ids])],cursor:window.cursor,latest:[],ready:[],pages:(more?previous?.pages??0:0)+window.pages}
-    if(!previous||more){mergeHealthRecords(kind,window.items);applyList({...projection,latest:[...latest],ready:[...ready]});liveStatus.value='ready'}
+    if(!previous){mergeHealthRecords(kind,window.items);applyList({...projection,latest:[...latest],ready:[...ready]});viewHasData.value=true;liveStatus.value='ready'}
     if(kind==='metric'&&ids.length){
       metricSummaryLoading.value=true
       for(let offset=0;offset<ids.length;offset+=METRIC_PAGE_SIZE){
@@ -565,7 +567,7 @@ async function loadPagedSection(section:PagedSection,more=false,force=false,rebu
   }catch(e){
     if(!valid()||optionDenied(e))return
     if(!more&&previous){applyList(previous);failView(e,true)}
-    else if(kind==='metric'&&metricSummaryLoading.value){metricSummaryError.value=e instanceof Error?e.message:'指标摘要读取失败';liveStatus.value='ready'}
+    else if(kind==='metric'&&metricSummaryLoading.value){if(more&&previous)applyList(previous);metricSummaryError.value=e instanceof Error?e.message:'指标摘要读取失败';liveStatus.value='ready'}
     else{pagedError.value=e instanceof Error?e.message:'列表读取失败';liveStatus.value='ready'}
   }finally{if(valid()){pagedLoadingMore.value=false;metricSummaryLoading.value=false;pagedRefreshing.value=false;viewRefreshing.value=false;pageController=null}}
 }
@@ -772,6 +774,7 @@ async function loadMetricDetail(metricId:string){
     liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'指标读取失败'
   }finally{if(valid())snapshotController=null}
 }
+const documentRelatedActivated=ref(false)
 const documentRelatedState=ref<'idle'|'loading'|'ready'|'error'>('idle')
 const documentRelatedError=ref('')
 const documentRelatedIds=ref<string[]>([])
@@ -783,6 +786,7 @@ function resetDocumentRelated(){
 onBeforeUnmount(resetDocumentRelated)
 async function loadDocumentRelated(id:string){
   if(!selectedSpaceId.value||documentRelatedState.value==='loading')return
+  documentRelatedActivated.value=true
   resetDocumentRelated()
   const controller=new AbortController();documentRelatedController=controller
   const spaceId=selectedSpaceId.value,version=liveLoadSequence
@@ -838,19 +842,20 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',force=false,rebu
   if(section==='metrics'&&metricReferenceFilter.value!=='all'){await loadReferenceIndex(force);return}
   if(usesPagedSection(section)){await loadPagedSection(section,false,force,rebuild);return}
   cancelPage();cancelMetricDetail()
-  const hit=queryState.get<HealthSnapshot>(scopeKey('focus'))
+  const hit=queryState.get<string[]>(scopeKey('focus'))
   const apply=(snapshot:HealthSnapshot)=>{
     assertOwnScope(snapshot.personId)
     const records=snapshot.models?.health_concern
     if(!Array.isArray(records)||!Array.isArray(snapshot.presentation?.items))throw Error('健康关注响应不完整')
     demo.concerns.splice(0,demo.concerns.length,...records.map(record=>decodeHealthRecord('concern',record) as typeof demo.concerns[number]))
-    const ids=new Set(demo.concerns.map(c=>c.id))
+    focusIds.value=records.map(r=>r.id)
+    const ids=new Set(focusIds.value)
     const items=snapshot.presentation.items.filter(p=>ids.has(p.concernId))
     attentionByConcern.value=Object.fromEntries(items.map(p=>[p.concernId,p.attention]))
     bodyBindings.value=items.filter(p=>p.placement!==null).map(p=>p.placement!)
   }
   beginView(hit)
-  if(hit){apply(hit.data);if(hit.fresh&&!force){finishView(hit.updatedAt);return}}
+  if(hit){focusIds.value=hit.data;if(hit.fresh&&!force){finishView(hit.updatedAt);return}}else focusIds.value=[]
   const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
   const controller=new AbortController();snapshotController=controller
   const valid=()=>requestId===liveLoadSequence&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
@@ -858,7 +863,7 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',force=false,rebu
     const snapshot=await getHealthSnapshot(spaceId,['health_concern'],controller.signal)
     if(!valid())return
     apply(snapshot)
-    queryState.set(scopeKey('focus'),snapshot,['concern','presentation'],snapshot.models.health_concern?.length??1)
+    queryState.set(scopeKey('focus'),[...focusIds.value],['concern','presentation'],focusIds.value.length)
     finishView()
   }catch(e){if(valid())failView(e,!!hit)}
   finally{if(valid()){snapshotController=null;viewRefreshing.value=false}}
@@ -897,14 +902,27 @@ async function loadHubProfile(){
   catch {hubProfile.value=null} // no synthetic identity or stale profile
 }
 let hiddenAt=0
+const scopeChecking=ref(false)
+async function recheckHealthScope(){
+  if(scopeChecking.value||!selectedSpaceId.value||!subjectPersonId.value)return
+  scopeChecking.value=true
+  const generation=scopeGeneration,spaceId=selectedSpaceId.value,personId=subjectPersonId.value
+  try{
+    const workspace=await getAlohaWorkspace()
+    if(generation!==scopeGeneration)return
+    if(selectedAuthorizedHealthSpace(workspace)!==spaceId)throw new HealthApiError(403,null)
+    const person=await getOwnSpacePerson(spaceId)
+    if(generation!==scopeGeneration)return
+    if(person.personId!==personId)throw new HealthApiError(403,null)
+    if(activeTab.value==='body'&&!sheet.value&&!saving.value&&!viewBusy.value)void activateHealthView()
+  }catch(e){if(generation===scopeGeneration){clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法验证当前健康档案'}}
+  finally{scopeChecking.value=false}
+}
 function onHealthVisibility(){
   if(document.visibilityState==='hidden'){hiddenAt=Date.now();return}
-  if(!liveMode||!hiddenAt||Date.now()-hiddenAt<60_000)return
-  hiddenAt=0
-  if(activeTab.value==='body'&&!sheet.value&&!saving.value&&liveStatus.value==='ready'&&selectedSpaceId.value){
-    void loadLiveRecords(selected.value?'detail':bodyTab.value)
-    if(selected.value?.kind==='concern')void refreshConcernLinks(selected.value.id)
-  }
+  if(!liveMode||!hiddenAt)return
+  const elapsed=Date.now()-hiddenAt;hiddenAt=0
+  if(elapsed>=HEALTH_STALE_MS)void recheckHealthScope()
 }
 onBeforeUnmount(()=>document.removeEventListener('visibilitychange',onHealthVisibility))
 onMounted(()=>{
@@ -1128,56 +1146,74 @@ function chartPoints(metricId: string) {
   const lo=Math.min(...values)-2, hi=Math.max(...values)+2
   return points.map((p,i)=>`${Math.round(10+320*i/(points.length-1))},${Math.round(82-60*(p.valueNumber!-lo)/(hi-lo))}`).join(' ')
 }
-function location(): HealthLocation {
-  return { tab:activeTab.value, section:bodyTab.value, record:selected.value ? {...selected.value} : null }
+function location():HealthLocation{return {tab:activeTab.value,section:bodyTab.value,record:selected.value?{...selected.value}:null}}
+let lastBodyLocation:HealthLocation|null=null
+let lastBodyStack:HealthLocation[]=[]
+function locationKey(loc=location()):QueryKey{return scopeKey('view',loc.tab,loc.section,loc.record?.kind??null,loc.record?.id??null)}
+function saveViewState(){
+  viewStates.save(locationKey(),{search:search.value,timelineKind:timelineKind.value,metricFilter:metricReferenceFilter.value,scroll:window.scrollY,visibleLimit:metricVisibleLimit.value,trendRange:trendRange.value,mapView:mapView.value,mapSelected:mapSelectedConcern.value,concernPages:{...concernPage},documentRelated:documentRelatedActivated.value})
 }
-function navigate(tab: Tab,loadDefault=true) {
-  if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
-  routeStack.value=[]
-  ++liveLoadSequence;cancelMetricDetail();cancelPage();cancelSnapshot();resetDocumentRelated()
-  ++relationSequence;resetConcernReads();cancelRelationOptions();activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle'
-  activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
-  if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
-  window.scrollTo({top:0,behavior:'smooth'})
+function restoreViewState(loc:HealthLocation){
+  const state=viewStates.restore(locationKey(loc))
+  restoringView=true
+  search.value=state?.search??'';timelineKind.value=state?.timelineKind??'all';metricReferenceFilter.value=state?.metricFilter??'all';metricVisibleLimit.value=state?.visibleLimit??40;trendRange.value=state?.trendRange??'3'
+  mapView.value=state?.mapView??'front';mapSelectedConcern.value=state?.mapSelected??null
+  for(const key of Object.keys(concernPage) as ConcernList[])concernPage[key]=state?.concernPages[key]??0
+  documentRelatedActivated.value=state?.documentRelated??false
+  restoringView=false
+  return state?.scroll??0
 }
-function openBody(tab: BodyTab) { navigate('body',false);changeBodyTab(tab) }
-function changeBodyTab(tab:BodyTab) {
-  if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
-  ++relationSequence;resetConcernReads();cancelRelationOptions();activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle'
-  selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value='';metricVisibleLimit.value=40
-  if(tab==='metrics'&&!metricSummariesReady.value)metricReferenceFilter.value='all'
-  if(liveMode&&selectedSpaceId.value)void loadLiveRecords(tab)
+function leaveView(){
+  saveViewState()
+  ++liveLoadSequence;++relationSequence
+  cancelPage();cancelSnapshot();cancelMetricDetail();resetDocumentRelated();resetConcernReads();cancelRelationOptions()
+  activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle';relationReadError.value='';relationError.value='';concernLinks.value=[]
+  viewError.value='';viewUpdatedAt.value=null;viewHasData.value=false;rebuildRequired.value=false
 }
-function show(kind: HealthKind,id: string) {
-  if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
-  if (selected.value?.kind === kind && selected.value.id===id) return
-  if(activeTab.value==='body' && bodyTab.value==='timeline' && !selected.value)
-    timelineScrollPosition.value=window.scrollY
-  routeStack.value.push(location())
-  ++relationSequence;concernLinks.value=[];relationError.value='';relationReadState.value='idle';relationReadError.value='';relationLoading.value=false;resetConcernPages()
-  activeTab.value='body'; selected.value=saveDestination(kind,id);sheet.value='';search.value=''
-  if(liveMode&&selectedSpaceId.value){
-    void loadLiveRecords('detail')
-    if(kind==='concern')void refreshConcernLinks(id)
-  }
-  window.scrollTo({top:0,behavior:'smooth'})
+const viewBusy=computed(()=>viewRefreshing.value||liveStatus.value==='loading'||pagedLoadingMore.value||metricSummaryLoading.value||timelineLoading.value||metricHistoryLoading.value||metricTrendLoading.value||relationLoading.value||documentRelatedState.value==='loading')
+async function activateHealthView(force=false,rebuild=false){
+  if(!liveMode||!selectedSpaceId.value||activeTab.value!=='body')return
+  const record=selected.value
+  await loadLiveRecords(record?'detail':bodyTab.value,force,rebuild)
+  if(record?.kind==='concern'&&selected.value?.kind==='concern'&&selected.value.id===record.id)await refreshConcernLinks(record.id)
+  if(record?.kind==='document'&&selected.value?.kind==='document'&&selected.value.id===record.id&&documentRelatedActivated.value)await loadDocumentRelated(record.id)
 }
-function back() {
-  if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
-  const previous=routeStack.value.pop()
-  if(previous) {
-    activeTab.value=previous.tab
-    bodyTab.value=previous.section
-    ++relationSequence;concernLinks.value=[];relationError.value='';relationReadState.value='idle';relationReadError.value='';relationLoading.value=false;resetConcernPages()
-    selected.value=previous.record
-    if(liveMode&&selectedSpaceId.value){
-      void loadLiveRecords(previous.record?'detail':previous.section)
-      if(previous.record?.kind==='concern')void refreshConcernLinks(previous.record.id)
-    }
-  } else selected.value=null
-  if(previous?.tab==='body' && previous.section==='timeline' && !previous.record)
-    nextTick(()=>window.scrollTo({top:timelineScrollPosition.value,behavior:'auto'}))
-  else window.scrollTo({top:0,behavior:'smooth'})
+function refreshCurrentView(rebuild=false){
+  if(!liveMode||viewBusy.value||scopeChecking.value||sheet.value||saving.value||relationBusy.value)return
+  if(!subjectPersonId.value){void initializeLive();return}
+  void activateHealthView(true,rebuild)
+}
+function restoreLocation(loc:HealthLocation){
+  activeTab.value=loc.tab;bodyTab.value=loc.section;selected.value=loc.record;sheet.value=''
+  const scroll=restoreViewState(loc)
+  const key=JSON.stringify(locationKey())
+  void activateHealthView()
+  void nextTick(()=>{if(key===JSON.stringify(locationKey()))window.scrollTo({top:scroll,behavior:'auto'})})
+}
+function navigationBlocked(){return scopeChecking.value||saving.value||quickMetricSaving.value||relationBusy.value}
+function navigate(tab:Tab){
+  if(navigationBlocked())return
+  const target=tab==='home'?'body':tab
+  if(target===activeTab.value)return
+  if(activeTab.value==='body'){lastBodyLocation=location();lastBodyStack=[...routeStack.value]}
+  leaveView()
+  if(target==='body'&&lastBodyLocation){routeStack.value=[...lastBodyStack];restoreLocation(lastBodyLocation)}
+  else{routeStack.value=[];restoreLocation({tab:target,section:target==='body'?'focus':bodyTab.value,record:null})}
+}
+function openBody(tab:BodyTab){
+  if(navigationBlocked()||activeTab.value==='body'&&bodyTab.value===tab&&!selected.value)return
+  leaveView();routeStack.value=[];restoreLocation({tab:'body',section:tab,record:null})
+}
+function changeBodyTab(tab:BodyTab){openBody(tab)}
+function show(kind:HealthKind,id:string){
+  if(navigationBlocked()||selected.value?.kind===kind&&selected.value.id===id)return
+  const previous=location();leaveView();routeStack.value.push(previous)
+  restoreLocation({tab:'body',section:bodyTab.value,record:saveDestination(kind,id)})
+}
+function back(){
+  if(navigationBlocked())return
+  const previous=routeStack.value.pop()??{tab:'body' as const,section:bodyTab.value,record:null}
+  leaveView();restoreLocation(previous)
 }
 async function startCreate(kind: HealthKind) {
   if(liveMode && (!selectedSpaceId.value || !subjectPersonId.value || liveStatus.value!=='ready')) {
@@ -1455,11 +1491,13 @@ async function formSave() {
           catch(e){relationWarning=e instanceof Error?e.message:'关联失败'}
         }
       }
-      sheet.value='';formError.value='';search.value=''
+      sheet.value='';formError.value=''
       notice.value=relationWarning?'健康记录已保存，但关联失败：'+relationWarning
         :presentationError?'健康记录已保存，但关注度未同步：'+presentationError
         :'已保存至 LifeSpace。'
+      saving.value=false
       if(selected.value?.kind!==kind || selected.value.id!==saved.id) show(kind,saved.id)
+      else void activateHealthView(true)
     } catch(e) {if(!optionDenied(e))formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
     finally {saving.value=false;uploadProgress.value=null;if(sheet.value!=='edit')uploadFile.value=null}
     return
@@ -1992,9 +2030,9 @@ function detailName(kind: HealthKind,record:any) {
               <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="changeBodyTab(item.id)">{{ item.title }}</button>
             </nav>
             <HealthSkeleton v-if="liveMode&&liveStatus!=='ready'&&!isPagedSection(bodyTab)" label="正在加载当前页面的数据" :rows="6"/>
-            <div v-else-if="bodyTab==='focus'" class="body-overview">
+            <div v-else-if="bodyTab==='focus'&&(!liveMode||viewHasData)" class="body-overview">
               <BodyOverview
-                :concerns="demo.concerns"
+                :concerns="focusConcerns"
                 :bindings="bodyBindings"
                 :attention-by-concern="attentionByConcern"
                 :view="mapView"
@@ -2006,7 +2044,7 @@ function detailName(kind: HealthKind,record:any) {
                 @remove-point="clearConcernPoint"
               />
             </div>
-            <template v-else>
+            <template v-else-if="bodyTab!=='focus'">
               <div class="list-toolbar">
                 <label class="search-field"><Search :size="17"/><input v-model="search" maxlength="100"
                   aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
