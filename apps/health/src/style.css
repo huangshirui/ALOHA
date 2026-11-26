@@ -687,3 +687,7 @@
 .quick-metric-heading b {font-size:.85rem}
 .quick-metric .soft-button {justify-self:start}
 .toast-error {background:var(--health-ink);color:var(--health-surface)}
+
+/* Shared data-status line: reserved height avoids layout jumps on refresh. */
+.health-query-status{min-height:1.15rem;margin:-.1rem 0 .45rem;color:var(--health-muted);font-size:var(--health-type-caption);line-height:1.4}
+.health-query-status [role=alert]{color:var(--health-danger)}

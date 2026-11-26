@@ -253,12 +253,13 @@ const listConcernRelations=(spaceId:string,id:string,signal?:AbortSignal)=>readC
 const pagedRefreshing=ref(false)
 const viewHasData=ref(false)
 const focusIds=ref<string[]>([])
+const focusSearch=ref('')
 const focusConcerns=computed(()=>liveMode?focusIds.value.map(id=>demo.concerns.find(c=>c.id===id)).filter((c):c is typeof demo.concerns[number]=>!!c):demo.concerns)
 const viewRefreshing=ref(false)
 const viewError=ref('')
 const viewUpdatedAt=ref<number|null>(null)
 const rebuildRequired=ref(false)
-const viewStates=new HealthViewState<{search:string;timelineKind:TimelineFilter;metricFilter:MetricReferenceFilter;scroll:number;visibleLimit:number;trendRange:'1'|'3'|'5'|'all';mapView:BodyView;mapSelected:string|null;concernPages:Record<ConcernList,number>;documentRelated:boolean}>()
+const viewStates=new HealthViewState<{search:string;timelineKind:TimelineFilter;metricFilter:MetricReferenceFilter;scroll:number;visibleLimit:number;trendRange:'1'|'3'|'5'|'all';mapView:BodyView;mapSelected:string|null;concernPages:Record<ConcernList,number>;documentRelated:boolean;focusSearch:string}>()
 let restoringView=false
 function invalidateHealth(...tags:QueryTag[]){
   queryState.invalidate(...tags)
@@ -1228,7 +1229,7 @@ let lastBodyLocation:HealthLocation|null=null
 let lastBodyStack:HealthLocation[]=[]
 function locationKey(loc=location()):QueryKey{return scopeKey('view',loc.tab,loc.section,loc.record?.kind??null,loc.record?.id??null)}
 function saveViewState(){
-  viewStates.save(locationKey(),{search:search.value,timelineKind:timelineKind.value,metricFilter:metricReferenceFilter.value,scroll:window.scrollY,visibleLimit:metricVisibleLimit.value,trendRange:trendRange.value,mapView:mapView.value,mapSelected:mapSelectedConcern.value,concernPages:{...concernPage},documentRelated:documentRelatedActivated.value})
+  viewStates.save(locationKey(),{search:search.value,timelineKind:timelineKind.value,metricFilter:metricReferenceFilter.value,scroll:window.scrollY,visibleLimit:metricVisibleLimit.value,trendRange:trendRange.value,mapView:mapView.value,mapSelected:mapSelectedConcern.value,concernPages:{...concernPage},documentRelated:documentRelatedActivated.value,focusSearch:focusSearch.value})
 }
 function restoreViewState(loc:HealthLocation){
   const state=viewStates.restore(locationKey(loc))
@@ -1236,7 +1237,7 @@ function restoreViewState(loc:HealthLocation){
   search.value=state?.search??'';timelineKind.value=state?.timelineKind??'all';metricReferenceFilter.value=state?.metricFilter??'all';metricVisibleLimit.value=state?.visibleLimit??40;trendRange.value=state?.trendRange??'3'
   mapView.value=state?.mapView??'front';mapSelectedConcern.value=state?.mapSelected??null
   for(const key of Object.keys(concernPage) as ConcernList[])concernPage[key]=state?.concernPages[key]??0
-  documentRelatedActivated.value=state?.documentRelated??false
+  documentRelatedActivated.value=state?.documentRelated??false;focusSearch.value=state?.focusSearch??''
   restoringView=false
   return state?.scroll??0
 }
@@ -1758,7 +1759,7 @@ function detailName(kind: HealthKind,record:any) {
     </aside>
     <div class="page-frame">
       <main class="content">
-        <div v-if="liveMode&&(liveStatus==='error'||!selectedSpaceId)" class="health-entry-state"
+        <div v-if="liveMode&&(scopeChecking||liveStatus==='error'||!selectedSpaceId)" class="health-entry-state"
           :role="liveStatus==='error'?'alert':'status'">
           <template v-if="liveStatus==='error'">
             <h2>健康档案暂时无法加载</h2>
@@ -1771,6 +1772,7 @@ function detailName(kind: HealthKind,record:any) {
         <section v-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
             :agent-open="agentOpen" :agent-enabled="!liveMode"
+              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||relationBusy" @refresh="refreshCurrentView()"
             
             @ask="openAgent">
             <template #actions>
@@ -1818,6 +1820,7 @@ function detailName(kind: HealthKind,record:any) {
             <HealthPageHeader :title="detailName(selected.kind,current)" :context="labelForKind(selected.kind)"
               :subtitle="selected.kind==='concern' ? (current.summary || '持续关注的健康问题') : undefined"
               can-back :agent-open="agentOpen" :agent-enabled="!liveMode"
+              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||relationBusy" @refresh="refreshCurrentView()"
             
             @ask="openAgent" @back="back">
               <template #actions>
@@ -1828,7 +1831,13 @@ function detailName(kind: HealthKind,record:any) {
                   :aria-label="liveMode?'删除健康记录':'删除演示记录'" @click="removeCurrent"><Trash2 :size="18"/></button>
               </template>
             </HealthPageHeader>
-            <HealthSkeleton v-if="liveMode&&liveStatus==='loading'&&selected.kind!=='concern'" label="正在加载记录详情" :rows="5"/>
+            <div v-if="liveMode" class="health-query-status" aria-live="polite">
+                <span v-if="viewError" role="alert">{{ viewError }} <button type="button" class="inline-link" @click="refreshCurrentView()">重试</button></span>
+                <span v-else-if="rebuildRequired">已加载的记录较多，保留上次数据。 <button type="button" class="inline-link" @click="refreshCurrentView(true)">重新加载首批</button></span>
+                <span v-else-if="viewRefreshing||relationLoading&&relationReadState==='ready'">正在更新当前页面…</span>
+                <span v-else-if="viewUpdatedAt!==null">最近读取 {{ new Date(viewUpdatedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }}</span>
+              </div>
+            <HealthSkeleton v-if="liveMode&&liveStatus==='loading'&&!viewHasData" :variant="selected.kind==='metric'?'metric-detail':selected.kind==='concern'?'concern-detail':'detail'" label="正在加载记录详情" :rows="3"/>
             <div v-else-if="selected.kind==='concern'" class="detail-columns concern-detail">
               <!-- Four product-purpose cards. Relation management is hidden by default,
                    and always scoped to the card's own record categories. -->
@@ -1857,6 +1866,7 @@ function detailName(kind: HealthKind,record:any) {
                 </div>
                 <HealthSkeleton v-if="concernSectionState('metrics')==='loading'" label="正在加载追踪指标" :rows="2"/>
                 <div v-else-if="concernSectionState('metrics')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.metrics || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('metrics')">重试</button></div>
+                <p v-if="concernSectionState('metrics')==='ready'&&(concernReadErrors.metrics||relationReadError)" class="empty-inline" role="alert">{{ concernReadErrors.metrics||relationReadError }} <button type="button" class="inline-link" @click="retryConcernGroup('metrics')">重试</button></p>
                 <div v-else-if="pagedConcern.metrics.length" class="concern-metric-list">
                   <div v-for="m in pagedConcern.metrics" :key="m.id" class="concern-record-row">
                     <button type="button" class="concern-metric-link" @click="show('metric',m.id)">
@@ -1876,6 +1886,7 @@ function detailName(kind: HealthKind,record:any) {
                 </div>
                 <HealthSkeleton v-if="concernSectionState('observations')==='loading'" label="正在加载近期测量" :rows="2"/>
                 <p v-else-if="concernSectionState('observations')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.observations || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('observations')">重试</button></p>
+                <p v-if="concernSectionState('observations')==='ready'&&(concernReadErrors.observations||relationReadError)" class="empty-inline" role="alert">{{ concernReadErrors.observations||relationReadError }} <button type="button" class="inline-link" @click="retryConcernGroup('observations')">重试</button></p>
                 <div v-for="o in (concernSectionState('observations')==='ready'?pagedConcern.observations:[])" :key="o.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('observation',o.id)">
                     <span class="list-icon"><Activity :size="18"/></span>
@@ -1915,6 +1926,7 @@ function detailName(kind: HealthKind,record:any) {
                 <div class="card-heading"><h2>正在做什么？</h2><span v-if="concernSectionState('regimens')==='ready'" class="quiet-caption">{{ concernRelated.regimens.length }} 项方案</span></div>
                 <HealthSkeleton v-if="concernSectionState('regimens')==='loading'" label="正在加载健康方案" :rows="2"/>
                 <p v-else-if="concernSectionState('regimens')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.regimens || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('regimens')">重试</button></p>
+                <p v-if="concernSectionState('regimens')==='ready'&&(concernReadErrors.regimens||relationReadError)" class="empty-inline" role="alert">{{ concernReadErrors.regimens||relationReadError }} <button type="button" class="inline-link" @click="retryConcernGroup('regimens')">重试</button></p>
                 <div v-for="r in (concernSectionState('regimens')==='ready'?pagedConcern.regimens:[])" :key="r.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('regimen',r.id)">
                     <span class="list-icon"><ListChecks :size="18"/></span>
@@ -1945,6 +1957,7 @@ function detailName(kind: HealthKind,record:any) {
                 <div class="card-heading"><h2>最近发生了什么？</h2><span v-if="concernSectionState('events')==='ready'" class="quiet-caption">{{ concernRelated.events.length }} 条事件</span></div>
                 <HealthSkeleton v-if="concernSectionState('events')==='loading'" label="正在加载健康事件" :rows="2"/>
                 <p v-else-if="concernSectionState('events')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.events || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('events')">重试</button></p>
+                <p v-if="concernSectionState('events')==='ready'&&(concernReadErrors.events||relationReadError)" class="empty-inline" role="alert">{{ concernReadErrors.events||relationReadError }} <button type="button" class="inline-link" @click="retryConcernGroup('events')">重试</button></p>
                 <div v-for="e in (concernSectionState('events')==='ready'?pagedConcern.events:[])" :key="e.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('event',e.id)">
                     <span class="list-icon"><CalendarDays :size="18"/></span>
@@ -1974,6 +1987,7 @@ function detailName(kind: HealthKind,record:any) {
                 <div class="card-heading"><h2>有哪些依据？</h2><span v-if="concernSectionState('evidence')==='ready'" class="quiet-caption">{{ concernLists.evidence.length }} 份资料与评估</span></div>
                 <HealthSkeleton v-if="concernSectionState('evidence')==='loading'" label="正在加载资料与评估" :rows="2"/>
                 <p v-else-if="concernSectionState('evidence')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.evidence || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('evidence')">重试</button></p>
+                <p v-if="concernSectionState('evidence')==='ready'&&(concernReadErrors.evidence||relationReadError)" class="empty-inline" role="alert">{{ concernReadErrors.evidence||relationReadError }} <button type="button" class="inline-link" @click="retryConcernGroup('evidence')">重试</button></p>
                 <div v-for="e in (concernSectionState('evidence')==='ready'?pagedConcern.evidence:[])" :key="e.kind+e.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show(e.kind,e.id)">
                     <span class="list-icon"><FileText v-if="e.kind==='document'" :size="18"/><BadgeCheck v-else :size="18"/></span>
@@ -2026,22 +2040,24 @@ function detailName(kind: HealthKind,record:any) {
                   参考范围：{{ metricRangeLabel(current) }} · {{ current.referenceSource||'来源未注明' }}
                   <span>仅用于比较，不代表医学诊断。</span>
                 </p>
-                <HealthSkeleton v-if="liveMode&&current.valueType==='number'&&(metricHistoryReady?!metricTrendReady&&!metricTrendError:!metricHistoryError)" label="正在加载完整趋势区间" :rows="3"/>
-                 <p v-else-if="liveMode&&current.valueType==='number'&&(metricTrendError||metricHistoryError&&!metricHistoryReady)" role="alert" class="empty-inline">{{ metricTrendError||metricHistoryError }} <button class="inline-link" type="button" @click="metricHistoryReady?loadMetricTrend(current.id):retryMetricHistory(current.id)">重试</button></p>
+                <HealthSkeleton v-if="liveMode&&current.valueType==='number'&&(metricHistoryReady?!metricTrendReady&&!metricTrendError:!metricHistoryError)" label="正在加载完整趋势区间" variant="trend"/>
+                 <p v-else-if="liveMode&&current.valueType==='number'&&!metricTrendReady&&(metricTrendError||metricHistoryError&&!metricHistoryReady)" role="alert" class="empty-inline">{{ metricTrendError||metricHistoryError }} <button class="inline-link" type="button" @click="metricHistoryReady?loadMetricTrend(current.id,true):retryMetricHistory(current.id)">重试</button></p>
                  <MetricTrend v-else-if="current.valueType==='number'"
                   :metric-name="current.name" :unit="current.defaultUnit"
                   :reference-low="current.referenceLow" :reference-high="current.referenceHigh"
                   :reference-source="current.referenceSource"
                   :observations="(liveMode?metricTrendRows:demo.observations).filter(o=>o.metricId===current.id && (o.unit||current.defaultUnit)===current.defaultUnit)"
                   @open-observation="show('observation',$event)"/>
-                <p v-else class="helper-copy">该指标记录的是{{ current.valueType==='text'?'文字':'是或否' }}，可在右侧查看历史记录，不适合用数值趋势图展示。</p>
+                <p v-if="metricTrendReady&&metricTrendError" role="alert" class="empty-inline">{{ metricTrendError }} <button type="button" class="inline-link" @click="loadMetricTrend(current.id,true)">重试</button></p>
+                <p v-if="current.valueType!=='number'" class="helper-copy">该指标记录的是{{ current.valueType==='text'?'文字':'是或否' }}，可在右侧查看历史记录，不适合用数值趋势图展示。</p>
               </section>
               <section class="ui-card metric-history"><div class="card-heading"><h2>历史记录</h2><span v-if="!liveMode||metricHistoryReady" class="quiet-caption">{{ liveMode&&metricHistoryCursor?'已加载 ':'' }}{{ liveMode?metricHistoryRows.length:demo.observations.filter(o=>o.metricId===current.id).length }} 条</span></div>
                 <button v-for="o in (liveMode?metricHistoryRows:demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate)))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><span class="metric-reading-inline"><b>{{ observationValue(o,current) }}</b><ReferenceIndicator :comparison="referenceFor(o,current)?.comparison"/></span><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
-                <HealthSkeleton v-if="liveMode&&metricHistoryLoading&&!metricHistoryReady" label="正在加载历史记录" :rows="3"/>
+                <HealthSkeleton v-if="liveMode&&metricHistoryLoading&&!metricHistoryReady" label="正在加载历史记录" variant="history" :rows="3"/>
                  <p v-else-if="liveMode&&metricHistoryError" role="alert" class="empty-inline">{{ metricHistoryError }} <button class="inline-link" type="button" @click="retryMetricHistory(current.id)">重试</button></p>
                  <p v-else-if="liveMode?metricHistoryReady&&!metricHistoryRows.length:!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
-                 <button v-if="liveMode&&metricHistoryCursor&&!metricHistoryError" type="button" class="quiet-button" :disabled="metricHistoryLoading" @click="loadMetricHistory(current.id,true)">{{ metricHistoryLoading?'正在加载…':'加载更早记录' }}</button>
+                 <p v-if="metricHistoryRebuild" class="helper-copy">保留已加载历史。 <button type="button" class="inline-link" @click="refreshCurrentView(true)">重新加载首批历史</button></p>
+                  <button v-if="liveMode&&metricHistoryCursor&&!metricHistoryError&&!metricHistoryRebuild" type="button" class="quiet-button" :disabled="metricHistoryLoading" @click="loadMetricHistory(current.id,true)">{{ metricHistoryLoading?'正在加载…':'加载更早记录' }}</button>
               </section>
             </div>
             <div v-else class="detail-columns">
@@ -2065,7 +2081,7 @@ function detailName(kind: HealthKind,record:any) {
                 <template v-if="selected.kind==='document'">
                   <button v-if="liveMode&&documentRelatedState==='idle'" type="button" class="quiet-button" @click="loadDocumentRelated(current.id)">加载从这份资料整理的测量</button>
                   <HealthSkeleton v-if="liveMode&&documentRelatedState==='loading'" label="正在查询关联测量" :rows="3"/>
-                  <p v-else-if="liveMode&&documentRelatedState==='error'" class="empty-inline" role="alert">{{ documentRelatedError }} <button type="button" class="inline-link" @click="loadDocumentRelated(current.id)">重试</button></p>
+                  <p v-else-if="liveMode&&documentRelatedError" class="empty-inline" role="alert">{{ documentRelatedError }} <button type="button" class="inline-link" @click="loadDocumentRelated(current.id,true)">重试</button></p>
                   <button v-for="o in documentRelatedRows" :key="o.id"
                     class="row-link" type="button" @click="show('observation',o.id)">
                     <span class="list-icon"><ClipboardCheck :size="18"/></span>
@@ -2090,13 +2106,20 @@ function detailName(kind: HealthKind,record:any) {
           </template>
 
           <template v-else-if="selected&&liveMode">
-            <HealthPageHeader title="记录详情" can-back :agent-open="agentOpen" :agent-enabled="false" @back="back"/>
-            <HealthSkeleton v-if="liveStatus==='loading'" label="正在加载记录详情" :rows="4"/>
-            <p v-else class="empty-inline">此记录当前不可见或已删除。</p>
+            <HealthPageHeader title="记录详情" can-back :agent-open="agentOpen" :agent-enabled="false" :refresh-enabled="liveMode" :refreshing="viewBusy" @refresh="refreshCurrentView()" @back="back"/>
+            <div v-if="liveMode" class="health-query-status" aria-live="polite">
+                <span v-if="viewError" role="alert">{{ viewError }} <button type="button" class="inline-link" @click="refreshCurrentView()">重试</button></span>
+                <span v-else-if="rebuildRequired">已加载的记录较多，保留上次数据。 <button type="button" class="inline-link" @click="refreshCurrentView(true)">重新加载首批</button></span>
+                <span v-else-if="viewRefreshing||relationLoading&&relationReadState==='ready'">正在更新当前页面…</span>
+                <span v-else-if="viewUpdatedAt!==null">最近读取 {{ new Date(viewUpdatedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }}</span>
+              </div>
+            <HealthSkeleton v-if="liveStatus==='loading'" :variant="selected.kind==='metric'?'metric-detail':selected.kind==='concern'?'concern-detail':'detail'" label="正在加载记录详情" :rows="3"/>
+            <p v-else-if="detailMissing" class="empty-inline">此记录当前不可见或已删除。</p>
           </template>
           <template v-else>
             <HealthPageHeader title="身体健康" subtitle="健康问题、指标、事件与资料"
               :agent-open="agentOpen" :agent-enabled="!liveMode"
+              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||relationBusy" @refresh="refreshCurrentView()"
               
               @ask="openAgent">
               <template #actions>
@@ -2111,10 +2134,18 @@ function detailName(kind: HealthKind,record:any) {
             <nav class="sub-navigation" aria-label="身体页面导航">
               <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="changeBodyTab(item.id)">{{ item.title }}</button>
             </nav>
-            <HealthSkeleton v-if="liveMode&&liveStatus!=='ready'&&!isPagedSection(bodyTab)" label="正在加载当前页面的数据" :rows="6"/>
-            <div v-else-if="bodyTab==='focus'&&(!liveMode||viewHasData)" class="body-overview">
+            <div v-if="liveMode" class="health-query-status" aria-live="polite">
+                <span v-if="viewError" role="alert">{{ viewError }} <button type="button" class="inline-link" @click="refreshCurrentView()">重试</button></span>
+                <span v-else-if="rebuildRequired">已加载的记录较多，保留上次数据。 <button type="button" class="inline-link" @click="refreshCurrentView(true)">重新加载首批</button></span>
+                <span v-else-if="viewRefreshing||relationLoading&&relationReadState==='ready'">正在更新当前页面…</span>
+                <span v-else-if="viewUpdatedAt!==null">最近读取 {{ new Date(viewUpdatedAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }}</span>
+              </div>
+            <div v-if="bodyTab==='focus'" class="body-overview">
               <BodyOverview
                 :concerns="focusConcerns"
+                :loading="liveMode&&liveStatus==='loading'&&!viewHasData"
+                :error="liveMode&&!viewHasData?viewError:undefined"
+                v-model:search-text="focusSearch" @retry="refreshCurrentView()"
                 :bindings="bodyBindings"
                 :attention-by-concern="attentionByConcern"
                 :view="mapView"
@@ -2131,8 +2162,7 @@ function detailName(kind: HealthKind,record:any) {
                 <label class="search-field"><Search :size="17"/><input v-model="search" maxlength="100"
                   aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
               </div>
-              <div v-if="liveMode&&pagedRefreshing" class="save-progress" role="status"><span class="saving-spinner" aria-hidden="true"/>正在后台刷新…</div>
-              <div v-else-if="liveMode&&liveStatus==='loading'" class="save-progress" role="status"><span class="saving-spinner" aria-hidden="true"/>正在加载当前页面的数据…</div>
+              
               <div class="list-panel">
                 <template v-if="bodyTab==='metrics'">
                   <div class="metric-reference-filters" role="group" aria-label="按参考范围筛选健康指标">
@@ -2142,30 +2172,30 @@ function detailName(kind: HealthKind,record:any) {
                       @click="selectMetricReferenceFilter(option.value)">
                       {{ option.label }} <small v-if="metricSummariesReady">{{ metricReferenceCounts[option.value] }}</small>
                     </button>
-                  </div><HealthSkeleton v-if="liveMode&&liveStatus==='loading'" :label="metricReferenceFilter==='all'?'正在加载指标':'正在计算全部指标的参考范围'" :rows="5"/><button v-for="m in displayedMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ !metricRowReady(m.id)?(metricSummaryError?'读取失败':'加载中…'):metricRowLatest(m.id)?observationValue(metricRowLatest(m.id)!,m):'—' }}</strong>
+                  </div><HealthSkeleton v-if="liveMode&&liveStatus==='loading'" variant="metric" :label="metricReferenceFilter==='all'?'正在加载指标':'正在计算全部指标的参考范围'" :rows="5"/><button v-for="m in displayedMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ !metricRowReady(m.id)?(metricSummaryError?'读取失败':'加载中…'):metricRowLatest(m.id)?observationValue(metricRowLatest(m.id)!,m):'—' }}</strong>
                     <ReferenceIndicator v-if="metricRowReady(m.id)&&metricRowLatest(m.id)"
                       :comparison="referenceFor(metricRowLatest(m.id)!,m)?.comparison"/>
                   </span><ChevronRight :size="18"/></button>
                   <div v-if="(!liveMode||!usesPagedSection('metrics'))&&metricVisibleLimit<filteredMetrics.length" class="list-toolbar"><button class="quiet-button" type="button" @click="metricVisibleLimit+=40">显示更多指标（{{ Math.min(metricVisibleLimit,filteredMetrics.length) }} / {{ filteredMetrics.length }}）</button></div>
-                  <p v-if="(!liveMode||liveStatus==='ready')&&!pagedError&&!referenceError&&!pagedCursor&&!filteredMetrics.length" class="empty-inline metric-reference-empty">
+                  <p v-if="(!liveMode||viewHasData)&&!viewError&&!pagedError&&!referenceError&&!pagedCursor&&!filteredMetrics.length" class="empty-inline metric-reference-empty">
                     {{ search.trim()?'没有找到符合条件的指标。':metricReferenceFilter==='all'?'还没有指标，添加后可以查看测量变化。':'目前没有这类指标，可以切换其他筛选。' }}
                   </p>
                 </template>
                 <template v-if="bodyTab==='timeline'">
                   <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
-                    :partial="liveMode" :has-more="timelineMore" :loading="timelineLoading" :error="timelineError"
+                    :partial="liveMode" :has-more="timelineMore" :loading="timelineLoading" :ready="!liveMode||viewHasData" :error="timelineError"
                     @update:selected-kind="changeTimelineKind" @open="show"/>
                   <div v-if="liveMode&&timelineError" class="list-toolbar"><button class="quiet-button" type="button" @click="loadTimeline(timelineMore)">重试</button></div>
-                  <div v-else-if="liveMode&&timelineMore" class="list-toolbar"><button class="quiet-button" type="button" :disabled="timelineLoading" @click="loadTimeline(true)">{{ timelineLoading?'正在加载…':search.trim()?'继续搜索更早记录':'加载更多' }}</button></div>
+                  <div v-else-if="liveMode&&timelineMore&&!rebuildRequired" class="list-toolbar"><button class="quiet-button" type="button" :disabled="timelineLoading" @click="loadTimeline(true)">{{ timelineLoading?'正在加载…':search.trim()?'继续搜索更早记录':'加载更多' }}</button></div>
                 </template>
-                <HealthSkeleton v-if="liveMode&&bodyTab!=='metrics'&&usesPagedSection(bodyTab)&&liveStatus==='loading'" label="正在加载列表" :rows="5"/>
+                <HealthSkeleton v-if="liveMode&&bodyTab!=='metrics'&&usesPagedSection(bodyTab)&&liveStatus==='loading'" :variant="bodyTab==='regimens'?'regimen':'list'" label="正在加载列表" :rows="5"/>
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
                 <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedError" role="alert" class="empty-inline">{{ pagedError }} <button type="button" class="inline-link" @click="loadPagedSection(bodyTab,Boolean(pagedCursor)&&!pagedError.startsWith('刷新失败'))">重试</button></div>
                 <div v-if="liveMode&&bodyTab==='metrics'&&metricReferenceFilter!=='all'&&referenceError" role="alert" class="empty-inline">{{ referenceError }} <button type="button" class="inline-link" @click="loadReferenceIndex">重试统计</button></div>
                 <div v-if="liveMode&&bodyTab==='metrics'&&metricSummaryError" role="alert" class="empty-inline">{{ metricSummaryError }} <button class="inline-link" type="button" @click="loadPagedSection('metrics')">重新加载指标</button></div>
-                <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedCursor&&!pagedError&&!metricSummaryError" class="list-toolbar"><button class="quiet-button" type="button"  :disabled="pagedLoadingMore||metricSummaryLoading||pagedRefreshing" @click="loadPagedSection(bodyTab,true)">{{ pagedLoadingMore?'正在加载更多…':metricSummaryLoading?'正在读取最新值…':'加载更多' }}</button></div>
-                <div v-if="liveStatus!=='loading'&&!pagedError&&!pagedCursor&&((bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
+                <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedCursor&&!rebuildRequired&&!pagedError&&!metricSummaryError" class="list-toolbar"><button class="quiet-button" type="button"  :disabled="pagedLoadingMore||metricSummaryLoading||pagedRefreshing" @click="loadPagedSection(bodyTab,true)">{{ pagedLoadingMore?'正在加载更多…':metricSummaryLoading?'正在读取最新值…':'加载更多' }}</button></div>
+                <div v-if="(!liveMode||viewHasData)&&!viewError&&!pagedError&&!pagedCursor&&((bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
               </div>
               <p v-if="bodyTab==='documents'&&!liveMode" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
             </template>
@@ -2176,6 +2206,7 @@ function detailName(kind: HealthKind,record:any) {
           <HealthPageHeader :title="activeTab==='food'?'饮食管理':'运动管理'"
               subtitle="逐步连接日常习惯与身体变化"
               :agent-open="agentOpen" :agent-enabled="!liveMode"
+              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||relationBusy" @refresh="refreshCurrentView()"
             
             @ask="openAgent"/>
           <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('focus')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
