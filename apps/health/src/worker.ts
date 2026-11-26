@@ -378,7 +378,9 @@ async function handleHealthPage(fetchImpl:Fetcher,core:string,bearer:string,spac
     !(payload.data.nextCursor===null||typeof payload.data.nextCursor==='string')||
     !payload.data.items.every(record=>object(record)&&typeof record.id==='string'&&
       (model==='health_metric'||record.subjectPersonId===scope.personId)&&
-      (model!=='health_observation'||record.metricId===params.get('metricId'))))return json('invalid_core_response',502)
+      (model!=='health_observation'||!params.has('metricId')||record.metricId===params.get('metricId'))&&
+      (model!=='health_observation'||!params.has('from')||typeof record.observedDate==='string'&&record.observedDate>=params.get('from')!)&&
+      (model!=='health_observation'||!params.has('to')||typeof record.observedDate==='string'&&record.observedDate<=params.get('to')!)))return json('invalid_core_response',502)
   return Response.json({data:{personId:scope.personId,items:payload.data.items,nextCursor:payload.data.nextCursor}},
     {headers:{'Cache-Control':'private, no-store'}})
 }
