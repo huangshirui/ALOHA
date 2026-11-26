@@ -200,7 +200,7 @@ watch(notice,(message)=>{
   if(message)noticeTimeout=setTimeout(()=>{if(notice.value===message)notice.value=''},
     noticeIsError.value?7500:4200)
 })
-onBeforeUnmount(()=>{if(noticeTimeout)clearTimeout(noticeTimeout);metricHistoryController?.abort()})
+onBeforeUnmount(()=>{if(noticeTimeout)clearTimeout(noticeTimeout);cancelMetricDetail()})
 const agentSession = useDemoAgentSession()
 const agentOpen = agentSession.open
 const agentMessages = agentSession.messages
@@ -254,6 +254,39 @@ const referenceError=ref('')
 const metricSummariesReady=computed(()=>!liveMode||referenceTerm.value===search.value.trim())
 function invalidateReferenceIndex(){referenceTerm.value=null;referenceExpiresAt=0;referenceMetrics.value=[];referenceLatest.clear();referenceError.value=''}
 let metricHistoryController:AbortController|null=null
+let metricTrendController:AbortController|null=null
+const metricHistoryRows=ref<Observation[]>([])
+const metricHistoryCursor=ref<string|null>(null)
+const metricHistoryReady=ref(false)
+const metricHistoryLoading=ref(false)
+const metricHistoryError=ref('')
+const metricTrendRows=ref<Observation[]>([])
+const metricTrendLoading=ref(false)
+const metricTrendError=ref('')
+const trendRange=ref<'1'|'3'|'5'|'all'>('3')
+const metricDetailLatest=computed(()=>liveMode?metricHistoryRows.value[0]:latestFor(current.value?.id??''))
+function cancelMetricDetail(){
+  metricHistoryController?.abort();metricHistoryController=null
+  metricTrendController?.abort();metricTrendController=null
+  metricHistoryLoading.value=false;metricTrendLoading.value=false
+}
+function resetMetricDetail(){
+  cancelMetricDetail()
+  metricHistoryRows.value=[];metricHistoryCursor.value=null;metricHistoryReady.value=false;metricHistoryError.value=''
+  metricTrendRows.value=[];metricTrendError.value=''
+}
+function trendDateWindow(date:string,range:typeof trendRange.value){
+  if(range==='all')return {}
+  const end=new Date(date+'T00:00:00Z')
+  if(!Number.isFinite(end.getTime()))throw Error('最新观测日期无效')
+  const start=new Date(end);start.setUTCFullYear(start.getUTCFullYear()-Number(range))
+  return {from:start.toISOString().slice(0,10),to:date}
+}
+const trendWindowLabel=computed(()=>{
+  const date=metricDetailLatest.value?.observedDate
+  if(trendRange.value==='all'||!date)return '全部历史'
+  try{const window=trendDateWindow(date,trendRange.value);return window.from+' 至 '+window.to}catch{return '日期范围无效'}
+})
 type PagedSection='metrics'|'documents'|'regimens'
 const pagedSectionKind={metrics:'metric',documents:'document',regimens:'regimen'} as const
 const metricPageLatest=reactive(new Map<string,Observation>())
@@ -413,7 +446,7 @@ let relationSequence=0
 let liveLoadSequence=0
 function clearLiveRecords() {
   ++liveLoadSequence
-  metricHistoryController?.abort();metricHistoryController=null
+  resetMetricDetail()
   cancelPage();pagedIds.value=[];pagedCursor.value=null;pagedError.value='';metricPageLatest.clear();metricPageReady.clear();metricSummaryError.value=''
   ++relationSequence
   resetConcernReads()
@@ -436,7 +469,7 @@ async function loadPagedSection(section:PagedSection,more=false){
   if(!selectedSpaceId.value)return
   if(more&&(!pagedCursor.value||pagedLoadingMore.value||pagedRefreshing.value||metricSummaryLoading.value||metricSummaryError.value))return
   cancelPage();cancelSnapshot()
-  metricHistoryController?.abort();metricHistoryController=null
+  cancelMetricDetail()
   const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
   const controller=new AbortController();pageController=controller
   const kind=pagedSectionKind[section]
@@ -513,7 +546,7 @@ async function loadPagedSection(section:PagedSection,more=false){
 }
 async function loadTimeline(more=false){
   if(!selectedSpaceId.value||more&&(!timelineMore.value||timelineLoading.value))return
-  cancelPage();cancelSnapshot();metricHistoryController?.abort();metricHistoryController=null
+  cancelPage();cancelSnapshot();cancelMetricDetail()
   const controller=new AbortController();pageController=controller
   const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
   const valid=()=>requestId===liveLoadSequence&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
@@ -568,7 +601,7 @@ function changeTimelineKind(kind:TimelineFilter){
 async function loadReferenceIndex(){
   if(!selectedSpaceId.value)return
   cancelPage();cancelSnapshot()
-  metricHistoryController?.abort();metricHistoryController=null
+  cancelMetricDetail()
   const spaceId=selectedSpaceId.value,term=search.value.trim(),requestId=++liveLoadSequence
   if(referenceTerm.value===term&&Date.now()<referenceExpiresAt){liveStatus.value='ready';return}
   invalidateReferenceIndex()
@@ -616,21 +649,128 @@ async function loadReferenceIndex(){
     liveStatus.value='ready'
   }finally{if(valid())pageController=null}
 }
+async function loadMetricTrend(metricId:string){
+  metricTrendController?.abort()
+  const controller=new AbortController();metricTrendController=controller
+  const spaceId=selectedSpaceId.value,version=liveLoadSequence,range=trendRange.value
+  const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='metric'&&selected.value.id===metricId&&!controller.signal.aborted
+  metricTrendRows.value=[];metricTrendError.value='';metricTrendLoading.value=true
+  try{
+    const latest=metricHistoryRows.value[0]
+    if(!metricHistoryReady.value)throw Error('请先加载最新测量')
+    if(!latest)return
+    const window=trendDateWindow(latest.observedDate,range)
+    // A completed history page is a valid complete source for the selected window.
+    if(metricHistoryCursor.value===null){
+      metricTrendRows.value=metricHistoryRows.value.filter(row=>!window.from||row.observedDate>=window.from)
+      return
+    }
+    let cursor:string|null=null
+    const rows:Observation[]=[]
+    for(let i=0;i<40;i++){
+      const params=new URLSearchParams({limit:'50',metricId,...window})
+      if(cursor)params.set('cursor',cursor)
+      const page=await getHealthPage(spaceId,'health_observation',params,controller.signal)
+      if(!valid())return
+      assertOwnScope(page.personId)
+      rows.push(...page.items.map(raw=>decodeHealthRecord('observation',raw) as Observation))
+      mergeHealthRecords('observation',page.items)
+      cursor=page.nextCursor
+      if(!cursor)break
+    }
+    if(cursor)throw Error('该时间范围记录较多，请缩短趋势时间范围')
+    if(valid())metricTrendRows.value=[...new Map(rows.map(row=>[row.id,row])).values()]
+  }catch(e){
+    if(!valid()||optionDenied(e))return
+    metricTrendError.value=e instanceof Error?e.message:'趋势读取失败'
+  }finally{if(valid()){metricTrendLoading.value=false;metricTrendController=null}}
+}
+async function loadMetricHistory(metricId:string,more=false){
+  if(!selectedSpaceId.value||more&&(!metricHistoryCursor.value||metricHistoryLoading.value))return
+  metricHistoryController?.abort()
+  const controller=new AbortController();metricHistoryController=controller
+  const spaceId=selectedSpaceId.value,version=liveLoadSequence
+  const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='metric'&&selected.value.id===metricId&&!controller.signal.aborted
+  if(!more){metricHistoryReady.value=false;metricHistoryRows.value=[];metricHistoryCursor.value=null;metricTrendRows.value=[];metricTrendError.value=''}
+  metricHistoryLoading.value=true;metricHistoryError.value=''
+  try{
+    const params=new URLSearchParams({limit:'30',metricId})
+    if(more&&metricHistoryCursor.value)params.set('cursor',metricHistoryCursor.value)
+    const page=await getHealthPage(spaceId,'health_observation',params,controller.signal)
+    if(!valid())return
+    assertOwnScope(page.personId)
+    const rows=page.items.map(raw=>decodeHealthRecord('observation',raw) as Observation)
+    mergeHealthRecords('observation',page.items)
+    metricHistoryRows.value=[...new Map([...metricHistoryRows.value,...rows].map(row=>[row.id,row])).values()]
+    metricHistoryCursor.value=page.nextCursor;metricHistoryReady.value=true
+  }catch(e){
+    if(!valid()||optionDenied(e))return
+    metricHistoryError.value=e instanceof Error?e.message:'历史记录读取失败'
+  }finally{if(valid()){metricHistoryLoading.value=false;metricHistoryController=null}}
+}
+async function retryMetricHistory(metricId:string){
+  const more=metricHistoryReady.value&&!!metricHistoryCursor.value
+  await loadMetricHistory(metricId,more)
+  if(!more&&metricHistoryReady.value&&selected.value?.id===metricId&&current.value?.valueType==='number')void loadMetricTrend(metricId)
+}
+function changeTrendRange(){
+  if(selected.value?.kind==='metric'&&metricHistoryReady.value)void loadMetricTrend(selected.value.id)
+}
+async function loadMetricDetail(metricId:string){
+  cancelPage();cancelSnapshot();resetMetricDetail()
+  const spaceId=selectedSpaceId.value,version=++liveLoadSequence
+  const controller=new AbortController();snapshotController=controller
+  const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='metric'&&selected.value.id===metricId&&!controller.signal.aborted
+  liveStatus.value=current.value?'ready':'loading'
+  try{
+    const header=readSelectedRows(spaceId,'metric',[metricId],controller.signal,valid).then(()=>{
+      if(valid()){liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'}
+    })
+    await Promise.all([header,loadMetricHistory(metricId)])
+    if(valid()&&metricHistoryReady.value&&current.value?.valueType==='number')void loadMetricTrend(metricId)
+  }catch(e){
+    if(!valid()||optionDenied(e))return
+    cancelMetricDetail()
+    liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'指标读取失败'
+  }finally{if(valid())snapshotController=null}
+}
+async function loadSelectedDetail(kind:'observation'|'regimen'|'assessment',id:string){
+  cancelPage();cancelSnapshot();cancelMetricDetail()
+  const spaceId=selectedSpaceId.value,version=++liveLoadSequence
+  const controller=new AbortController();snapshotController=controller
+  const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind===kind&&selected.value.id===id&&!controller.signal.aborted
+  liveStatus.value='loading'
+  try{
+    const records=await readSelectedRows(spaceId,kind,[id],controller.signal,valid)
+    if(!valid())return
+    const row=records[0]
+    if(!row)throw Error('记录读取失败')
+    await Promise.all([
+      kind==='observation'?readSelectedRows(spaceId,'metric',[String(row.metricId??'')],controller.signal,valid):Promise.resolve([]),
+      kind==='observation'||kind==='regimen'?readSelectedRows(spaceId,'document',[String(row.sourceDocumentId??'')],controller.signal,valid):Promise.resolve([]),
+    ])
+    if(valid()){liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'}
+  }catch(e){if(valid()&&!optionDenied(e)){liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'记录读取失败'}}
+  finally{if(valid())snapshotController=null}
+}
 async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   if(!selectedSpaceId.value)return
   if(refresh)clearLiveRecords()
   expireModelCache();cancelSnapshot()
   if(section==='timeline'){await loadTimeline();return}
+  if(section==='detail'&&selected.value?.kind==='metric'){await loadMetricDetail(selected.value.id);return}
+  if(section==='detail'&&selected.value&&['observation','regimen','assessment'].includes(selected.value.kind)){
+    await loadSelectedDetail(selected.value.kind as 'observation'|'regimen'|'assessment',selected.value.id);return
+  }
   if(section==='metrics'&&metricReferenceFilter.value!=='all'){await loadReferenceIndex();return}
   if(usesPagedSection(section)){await loadPagedSection(section);return}
   cancelPage();pagedError.value='';pagedCursor.value=null;metricSummaryError.value=''
-  metricHistoryController?.abort();metricHistoryController=null
-  const metricDetail=section==='detail'&&selected.value?.kind==='metric'&&!loadedKinds.has('observation')?selected.value.id:null
+  cancelMetricDetail()
   const requested=section==='detail'
     ? detailKinds[selected.value?.kind??'concern'] : sectionKinds[section]
-  const missing=requested.filter(kind=>!loadedKinds.has(kind)&&!(metricDetail&&kind==='observation'))
+  const missing=requested.filter(kind=>!loadedKinds.has(kind))
   const requestId=++liveLoadSequence
-  if(!missing.length&&subjectPersonId.value&&!metricDetail) {
+  if(!missing.length&&subjectPersonId.value) {
     liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return
   }
   const spaceId=selectedSpaceId.value
@@ -638,29 +778,6 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   liveStatus.value='loading'
   liveMessage.value='正在加载'+(section==='focus'?'关注事项':section==='metrics'?'健康指标':section==='timeline'?'健康时间线':section==='documents'?'健康资料':section==='regimens'?'健康方案':'关联记录')+'…'
   try {
-    // A single metric's history must not fetch the entire observation collection.
-    // Complete the selected history before rendering the existing all-history trend.
-    if(metricDetail){
-      const controller=new AbortController();metricHistoryController=controller
-      const records:Observation[]=[]
-      let cursor:string|null=null
-      for(let i=0;i<40;i++){
-        const params=new URLSearchParams({limit:'50',metricId:metricDetail})
-        if(cursor)params.set('cursor',cursor)
-        const page=await getHealthPage(spaceId,'health_observation',params,controller.signal)
-        if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
-        if(subjectPersonId.value&&page.personId!==subjectPersonId.value)throw new HealthApiError(403,null)
-        if(!page.personId||!Array.isArray(page.items)||!(page.nextCursor===null||typeof page.nextCursor==='string'))throw Error('健康观测响应不完整')
-        subjectPersonId.value=page.personId
-        records.push(...page.items.map(record=>decodeHealthRecord('observation',record) as Observation))
-        cursor=page.nextCursor
-        if(!cursor)break
-      }
-      if(cursor)throw Error('该指标历史记录过多，请稍后重试')
-      const other=demo.observations.filter(record=>record.metricId!==metricDetail)
-      demo.observations.splice(0,demo.observations.length,...other,...records)
-      metricHistoryController=null
-    }
     if(!missing.length){liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return}
     const snapshot=await getHealthSnapshot(spaceId,missing.map(kind=>healthModelKey[kind]),snapshotAbort.signal)
     if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
@@ -953,7 +1070,7 @@ function location(): HealthLocation {
 }
 function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
-  ++liveLoadSequence;metricHistoryController?.abort();metricHistoryController=null;cancelPage();cancelSnapshot()
+  ++liveLoadSequence;cancelMetricDetail();cancelPage();cancelSnapshot()
   ++relationSequence;resetConcernReads();relationLoading.value=false;relationReadState.value='idle'
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
@@ -1052,6 +1169,7 @@ async function clearConcernPoint(id:string) {
   } catch(e) {notice.value=e instanceof Error?e.message:'移除定位失败'}
 }
 const formOptionsLoading=ref(false)
+const formOptionsError=ref('')
 let formOptionsSequence=0
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if(saving.value)return
@@ -1077,12 +1195,12 @@ async function loadFormOptions(kind:HealthKind){
   const version=++formOptionsSequence
   const valid=()=>version===formOptionsSequence&&sheet.value==='edit'&&editKind.value===kind
   const kinds:HealthKind[]=kind==='observation'?['metric','document']:kind==='document'?['event']:kind==='regimen'?['document']:[]
-  formOptionsLoading.value=true
-  try{await ensureOptionKinds(kinds,valid)}catch(e){if(valid()&&!optionDenied(e))formError.value=e instanceof Error?e.message:'表单选项加载失败'}
+  formOptionsLoading.value=true;formOptionsError.value=''
+  try{await ensureOptionKinds(kinds,valid)}catch(e){if(valid()&&!optionDenied(e))formOptionsError.value=e instanceof Error?e.message:'表单选项加载失败'}
   finally{if(version===formOptionsSequence)formOptionsLoading.value=false}
 }
 async function formSave() {
-  if(saving.value||quickMetricSaving.value||formOptionsLoading.value)return
+  if(saving.value||quickMetricSaving.value||formOptionsLoading.value||formOptionsError.value)return
   formError.value=''
   const v=draft.value, kind=editKind.value
   const mandatory: Record<HealthKind,string[]> = {
@@ -1195,7 +1313,8 @@ async function formSave() {
 async function removeCurrent() {
   if(!selected.value||!current.value) return
   const kind=selected.value.kind,id=selected.value.id
-  if(kind==='metric' && demo.observations.some(o=>o.metricId===id)) {notice.value='该指标已有测量记录，请先保留指标与历史数据。';return}
+  if(liveMode&&kind==='metric'&&(!metricHistoryReady.value||metricHistoryLoading.value||metricHistoryError.value)){notice.value='请先确认该指标的测量记录已加载。';return}
+  if(kind==='metric' && (liveMode?metricHistoryRows.value.length>0:demo.observations.some(o=>o.metricId===id))) {notice.value='该指标已有测量记录，请先保留指标与历史数据。';return}
   if(liveMode && kind==='document' && (
     demo.observations.some(o=>o.sourceDocumentId===id) ||
     demo.regimens.some(r=>r.sourceDocumentId===id) ||
@@ -1577,29 +1696,41 @@ function detailName(kind: HealthKind,record:any) {
               <section class="ui-card detail-primary">
                 <div class="metric-summary">
                   <div class="metric-hero">
-                    <span class="metric-value-row"><strong>{{ latestFor(current.id) ? observationValue(latestFor(current.id)!,current) : '暂无记录' }}</strong>
-                      <ReferenceIndicator v-if="latestFor(current.id)" :comparison="referenceFor(latestFor(current.id)!,current)?.comparison"/>
+                    <span class="metric-value-row"><strong>{{ liveMode&&!metricHistoryReady?(metricHistoryError?'读取失败':'加载中…'):metricDetailLatest ? observationValue(metricDetailLatest,current) : '暂无记录' }}</strong>
+                      <ReferenceIndicator v-if="metricDetailLatest&&(!liveMode||metricHistoryReady)" :comparison="referenceFor(metricDetailLatest,current)?.comparison"/>
                     </span>
-                    <span>{{ latestFor(current.id) ? '最新记录 · '+displayDate(latestFor(current.id)!.observedDate) : '还没有观测记录' }}</span>
+                    <span>{{ liveMode&&!metricHistoryReady?'正在确认最新记录':metricDetailLatest ? '最新记录 · '+displayDate(metricDetailLatest.observedDate) : '还没有观测记录' }}</span>
                   </div>
                   <button class="primary-button metric-add-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
                 </div>
-                <div class="card-heading metric-chart-heading"><h2>变化趋势</h2></div>
+                <div class="card-heading metric-chart-heading"><h2>变化趋势</h2>
+                   <label v-if="liveMode&&current.valueType==='number'" class="quiet-caption">时间范围
+                     <select v-model="trendRange" aria-label="趋势时间范围" :disabled="!metricHistoryReady" @change="changeTrendRange">
+                       <option value="1">近1年</option><option value="3">近3年</option><option value="5">近5年</option><option value="all">全部历史</option>
+                     </select>
+                   </label>
+                 </div>
+                 <p v-if="liveMode&&metricHistoryReady&&current.valueType==='number'" class="helper-copy">截至最新观测日 · {{ trendWindowLabel }}</p>
                 <p v-if="current.valueType==='number' && (current.referenceLow!=null || current.referenceHigh!=null)" class="reference-range-note">
                   参考范围：{{ metricRangeLabel(current) }} · {{ current.referenceSource||'来源未注明' }}
                   <span>仅用于比较，不代表医学诊断。</span>
                 </p>
-                <MetricTrend v-if="current.valueType==='number'"
+                <HealthSkeleton v-if="liveMode&&current.valueType==='number'&&(!metricHistoryReady||metricTrendLoading)&&!metricHistoryError" label="正在加载完整趋势区间" :rows="3"/>
+                 <p v-else-if="liveMode&&current.valueType==='number'&&(metricTrendError||metricHistoryError&&!metricHistoryReady)" role="alert" class="empty-inline">{{ metricTrendError||metricHistoryError }} <button class="inline-link" type="button" @click="metricHistoryReady?loadMetricTrend(current.id):retryMetricHistory(current.id)">重试</button></p>
+                 <MetricTrend v-else-if="current.valueType==='number'"
                   :metric-name="current.name" :unit="current.defaultUnit"
                   :reference-low="current.referenceLow" :reference-high="current.referenceHigh"
                   :reference-source="current.referenceSource"
-                  :observations="demo.observations.filter(o=>o.metricId===current.id && (o.unit||current.defaultUnit)===current.defaultUnit)"
+                  :observations="(liveMode?metricTrendRows:demo.observations).filter(o=>o.metricId===current.id && (o.unit||current.defaultUnit)===current.defaultUnit)"
                   @open-observation="show('observation',$event)"/>
                 <p v-else class="helper-copy">该指标记录的是{{ current.valueType==='text'?'文字':'是或否' }}，可在右侧查看历史记录，不适合用数值趋势图展示。</p>
               </section>
-              <section class="ui-card metric-history"><div class="card-heading"><h2>历史记录</h2><span class="quiet-caption">{{ demo.observations.filter(o=>o.metricId===current.id).length }} 条</span></div>
-                <button v-for="o in demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><span class="metric-reading-inline"><b>{{ observationValue(o,current) }}</b><ReferenceIndicator :comparison="referenceFor(o,current)?.comparison"/></span><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
-                <p v-if="!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
+              <section class="ui-card metric-history"><div class="card-heading"><h2>历史记录</h2><span v-if="!liveMode||metricHistoryReady" class="quiet-caption">{{ liveMode&&metricHistoryCursor?'已加载 ':'' }}{{ liveMode?metricHistoryRows.length:demo.observations.filter(o=>o.metricId===current.id).length }} 条</span></div>
+                <button v-for="o in (liveMode?metricHistoryRows:demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate)))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><span class="metric-reading-inline"><b>{{ observationValue(o,current) }}</b><ReferenceIndicator :comparison="referenceFor(o,current)?.comparison"/></span><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
+                <HealthSkeleton v-if="liveMode&&metricHistoryLoading&&!metricHistoryReady" label="正在加载历史记录" :rows="3"/>
+                 <p v-else-if="liveMode&&metricHistoryError" role="alert" class="empty-inline">{{ metricHistoryError }} <button class="inline-link" type="button" @click="retryMetricHistory(current.id)">重试</button></p>
+                 <p v-else-if="liveMode?metricHistoryReady&&!metricHistoryRows.length:!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
+                 <button v-if="liveMode&&metricHistoryCursor&&!metricHistoryError" type="button" class="quiet-button" :disabled="metricHistoryLoading" @click="loadMetricHistory(current.id,true)">{{ metricHistoryLoading?'正在加载…':'加载更早记录' }}</button>
               </section>
             </div>
             <div v-else class="detail-columns">
@@ -1815,7 +1946,7 @@ function detailName(kind: HealthKind,record:any) {
             <div class="metric-selector-field">
               <span class="field-label">记录哪一项 <span class="required-mark" aria-hidden="true">*</span></span>
               <button type="button" class="metric-picker-toggle" :aria-expanded="metricPickerOpen" aria-controls="health-metric-options"
-                :disabled="quickMetricSaving" @click="metricPickerOpen=!metricPickerOpen;quickMetricOpen=false">
+                :disabled="quickMetricSaving||formOptionsLoading||!!formOptionsError" @click="metricPickerOpen=!metricPickerOpen;quickMetricOpen=false">
                 <span>{{ demo.metrics.find(m=>m.id===draft.metricId)?.name||'选择健康指标' }}</span><ChevronDown :size="17"/>
               </button>
               <div v-if="metricPickerOpen" id="health-metric-options" class="metric-picker-panel">
@@ -1861,7 +1992,7 @@ function detailName(kind: HealthKind,record:any) {
               <label>范围来源<input v-model="draft.referenceSource" placeholder="例如：本次化验报告"/></label>
             </fieldset>
             <label><span class="field-label">测量日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.observedDate" type="date" required/></label>
-            <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
+            <label>参考资料<select v-model="draft.sourceDocumentId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='event'">
@@ -1880,7 +2011,7 @@ function detailName(kind: HealthKind,record:any) {
             <label v-if="!editId"><span class="field-label">原始文件 <span class="required-mark" aria-hidden="true">*</span></span><input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" @change="pickFile"/><small v-if="liveMode">支持 PDF、PNG、JPEG、WebP，单个文件最多 15 MB。保存时会安全上传到 LifeSpace。</small><small v-else>仅演示文件名。</small></label><p v-else-if="liveMode" class="helper-copy">原文件已保存，无法在修改资料时替换。如需另一份文件，请新建资料。</p>
             <p v-if="draft.fileName" class="file-picked"><FileText :size="16"/>{{ draft.fileName }}</p>
             <div class="form-two"><label>资料日期<input v-model="draft.issuedDate" type="date"/></label><label>出具机构<input v-model="draft.issuerName" placeholder="选填"/></label></div>
-            <label>相关健康事件<select v-model="draft.eventId"><option value="">不关联</option><option v-for="e in demo.events" :key="e.id" :value="e.id">{{ e.summary }}</option></select></label>
+            <label>相关健康事件<select v-model="draft.eventId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">不关联</option><option v-for="e in demo.events" :key="e.id" :value="e.id">{{ e.summary }}</option></select></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='assessment'">
@@ -1899,13 +2030,13 @@ function detailName(kind: HealthKind,record:any) {
             <div class="form-two"><label>开始日期<input v-model="draft.startDate" type="date"/></label><label>结束日期<input v-model="draft.endDate" type="date"/></label></div>
             <label>需要重复提醒吗？<select v-model="draft.recurrence"><option value="none">不重复</option><option value="daily">每天</option><option value="weekly">每周</option></select></label>
             <label v-if="draft.recurrence!=='none'"><span class="field-label">首次执行日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.firstDueDate" required type="date"/></label>
-            <label>参考资料<select v-model="draft.sourceDocumentId"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
+            <label>参考资料<select v-model="draft.sourceDocumentId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>方案来源<input v-model="draft.sourceNote" placeholder="例如：个人计划"/></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
             <p v-if="!liveMode" class="helper-copy">重复提醒尚未接入演示任务。</p>
           </template>
           <fieldset v-if="!liveMode&&editKind!=='metric'&&editKind!=='concern'" class="check-group"><legend>相关健康问题（可多选）</legend><label v-for="c in demo.concerns" :key="c.id" class="checkbox-line"><input v-model="draft.concernIds" type="checkbox" :value="c.id"/>{{ c.name }}</label><p v-if="!demo.concerns.length" class="helper-copy">可以先创建健康问题，后续再关联。</p></fieldset>
-          <p v-if="formOptionsLoading" class="helper-copy" role="status">正在读取可选关联记录…</p><p v-if="formError" class="form-error" role="alert"><Info :size="16"/>{{ formError }}</p>
+          <p v-if="formOptionsLoading" class="helper-copy" role="status">正在读取可选关联记录…</p><p v-if="formOptionsError" class="form-error" role="alert">{{ formOptionsError }} <button type="button" class="inline-link" @click="loadFormOptions(editKind)">重试选项加载</button></p><p v-if="formError" class="form-error" role="alert"><Info :size="16"/>{{ formError }}</p>
           <div v-if="saving && uploadProgress" class="upload-progress" role="status" aria-live="polite" aria-label="文档上传状态">
             <div class="upload-progress-text">
               <span>{{ uploadProgress.phase==='uploading'?'正在上传文件':'文件已发送，正在保存资料' }}</span>
@@ -1916,7 +2047,7 @@ function detailName(kind: HealthKind,record:any) {
             <progress v-else-if="uploadProgress.phase==='processing'" value="100" max="100" aria-label="文件已传输，正在保存"/>
             <p v-else class="helper-copy">正在传输文件，等待浏览器报告字节进度…</p>
           </div>
-          <div class="form-actions"><button type="button" class="quiet-button" :disabled="saving" @click="closeSheet">取消</button><button type="submit" class="primary-button" :disabled="saving||formOptionsLoading" :aria-busy="saving"><span v-if="saving" class="saving-spinner" aria-hidden="true"/><Check v-else :size="17"/> {{ saving?'正在保存…':editId?'保存修改':'保存记录' }}</button></div>
+          <div class="form-actions"><button type="button" class="quiet-button" :disabled="saving" @click="closeSheet">取消</button><button type="submit" class="primary-button" :disabled="saving||formOptionsLoading||!!formOptionsError" :aria-busy="saving"><span v-if="saving" class="saving-spinner" aria-hidden="true"/><Check v-else :size="17"/> {{ saving?'正在保存…':editId?'保存修改':'保存记录' }}</button></div>
           <p v-if="!liveMode" class="privacy-note"><ShieldCheck :size="15"/> 当前是演示数据，刷新后将恢复示例。</p>
         </form>
 
