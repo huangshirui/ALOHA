@@ -671,7 +671,13 @@ async function refreshConcernLinks(concernId:string){
     concernLinks.value=response.items
     relationReadState.value='ready'
   }catch(e){
-    if(version===relationSequence){relationReadState.value='error';relationReadError.value=e instanceof Error?e.message:'关联读取失败'}
+    if(version===relationSequence){
+      if(e instanceof HealthApiError&&[401,403].includes(e.status)){
+        clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e.message
+        return
+      }
+      relationReadState.value='error';relationReadError.value=e instanceof Error?e.message:'关联读取失败'
+    }
   }finally{if(version===relationSequence)relationLoading.value=false}
 }
 async function addConcernLink(){
