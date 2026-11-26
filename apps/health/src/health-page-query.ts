@@ -52,5 +52,5 @@ export function metricSummaryQuery(personId:string,ids:string[],cursor:string|nu
     {field:'subjectPersonId',op:'contains',value:personId},
     {or:ids.map(id=>({field:'metricId',op:'contains',value:id}))},
   ]},sort:[{field:'observedDate',direction:'desc'},{field:'updatedAt',direction:'desc'}],
-    page:{limit:200,cursor}}
+    page:{limit:50,cursor}}
 }

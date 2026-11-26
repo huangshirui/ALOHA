@@ -174,7 +174,7 @@ async function saveQuickMetric(){
       ?await createHealthRecord<HealthRecord>(selectedSpaceId.value,'health_metric',fields)
       :({id:'demo-'+(++nextRecordId),version:1,...fields} as HealthRecord)
     const metric=decodeHealthRecord('metric',record) as Metric
-    if(liveMode)pageCache.clear()
+    if(liveMode){pageCache.clear();invalidateReferenceIndex()}
     demo.metrics.unshift(metric)
     chooseObservationMetric(metric)
     quickMetricOpen.value=false
@@ -246,7 +246,13 @@ const pagedRefreshing=ref(false)
 let snapshotController:AbortController|null=null
 function cancelSnapshot(){snapshotController?.abort();snapshotController=null}
 const metricCatalogAvailable=computed(()=>liveMode&&bodyTab.value==='metrics'&&!selected.value&&loadedKinds.has('metric'))
-const metricSummariesReady=computed(()=>!liveMode||(loadedKinds.has('metric')&&loadedKinds.has('observation')))
+const referenceMetrics=ref<Metric[]>([])
+const referenceLatest=reactive(new Map<string,Observation>())
+const referenceTerm=ref<string|null>(null)
+let referenceExpiresAt=0
+const referenceError=ref('')
+const metricSummariesReady=computed(()=>!liveMode||referenceTerm.value===search.value.trim())
+function invalidateReferenceIndex(){referenceTerm.value=null;referenceExpiresAt=0;referenceMetrics.value=[];referenceLatest.clear();referenceError.value=''}
 let metricHistoryController:AbortController|null=null
 type PagedSection='metrics'|'documents'|'regimens'
 const pagedSectionKind={metrics:'metric',documents:'document',regimens:'regimen'} as const
@@ -266,12 +272,12 @@ let timelineStreams:TimelineStream[]=[]
 let pageController:AbortController|null=null
 let pageSearchTimer:ReturnType<typeof setTimeout>|undefined
 const isPagedSection=(section:string):section is PagedSection=>section==='metrics'||section==='documents'||section==='regimens'
-const usesPagedSection=(section:string):section is PagedSection=>isPagedSection(section)&&(section!=='metrics'||(metricReferenceFilter.value==='all'&&!metricSummariesReady.value))
+const usesPagedSection=(section:string):section is PagedSection=>isPagedSection(section)&&(section!=='metrics'||metricReferenceFilter.value==='all')
 function selectMetricReferenceFilter(filter:MetricReferenceFilter){
   if(metricReferenceFilter.value===filter)return
   expireModelCache()
   metricReferenceFilter.value=filter
-  if(liveMode&&!metricSummariesReady.value)void loadLiveRecords('metrics',false,filter!=='all')
+  if(liveMode)void loadLiveRecords('metrics')
 }
 function cancelPage(){
   pageController?.abort();pageController=null
@@ -280,12 +286,12 @@ function cancelPage(){
 }
 onBeforeUnmount(()=>{cancelPage();cancelSnapshot();pageCache.clear()})
 watch(search,()=>{
-  if(!liveMode||selected.value||(!usesPagedSection(bodyTab.value)&&bodyTab.value!=='timeline')||activeTab.value!=='body')return
+  if(!liveMode||selected.value||(!usesPagedSection(bodyTab.value)&&bodyTab.value!=='timeline'&&bodyTab.value!=='metrics')||activeTab.value!=='body')return
   cancelPage()
   ++liveLoadSequence
   pagedIds.value=[];pagedCursor.value=null;pagedError.value='';metricPageLatest.clear();metricPageReady.clear();metricSummaryError.value=''
   liveStatus.value='loading'
-  pageSearchTimer=setTimeout(()=>{pageSearchTimer=undefined;if(bodyTab.value==='timeline')void loadTimeline();else void loadPagedSection(bodyTab.value as PagedSection)},250)
+  pageSearchTimer=setTimeout(()=>{pageSearchTimer=undefined;if(bodyTab.value==='timeline')void loadTimeline();else if(bodyTab.value==='metrics'&&metricReferenceFilter.value!=='all')void loadReferenceIndex();else void loadPagedSection(bodyTab.value as PagedSection)},250)
 },{flush:'sync'})
 const concernLinks=ref<ConcernRelation[]>([])
 const relationLoading=ref(false)
@@ -417,7 +423,7 @@ function clearLiveRecords() {
   relationError.value=''
   relationTargetId.value=''
   loadedKinds.clear();loadedAt.clear();pageCache.clear();cancelSnapshot()
-  timelineEntries.value=[];timelineStreams=[];timelineMore.value=false;timelineError.value=''
+  timelineEntries.value=[];timelineStreams=[];timelineMore.value=false;timelineError.value='';invalidateReferenceIndex()
   for(const kind of healthKinds) getList(kind).splice(0)
   // Never retain another Space/Person's coordinates or attention when switching.
   bodyBindings.value=[]
@@ -559,12 +565,64 @@ function changeTimelineKind(kind:TimelineFilter){
   timelineKind.value=kind
   if(liveMode)void loadTimeline()
 }
-async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false,fullMetricIndex=false) {
+async function loadReferenceIndex(){
+  if(!selectedSpaceId.value)return
+  cancelPage();cancelSnapshot()
+  metricHistoryController?.abort();metricHistoryController=null
+  const spaceId=selectedSpaceId.value,term=search.value.trim(),requestId=++liveLoadSequence
+  if(referenceTerm.value===term&&Date.now()<referenceExpiresAt){liveStatus.value='ready';return}
+  invalidateReferenceIndex()
+  const controller=new AbortController();pageController=controller
+  const valid=()=>requestId===liveLoadSequence&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
+  liveStatus.value='loading'
+  try{
+    const metrics:Metric[]=[],latest=new Map<string,Observation>()
+    let cursor:string|null=null
+    for(let pageIndex=0;pageIndex<40;pageIndex++){
+      if(!valid())return
+      const params=new URLSearchParams({limit:'50'})
+      if(term)params.set('search',term)
+      if(cursor)params.set('cursor',cursor)
+      const page=await getHealthPage(spaceId,'health_metric',params,controller.signal)
+      if(!valid())return
+      assertOwnScope(page.personId)
+      const rows=page.items.map(row=>decodeHealthRecord('metric',row) as Metric)
+      metrics.push(...rows)
+      // At most three scoped summary requests per 50-metric page, never the
+      // global observation snapshot. Keep exact counts hidden until complete.
+      const groups:string[][]=[]
+      for(let i=0;i<rows.length;i+=METRIC_PAGE_SIZE)groups.push(rows.slice(i,i+METRIC_PAGE_SIZE).map(row=>row.id))
+      const summaries=await Promise.all(groups.map(ids=>getMetricSummaries(spaceId,ids,controller.signal)))
+      if(!valid())return
+      for(const summary of summaries){
+        assertOwnScope(summary.personId)
+        for(const raw of summary.items){const row=decodeHealthRecord('observation',raw) as Observation;latest.set(row.metricId,row)}
+      }
+      mergeHealthRecords('metric',page.items)
+      cursor=page.nextCursor
+      if(!cursor)break
+    }
+    if(cursor)throw Error('指标数量超过本次完整统计上限，请缩小搜索范围')
+    if(!valid())return
+    referenceMetrics.value=[...new Map(metrics.map(metric=>[metric.id,metric])).values()]
+    referenceLatest.clear()
+    for(const [id,row] of latest)referenceLatest.set(id,row)
+    referenceTerm.value=term;referenceExpiresAt=Date.now()+60_000
+    liveStatus.value='ready'
+  }catch(e){
+    if(!valid())return
+    if(optionDenied(e))return
+    referenceError.value=e instanceof Error?e.message:'参考范围统计失败'
+    liveStatus.value='ready'
+  }finally{if(valid())pageController=null}
+}
+async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   if(!selectedSpaceId.value)return
   if(refresh)clearLiveRecords()
   expireModelCache();cancelSnapshot()
   if(section==='timeline'){await loadTimeline();return}
-  if(usesPagedSection(section)&&(section!=='metrics'||(!fullMetricIndex&&activeTab.value==='body'&&bodyTab.value==='metrics'&&!selected.value))){await loadPagedSection(section);return}
+  if(section==='metrics'&&metricReferenceFilter.value!=='all'){await loadReferenceIndex();return}
+  if(usesPagedSection(section)){await loadPagedSection(section);return}
   cancelPage();pagedError.value='';pagedCursor.value=null;metricSummaryError.value=''
   metricHistoryController?.abort();metricHistoryController=null
   const metricDetail=section==='detail'&&selected.value?.kind==='metric'&&!loadedKinds.has('observation')?selected.value.id:null
@@ -580,17 +638,6 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false,fu
   liveStatus.value='loading'
   liveMessage.value='正在加载'+(section==='focus'?'关注事项':section==='metrics'?'健康指标':section==='timeline'?'健康时间线':section==='documents'?'健康资料':section==='regimens'?'健康方案':'关联记录')+'…'
   try {
-    // The metric catalog is usable before the complete observation summary.
-    if(section==='metrics'&&missing.includes('metric')&&missing.includes('observation')){
-      const catalog=await getHealthSnapshot(spaceId,['health_metric'],snapshotAbort.signal)
-      if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
-      if(subjectPersonId.value&&subjectPersonId.value!==catalog.personId)throw new HealthApiError(403,null)
-      if(!catalog.personId||!Array.isArray(catalog.models?.health_metric))throw Error('健康指标响应不完整')
-      const records=catalog.models.health_metric.map(record=>decodeHealthRecord('metric',record) as Metric)
-      demo.metrics.splice(0,demo.metrics.length,...records)
-      subjectPersonId.value=catalog.personId;markModelLoaded('metric')
-      missing.splice(missing.indexOf('metric'),1)
-    }
     // A single metric's history must not fetch the entire observation collection.
     // Complete the selected history before rendering the existing all-history trend.
     if(metricDetail){
@@ -696,7 +743,7 @@ function onHealthVisibility(){
   if(document.visibilityState==='hidden'){hiddenAt=Date.now();return}
   if(!liveMode||!hiddenAt||Date.now()-hiddenAt<60_000)return
   hiddenAt=0
-  loadedKinds.clear();loadedAt.clear();pageCache.clear()
+  loadedKinds.clear();loadedAt.clear();pageCache.clear();invalidateReferenceIndex()
   if(activeTab.value==='body'&&!sheet.value&&!saving.value&&liveStatus.value==='ready'&&selectedSpaceId.value){
     void loadLiveRecords(selected.value?'detail':bodyTab.value)
     if(selected.value?.kind==='concern')void refreshConcernLinks(selected.value.id)
@@ -725,11 +772,11 @@ const timeline = computed(() => [
   ...demo.events.map(e=>({ id:e.id,kind:'event' as const,date:e.date,title:e.summary,meta:eventName(e)+(e.timeStart?' · '+e.timeStart:'') })),
   ...demo.assessments.map(a=>({ id:a.id,kind:'assessment' as const,date:a.assessedDate,title:a.title,meta:'评估记录' })),
 ].sort((a,b)=>b.date.localeCompare(a.date)))
-const metricState=(m:Metric)=>metricReferenceState(m,latestFor(m.id))
+const metricState=(m:Metric)=>metricReferenceState(m,liveMode?referenceLatest.get(m.id):latestFor(m.id))
 const metricReferenceCounts=computed(()=>{
  const result:Record<MetricReferenceFilter,number>={all:0,within:0,outside:0,unknown:0}
  if(!metricSummariesReady.value)return result
- for(const metric of demo.metrics){
+ for(const metric of (liveMode?referenceMetrics.value:demo.metrics)){
    if(!metric.name.toLowerCase().includes(search.value.trim().toLowerCase()))continue
    const state=metricState(metric)
    result.all++
@@ -740,11 +787,11 @@ const metricReferenceCounts=computed(()=>{
 const filteredMetrics=computed(()=>{
   if(liveMode&&usesPagedSection('metrics'))return pagedIds.value.map(id=>demo.metrics.find(row=>row.id===id)).filter((row):row is Metric=>!!row)
   if(!metricSummariesReady.value)return []
-  return demo.metrics.filter(m=>m.name.toLowerCase().includes(search.value.trim().toLowerCase())&&matchMetricReferenceFilter(metricState(m),metricReferenceFilter.value))
+  return (liveMode?referenceMetrics.value:demo.metrics).filter(m=>m.name.toLowerCase().includes(search.value.trim().toLowerCase())&&matchMetricReferenceFilter(metricState(m),metricReferenceFilter.value))
 })
 const displayedMetrics=computed(()=>liveMode&&usesPagedSection('metrics')?filteredMetrics.value:filteredMetrics.value.slice(0,metricVisibleLimit.value))
-const metricRowLatest=(id:string)=>liveMode&&usesPagedSection('metrics')?metricPageLatest.get(id):latestFor(id)
-const metricRowReady=(id:string)=>metricSummariesReady.value||metricPageReady.has(id)
+const metricRowLatest=(id:string)=>!liveMode?latestFor(id):usesPagedSection('metrics')?metricPageLatest.get(id):referenceLatest.get(id)
+const metricRowReady=(id:string)=>!liveMode||(usesPagedSection('metrics')?metricPageReady.has(id):metricSummariesReady.value)
 const filteredDocuments = computed(()=>liveMode?pagedIds.value.map(id=>demo.documents.find(row=>row.id===id)).filter((row):row is NonNullable<typeof row>=>!!row):demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
 const filteredRegimens = computed(()=>liveMode?pagedIds.value.map(id=>demo.regimens.find(row=>row.id===id)).filter((row):row is NonNullable<typeof row>=>!!row):demo.regimens.filter(r=>r.name.includes(search.value)))
 const filteredTimeline = computed(()=>liveMode?timelineEntries.value:timeline.value.filter(e=>e.title.includes(search.value) || e.meta.includes(search.value)))
@@ -952,10 +999,6 @@ async function startCreate(kind: HealthKind) {
   if(liveMode && (!selectedSpaceId.value || !subjectPersonId.value || liveStatus.value!=='ready')) {
     notice.value='请先连接 Space 并选择档案人员。';return
   }
-  if(liveMode && kind==='observation' && !loadedKinds.has('metric')){
-    await loadLiveRecords('metrics',false,true)
-    if(liveStatus.value!=='ready')return
-  }
   if(kind==='document') openImport(selected.value?.kind==='concern' ? selected.value.id : '')
   else openEditor(kind,'', selected.value?.kind==='concern' ? selected.value.id : '')
 }
@@ -1103,7 +1146,7 @@ async function formSave() {
           ? await updateHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],
               previous.id,previous.version,fields!)
           : await createHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],fields!)
-      pageCache.clear()
+      pageCache.clear();invalidateReferenceIndex()
       const mapped=decodeHealthRecord(kind,saved)
       if(kind==='document' && !previous) mapped.fileName=uploadFile.value?.name??'已上传原始资料'
       if(previous) rows.splice(rows.indexOf(previous),1,mapped)
@@ -1167,7 +1210,7 @@ async function removeCurrent() {
       if(!selectedSpaceId.value || !Number.isInteger(current.value.version))
         throw new Error('缺少记录版本，无法安全删除')
       await deleteHealthRecord(selectedSpaceId.value,healthModelKey[kind],id,current.value.version)
-      pageCache.clear()
+      pageCache.clear();invalidateReferenceIndex()
     } catch(e) {notice.value=e instanceof Error?e.message:'删除失败';return}
   }
   const rows=getList(kind)
@@ -1659,7 +1702,7 @@ function detailName(kind: HealthKind,record:any) {
                       :comparison="referenceFor(metricRowLatest(m.id)!,m)?.comparison"/>
                   </span><ChevronRight :size="18"/></button>
                   <div v-if="(!liveMode||!usesPagedSection('metrics'))&&metricVisibleLimit<filteredMetrics.length" class="list-toolbar"><button class="quiet-button" type="button" @click="metricVisibleLimit+=40">显示更多指标（{{ Math.min(metricVisibleLimit,filteredMetrics.length) }} / {{ filteredMetrics.length }}）</button></div>
-                  <p v-if="(!liveMode||liveStatus==='ready')&&!pagedError&&!pagedCursor&&!filteredMetrics.length" class="empty-inline metric-reference-empty">
+                  <p v-if="(!liveMode||liveStatus==='ready')&&!pagedError&&!referenceError&&!pagedCursor&&!filteredMetrics.length" class="empty-inline metric-reference-empty">
                     {{ search.trim()?'没有找到符合条件的指标。':metricReferenceFilter==='all'?'还没有指标，添加后可以查看测量变化。':'目前没有这类指标，可以切换其他筛选。' }}
                   </p>
                 </template>
@@ -1674,6 +1717,7 @@ function detailName(kind: HealthKind,record:any) {
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
                 <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedError" role="alert" class="empty-inline">{{ pagedError }} <button type="button" class="inline-link" @click="loadPagedSection(bodyTab,Boolean(pagedCursor)&&!pagedError.startsWith('刷新失败'))">重试</button></div>
+                <div v-if="liveMode&&bodyTab==='metrics'&&metricReferenceFilter!=='all'&&referenceError" role="alert" class="empty-inline">{{ referenceError }} <button type="button" class="inline-link" @click="loadReferenceIndex">重试统计</button></div>
                 <div v-if="liveMode&&bodyTab==='metrics'&&metricSummaryError" role="alert" class="empty-inline">{{ metricSummaryError }} <button class="inline-link" type="button" @click="loadPagedSection('metrics')">重新加载指标</button></div>
                 <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedCursor&&!pagedError&&!metricSummaryError" class="list-toolbar"><button class="quiet-button" type="button"  :disabled="pagedLoadingMore||metricSummaryLoading||pagedRefreshing" @click="loadPagedSection(bodyTab,true)">{{ pagedLoadingMore?'正在加载更多…':metricSummaryLoading?'正在读取最新值…':'加载更多' }}</button></div>
                 <div v-if="liveStatus!=='loading'&&!pagedError&&!pagedCursor&&((bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>

@@ -338,27 +338,29 @@ async function handleMetricSummaries(fetchImpl:Fetcher,core:string,bearer:string
   const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,userId)
   if(scope instanceof Response)return scope
   const wanted=new Set(ids),latest=new Map<string,JsonObject>()
-  let cursor:string|null=null
-  for(let index=0;index<10;index++){
-    const query=metricSummaryQuery(scope.personId,ids,cursor)
+  // Exclude metrics already resolved instead of paging their older history.
+  // Each successful nonterminal round resolves at least one additional metric.
+  for(let index=0;index<ids.length;index++){
+    const remaining=ids.filter(id=>!latest.has(id))
+    const query=metricSummaryQuery(scope.personId,remaining,null)
     const response=await send(fetchImpl,core+'/api/v1/spaces/'+spaceId+'/models/health_observation/records/query',{
       method:'POST',headers:{Authorization:'Bearer '+bearer,Accept:'application/json','Content-Type':'application/json'},
       body:JSON.stringify(query),
     })
     if(!response.ok)return proxyResponse(response)
     const payload:unknown=await response.json().catch(()=>null)
-    if(!object(payload)||!object(payload.data)||!Array.isArray(payload.data.items)||payload.data.items.length>200||
+    if(!object(payload)||!object(payload.data)||!Array.isArray(payload.data.items)||payload.data.items.length>query.page.limit||
       !(payload.data.nextCursor===null||typeof payload.data.nextCursor==='string'))return json('invalid_core_response',502)
     for(const record of payload.data.items){
       if(!object(record)||typeof record.id!=='string'||record.subjectPersonId!==scope.personId||
-        typeof record.metricId!=='string'||!wanted.has(record.metricId)||typeof record.observedDate!=='string')return json('invalid_core_response',502)
+        typeof record.metricId!=='string'||!remaining.includes(record.metricId)||typeof record.observedDate!=='string')return json('invalid_core_response',502)
       if(!latest.has(record.metricId))latest.set(record.metricId,record)
     }
-    cursor=payload.data.nextCursor
-    if(latest.size===wanted.size||!cursor)return Response.json({data:{personId:scope.personId,items:[...latest.values()]}},
+    if(!payload.data.items.length&&payload.data.nextCursor!==null)return json('invalid_core_response',502)
+    if(latest.size===wanted.size||payload.data.nextCursor===null)return Response.json({data:{personId:scope.personId,items:[...latest.values()]}},
       {headers:{'Cache-Control':'private, no-store'}})
   }
-  return json('metric_summary_page_limit',413)
+  return json('invalid_core_response',502)
 }
 
 /** One bounded page; fail closed on a broken upstream projection. */
