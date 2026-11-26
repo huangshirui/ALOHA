@@ -434,7 +434,7 @@ function toggleRelationCard(card:ConcernCard){
   relationError.value=''
 }
 function resetConcernPages(){
-  resetConcernReads()
+  resetConcernReads();cancelRelationOptions()
   for(const key of Object.keys(concernPage) as ConcernList[])concernPage[key]=0
   activeRelationCard.value=null
   relationTargetId.value=''
@@ -449,7 +449,7 @@ function clearLiveRecords() {
   resetMetricDetail()
   cancelPage();pagedIds.value=[];pagedCursor.value=null;pagedError.value='';metricPageLatest.clear();metricPageReady.clear();metricSummaryError.value=''
   ++relationSequence
-  resetConcernReads()
+  resetConcernReads();cancelRelationOptions()
   concernLinks.value=[]
   relationLoading.value=false
   relationReadState.value='idle';relationReadError.value=''
@@ -979,18 +979,56 @@ function optionDenied(e:unknown){
   }
   return false
 }
-async function loadRelationOptions(){
-  if(!liveMode||!activeRelationCard.value)return
-  const version=++optionsSequence,kind=relationKind.value
-  const valid=()=>version===optionsSequence&&!!activeRelationCard.value&&selected.value?.kind==='concern'&&relationKind.value===kind
-  relationOptionsLoading.value=true;relationError.value=''
-  try{await ensureOptionKinds(kind==='observation'?['observation','metric']:[kind],valid)}
-  catch(e){if(valid()&&!optionDenied(e))relationError.value=e instanceof Error?e.message:'选项加载失败'}
-  finally{if(version===optionsSequence)relationOptionsLoading.value=false}
+const relationOptionIds=ref<string[]>([])
+const relationOptionCursor=ref<string|null>(null)
+const relationOptionSearch=ref('')
+const relationOptionsError=ref('')
+let relationOptionsController:AbortController|null=null
+let relationOptionsTimer:ReturnType<typeof setTimeout>|undefined
+function cancelRelationOptions(){
+  ++optionsSequence
+  relationOptionsController?.abort();relationOptionsController=null
+  if(relationOptionsTimer!==undefined){clearTimeout(relationOptionsTimer);relationOptionsTimer=undefined}
+  relationOptionsLoading.value=false
 }
-watch([activeRelationCard,relationKind],()=>{if(activeRelationCard.value)void loadRelationOptions();else{++optionsSequence;relationOptionsLoading.value=false}})
-const relationCandidates=computed(()=>getList(relationKind.value).filter(r=>
-  !concernTargetHasRelation(concernLinks.value,relationKind.value,r.id)))
+onBeforeUnmount(cancelRelationOptions)
+async function loadRelationOptions(more=false){
+  if(!liveMode||!activeRelationCard.value||!selectedSpaceId.value||more&&(!relationOptionCursor.value||relationOptionsLoading.value))return
+  cancelRelationOptions()
+  const controller=new AbortController();relationOptionsController=controller
+  const version=optionsSequence,kind=relationKind.value,spaceId=selectedSpaceId.value,concernId=selected.value?.id
+  const valid=()=>version===optionsSequence&&spaceId===selectedSpaceId.value&&!!activeRelationCard.value&&selected.value?.kind==='concern'&&selected.value.id===concernId&&relationKind.value===kind&&!controller.signal.aborted
+  if(!more){relationOptionIds.value=[];relationOptionCursor.value=null;relationTargetId.value=''}
+  relationOptionsLoading.value=true;relationOptionsError.value=''
+  try{
+    const params=new URLSearchParams({limit:'30'})
+    if(more&&relationOptionCursor.value)params.set('cursor',relationOptionCursor.value)
+    if(kind==='observation')params.set('view','picker')
+    else if(relationOptionSearch.value.trim())params.set('search',relationOptionSearch.value.trim())
+    if(kind==='event')params.set('timezone',Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC')
+    const page=await getHealthPage(spaceId,concernTargetModels[kind],params,controller.signal)
+    if(!valid())return
+    assertOwnScope(page.personId)
+    if(kind==='observation'){
+      await readSelectedRows(spaceId,'metric',page.items.map(row=>String(row.metricId??'')).filter(id=>!demo.metrics.some(metric=>metric.id===id)),controller.signal,valid)
+    }
+    if(!valid())return
+    mergeHealthRecords(kind,page.items)
+    relationOptionIds.value=[...new Set([...relationOptionIds.value,...page.items.map(row=>row.id)])]
+    relationOptionCursor.value=page.nextCursor
+  }catch(e){if(valid()&&!optionDenied(e))relationOptionsError.value=e instanceof Error?e.message:'选项加载失败'}
+  finally{if(valid()){relationOptionsLoading.value=false;relationOptionsController=null}}
+}
+function changeRelationOptionSearch(term:string){
+  relationOptionSearch.value=term
+  cancelRelationOptions();relationOptionIds.value=[];relationOptionCursor.value=null;relationTargetId.value='';relationOptionsError.value='';relationOptionsLoading.value=true
+  relationOptionsTimer=setTimeout(()=>{relationOptionsTimer=undefined;void loadRelationOptions()},250)
+}
+watch([activeRelationCard,relationKind],()=>{
+  cancelRelationOptions();relationOptionSearch.value='';relationOptionIds.value=[];relationOptionCursor.value=null;relationTargetId.value=''
+  if(activeRelationCard.value)void loadRelationOptions()
+})
+const relationCandidates=computed(()=>relationOptionIds.value.map(id=>getList(relationKind.value).find(row=>row.id===id)).filter(row=>row&&!concernTargetHasRelation(concernLinks.value,relationKind.value,row.id)))
 function relationTargetKind(edge:ConcernRelation):ConcernTargetKind {
   return (Object.keys(concernTargetModels) as ConcernTargetKind[])
     .find(kind=>concernTargetModels[kind]===edge.target.modelKey)!
@@ -1026,7 +1064,7 @@ async function refreshConcernLinks(concernId:string){
 async function addConcernLink(){
   const id=selected.value?.kind==='concern'?selected.value.id:null
   const spaceId=selectedSpaceId.value,targetId=relationTargetId.value,kind=relationKind.value
-  if(!id||!spaceId||!targetId||relationBusy.value||relationOptionsLoading.value||concernContent.value!=='ready')return
+  if(!id||!spaceId||!targetId||relationBusy.value||relationOptionsLoading.value||!!relationOptionsError.value||concernContent.value!=='ready')return
   relationBusy.value=true;relationError.value=''
   try{
     const saved=await linkConcernRecord(spaceId,id,kind,targetId)
@@ -1071,14 +1109,14 @@ function location(): HealthLocation {
 function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
   ++liveLoadSequence;cancelMetricDetail();cancelPage();cancelSnapshot()
-  ++relationSequence;resetConcernReads();relationLoading.value=false;relationReadState.value='idle'
+  ++relationSequence;resetConcernReads();cancelRelationOptions();activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle'
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body',false);changeBodyTab(tab) }
 function changeBodyTab(tab:BodyTab) {
-  ++relationSequence;resetConcernReads();relationLoading.value=false;relationReadState.value='idle'
+  ++relationSequence;resetConcernReads();cancelRelationOptions();activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle'
   selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value='';metricVisibleLimit.value=40
   if(tab==='metrics'&&!metricSummariesReady.value)metricReferenceFilter.value='all'
   if(liveMode&&selectedSpaceId.value)void loadLiveRecords(tab)
@@ -1602,7 +1640,9 @@ function detailName(kind: HealthKind,record:any) {
                   :kinds="relationChoices.filter(c=>relationKindForCard.status.includes(c.kind))"
                   :kind="relationKind" :target-id="relationTargetId"
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
-                  :busy="relationBusy||relationOptionsLoading" :error="relationError"
+                  :busy="relationBusy" :error="relationError" :loading="relationOptionsLoading" :load-error="relationOptionsError"
+                   :search="relationOptionSearch" :has-more="!!relationOptionCursor"
+                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(!!relationOptionCursor)"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
@@ -1630,7 +1670,9 @@ function detailName(kind: HealthKind,record:any) {
                   :kinds="relationChoices.filter(c=>relationKindForCard.regimens.includes(c.kind))"
                   :kind="relationKind" :target-id="relationTargetId"
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
-                  :busy="relationBusy||relationOptionsLoading" :error="relationError"
+                  :busy="relationBusy" :error="relationError" :loading="relationOptionsLoading" :load-error="relationOptionsError"
+                   :search="relationOptionSearch" :has-more="!!relationOptionCursor"
+                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(!!relationOptionCursor)"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
@@ -1657,7 +1699,9 @@ function detailName(kind: HealthKind,record:any) {
                   :kinds="relationChoices.filter(c=>relationKindForCard.events.includes(c.kind))"
                   :kind="relationKind" :target-id="relationTargetId"
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
-                  :busy="relationBusy||relationOptionsLoading" :error="relationError"
+                  :busy="relationBusy" :error="relationError" :loading="relationOptionsLoading" :load-error="relationOptionsError"
+                   :search="relationOptionSearch" :has-more="!!relationOptionCursor"
+                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(!!relationOptionCursor)"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
@@ -1687,7 +1731,9 @@ function detailName(kind: HealthKind,record:any) {
                   :kinds="relationChoices.filter(c=>relationKindForCard.evidence.includes(c.kind))"
                   :kind="relationKind" :target-id="relationTargetId"
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
-                  :busy="relationBusy||relationOptionsLoading" :error="relationError"
+                  :busy="relationBusy" :error="relationError" :loading="relationOptionsLoading" :load-error="relationOptionsError"
+                   :search="relationOptionSearch" :has-more="!!relationOptionCursor"
+                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(!!relationOptionCursor)"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
             </div>
