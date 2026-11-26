@@ -28,6 +28,7 @@ import HealthDocumentPreview from './components/HealthDocumentPreview.vue'
 import HealthCreateMenu from './components/HealthCreateMenu.vue'
 import ConcernPager from './components/ConcernPager.vue'
 import ConcernLinkEditor from './components/ConcernLinkEditor.vue'
+import HealthReferenceSelect from './components/HealthReferenceSelect.vue'
 import BodyOverview from './components/BodyOverview.vue'
 import HealthTimeline from './components/HealthTimeline.vue'
 import MetricTrend from './components/MetricTrend.vue'
@@ -137,7 +138,7 @@ const quickMetricError=ref('')
 const quickMetric=reactive({name:'',valueType:'number',defaultUnit:''})
 const recentMetrics=computed(()=>recentMetricIds(demo.observations,demo.metrics).map(id=>
   demo.metrics.find(metric=>metric.id===id)!).filter(Boolean))
-const metricMatches=computed(()=>searchMetrics(demo.metrics,metricSearch.value))
+const metricMatches=computed(()=>liveMode?(formChoiceKind.value==='metric'?formChoiceItems.value as Metric[]:[]):searchMetrics(demo.metrics,metricSearch.value))
 function chooseObservationMetric(metric:Metric) {
   if(draft.value.metricId!==metric.id){
     draft.value.value=''
@@ -165,6 +166,7 @@ async function saveQuickMetric(){
   }
   quickMetricSaving.value=true;quickMetricError.value=''
   try{
+    if(liveMode&&await metricNameExists(name)){quickMetricError.value='已有同名指标，请直接选择';return}
     const fields=encodeHealthFields('metric',{
       name,valueType:quickMetric.valueType,
       defaultUnit:quickMetric.valueType==='number'?quickMetric.defaultUnit:'',
@@ -179,7 +181,7 @@ async function saveQuickMetric(){
     chooseObservationMetric(metric)
     quickMetricOpen.value=false
     quickMetric.name=''
-  }catch(e){quickMetricError.value=e instanceof Error?e.message:'指标创建失败'}
+  }catch(e){if(!optionDenied(e))quickMetricError.value=e instanceof Error?e.message:'指标创建失败'}
   finally{quickMetricSaving.value=false}
 }
 const search = ref('')
@@ -262,6 +264,7 @@ const metricHistoryLoading=ref(false)
 const metricHistoryError=ref('')
 const metricTrendRows=ref<Observation[]>([])
 const metricTrendLoading=ref(false)
+const metricTrendReady=ref(false)
 const metricTrendError=ref('')
 const trendRange=ref<'1'|'3'|'5'|'all'>('3')
 const metricDetailLatest=computed(()=>liveMode?metricHistoryRows.value[0]:latestFor(current.value?.id??''))
@@ -273,7 +276,7 @@ function cancelMetricDetail(){
 function resetMetricDetail(){
   cancelMetricDetail()
   metricHistoryRows.value=[];metricHistoryCursor.value=null;metricHistoryReady.value=false;metricHistoryError.value=''
-  metricTrendRows.value=[];metricTrendError.value=''
+  metricTrendRows.value=[];metricTrendError.value='';metricTrendReady.value=false
 }
 function trendDateWindow(date:string,range:typeof trendRange.value){
   if(range==='all')return {}
@@ -455,7 +458,7 @@ function clearLiveRecords() {
   relationReadState.value='idle';relationReadError.value=''
   relationError.value=''
   relationTargetId.value=''
-  loadedKinds.clear();loadedAt.clear();pageCache.clear();cancelSnapshot()
+  loadedKinds.clear();loadedAt.clear();pageCache.clear();cancelSnapshot();cancelFormChoices();cancelFormOptions()
   timelineEntries.value=[];timelineStreams=[];timelineMore.value=false;timelineError.value='';invalidateReferenceIndex()
   for(const kind of healthKinds) getList(kind).splice(0)
   // Never retain another Space/Person's coordinates or attention when switching.
@@ -654,16 +657,16 @@ async function loadMetricTrend(metricId:string){
   const controller=new AbortController();metricTrendController=controller
   const spaceId=selectedSpaceId.value,version=liveLoadSequence,range=trendRange.value
   const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='metric'&&selected.value.id===metricId&&!controller.signal.aborted
-  metricTrendRows.value=[];metricTrendError.value='';metricTrendLoading.value=true
+  metricTrendRows.value=[];metricTrendError.value='';metricTrendReady.value=false;metricTrendLoading.value=true
   try{
     const latest=metricHistoryRows.value[0]
     if(!metricHistoryReady.value)throw Error('请先加载最新测量')
-    if(!latest)return
+    if(!latest){metricTrendReady.value=true;return}
     const window=trendDateWindow(latest.observedDate,range)
     // A completed history page is a valid complete source for the selected window.
     if(metricHistoryCursor.value===null){
       metricTrendRows.value=metricHistoryRows.value.filter(row=>!window.from||row.observedDate>=window.from)
-      return
+      metricTrendReady.value=true;return
     }
     let cursor:string|null=null
     const rows:Observation[]=[]
@@ -679,7 +682,7 @@ async function loadMetricTrend(metricId:string){
       if(!cursor)break
     }
     if(cursor)throw Error('该时间范围记录较多，请缩短趋势时间范围')
-    if(valid())metricTrendRows.value=[...new Map(rows.map(row=>[row.id,row])).values()]
+    if(valid()){metricTrendRows.value=[...new Map(rows.map(row=>[row.id,row])).values()];metricTrendReady.value=true}
   }catch(e){
     if(!valid()||optionDenied(e))return
     metricTrendError.value=e instanceof Error?e.message:'趋势读取失败'
@@ -691,7 +694,7 @@ async function loadMetricHistory(metricId:string,more=false){
   const controller=new AbortController();metricHistoryController=controller
   const spaceId=selectedSpaceId.value,version=liveLoadSequence
   const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='metric'&&selected.value.id===metricId&&!controller.signal.aborted
-  if(!more){metricHistoryReady.value=false;metricHistoryRows.value=[];metricHistoryCursor.value=null;metricTrendRows.value=[];metricTrendError.value=''}
+  if(!more){metricHistoryReady.value=false;metricHistoryRows.value=[];metricHistoryCursor.value=null;metricTrendRows.value=[];metricTrendError.value='';metricTrendReady.value=false}
   metricHistoryLoading.value=true;metricHistoryError.value=''
   try{
     const params=new URLSearchParams({limit:'30',metricId})
@@ -958,21 +961,6 @@ const relationChoices=[
 ]
 const relationOptionsLoading=ref(false)
 let optionsSequence=0
-async function ensureOptionKinds(kinds:HealthKind[],valid:()=>boolean){
-  expireModelCache()
-  const missing=[...new Set(kinds)].filter(kind=>!loadedKinds.has(kind))
-  if(!missing.length)return
-  const spaceId=selectedSpaceId.value
-  const result=await getHealthSnapshot(spaceId,missing.map(kind=>healthModelKey[kind]))
-  if(!valid()||spaceId!==selectedSpaceId.value)return
-  assertOwnScope(result.personId)
-  for(const kind of missing){
-    const records=result.models[healthModelKey[kind]]
-    if(!Array.isArray(records))throw Error('选项响应不完整')
-    const rows=getList(kind);rows.splice(0,rows.length,...records.map(record=>decodeHealthRecord(kind,record)))
-    markModelLoaded(kind)
-  }
-}
 function optionDenied(e:unknown){
   if(e instanceof HealthApiError&&[401,403].includes(e.status)){
     clearLiveRecords();subjectPersonId.value='';sheet.value='';liveStatus.value='error';liveMessage.value=e.message;return true
@@ -1107,6 +1095,7 @@ function location(): HealthLocation {
   return { tab:activeTab.value, section:bodyTab.value, record:selected.value ? {...selected.value} : null }
 }
 function navigate(tab: Tab,loadDefault=true) {
+  if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
   routeStack.value=[]
   ++liveLoadSequence;cancelMetricDetail();cancelPage();cancelSnapshot()
   ++relationSequence;resetConcernReads();cancelRelationOptions();activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle'
@@ -1116,12 +1105,14 @@ function navigate(tab: Tab,loadDefault=true) {
 }
 function openBody(tab: BodyTab) { navigate('body',false);changeBodyTab(tab) }
 function changeBodyTab(tab:BodyTab) {
+  if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
   ++relationSequence;resetConcernReads();cancelRelationOptions();activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle'
   selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value='';metricVisibleLimit.value=40
   if(tab==='metrics'&&!metricSummariesReady.value)metricReferenceFilter.value='all'
   if(liveMode&&selectedSpaceId.value)void loadLiveRecords(tab)
 }
 function show(kind: HealthKind,id: string) {
+  if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
   if (selected.value?.kind === kind && selected.value.id===id) return
   if(activeTab.value==='body' && bodyTab.value==='timeline' && !selected.value)
     timelineScrollPosition.value=window.scrollY
@@ -1135,6 +1126,7 @@ function show(kind: HealthKind,id: string) {
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function back() {
+  if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
   const previous=routeStack.value.pop()
   if(previous) {
     activeTab.value=previous.tab
@@ -1209,6 +1201,91 @@ async function clearConcernPoint(id:string) {
 const formOptionsLoading=ref(false)
 const formOptionsError=ref('')
 let formOptionsSequence=0
+let formOptionsController:AbortController|null=null
+function cancelFormOptions(){
+  ++formOptionsSequence;formOptionsController?.abort();formOptionsController=null;formOptionsLoading.value=false
+}
+type FormChoiceKind='metric'|'document'|'event'
+const formReferenceOpen=ref(false)
+const formReferenceSearch=ref('')
+const formChoiceIds=ref<string[]>([])
+const formChoiceCursor=ref<string|null>(null)
+const formChoiceLoading=ref(false)
+const formChoiceError=ref('')
+const formReferenceKind=computed<FormChoiceKind>(()=>editKind.value==='document'?'event':'document')
+const formReferenceField=computed(()=>editKind.value==='document'?'eventId':'sourceDocumentId')
+const formReferenceId=computed(()=>String(draft.value[formReferenceField.value]??''))
+const formReferenceLabel=computed(()=>formReferenceId.value?relationRecordName(formReferenceKind.value,formReferenceId.value):'不关联')
+const formChoiceKind=computed<FormChoiceKind|null>(()=>sheet.value!=='edit'?null:metricPickerOpen.value?'metric':formReferenceOpen.value?formReferenceKind.value:null)
+const formChoiceTerm=computed(()=>formChoiceKind.value==='metric'?metricSearch.value:formReferenceSearch.value)
+const formChoiceItems=computed(()=>formChoiceKind.value?formChoiceIds.value.map(id=>getList(formChoiceKind.value!).find(row=>row.id===id)).filter(Boolean):[])
+const formReferenceCandidates=computed(()=>formChoiceItems.value.map(row=>({id:String(row.id),label:relationRecordName(formReferenceKind.value,row.id)})))
+let formChoiceSequence=0
+let formChoiceController:AbortController|null=null
+let formChoiceTimer:ReturnType<typeof setTimeout>|undefined
+function cancelFormChoices(){
+  ++formChoiceSequence;formChoiceController?.abort();formChoiceController=null
+  if(formChoiceTimer!==undefined){clearTimeout(formChoiceTimer);formChoiceTimer=undefined}
+  formChoiceLoading.value=false
+}
+onBeforeUnmount(()=>{cancelFormChoices();cancelFormOptions()})
+function toggleMetricPicker(){
+  formReferenceOpen.value=false;metricPickerOpen.value=!metricPickerOpen.value;quickMetricOpen.value=false
+}
+function toggleFormReference(){
+  metricPickerOpen.value=false;quickMetricOpen.value=false
+  formReferenceSearch.value='';formReferenceOpen.value=!formReferenceOpen.value
+}
+function chooseFormReference(id:string){
+  draft.value[formReferenceField.value]=id;formReferenceOpen.value=false
+}
+async function loadFormChoices(more=false){
+  const kind=formChoiceKind.value,spaceId=selectedSpaceId.value
+  if(!liveMode||!kind||!spaceId||more&&(!formChoiceCursor.value||formChoiceLoading.value))return
+  cancelFormChoices()
+  const controller=new AbortController();formChoiceController=controller
+  const version=formChoiceSequence,term=formChoiceTerm.value.trim()
+  const valid=()=>version===formChoiceSequence&&formChoiceKind.value===kind&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
+  if(!more){formChoiceIds.value=[];formChoiceCursor.value=null}
+  formChoiceLoading.value=true;formChoiceError.value=''
+  try{
+    const params=new URLSearchParams({limit:'30'})
+    if(more&&formChoiceCursor.value)params.set('cursor',formChoiceCursor.value)
+    if(term)params.set('search',term)
+    if(kind==='event')params.set('timezone',Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC')
+    const page=await getHealthPage(spaceId,kind==='metric'?'health_metric':kind==='event'?'health_event':'health_document',params,controller.signal)
+    if(!valid())return
+    assertOwnScope(page.personId);mergeHealthRecords(kind,page.items)
+    formChoiceIds.value=[...new Set([...formChoiceIds.value,...page.items.map(row=>row.id)])]
+    formChoiceCursor.value=page.nextCursor
+  }catch(e){if(valid()&&!optionDenied(e))formChoiceError.value=e instanceof Error?e.message:'选项读取失败'}
+  finally{if(valid()){formChoiceLoading.value=false;formChoiceController=null}}
+}
+watch([formChoiceKind,formChoiceTerm],()=>{
+  if(!liveMode)return
+  cancelFormChoices();formChoiceIds.value=[];formChoiceCursor.value=null;formChoiceError.value=''
+  if(formChoiceKind.value){
+    formChoiceLoading.value=true
+    formChoiceTimer=setTimeout(()=>{formChoiceTimer=undefined;void loadFormChoices()},250)
+  }
+},{flush:'sync'})
+watch(sheet,()=>{if(sheet.value!=='edit'){cancelFormOptions();formReferenceOpen.value=false;metricPickerOpen.value=false}})
+async function metricNameExists(name:string,exceptId=''){
+  const spaceId=selectedSpaceId.value,personId=subjectPersonId.value
+  const normalized=name.trim().toLocaleLowerCase()
+  let cursor:string|null=null
+  for(let i=0;i<40;i++){
+    const params=new URLSearchParams({limit:'50',search:name.trim().slice(0,100)})
+    if(cursor)params.set('cursor',cursor)
+    const page=await getHealthPage(spaceId,'health_metric',params)
+    if(spaceId!==selectedSpaceId.value||personId!==subjectPersonId.value)throw Error('健康档案已切换，请重新操作')
+    assertOwnScope(page.personId)
+    if(page.items.some(row=>row.id!==exceptId&&typeof row.name==='string'&&row.name.trim().toLocaleLowerCase()===normalized))return true
+    cursor=page.nextCursor
+    if(!cursor)return false
+  }
+  throw Error('同名指标查询未完成，请缩小名称范围后重试')
+}
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if(saving.value)return
   const record=id ? getList(kind).find(r=>r.id===id) : null
@@ -1224,18 +1301,26 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   }
   if (kind==='observation' && record) d.value = record.valueNumber !== null ? String(record.valueNumber) : record.valueBoolean !== null ? String(record.valueBoolean) : record.valueText
   if (presetConcernId && !record && kind!=='metric') d.concernIds=[presetConcernId]
-  if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
-  metricPickerOpen.value=false;metricSearch.value='';quickMetricOpen.value=false;quickMetricError.value=''
+  if (kind==='observation' && !d.metricId&&!liveMode) d.metricId=demo.metrics[0]?.id ?? ''
+  metricPickerOpen.value=false;formReferenceOpen.value=false;formReferenceSearch.value='';metricSearch.value='';quickMetricOpen.value=false;quickMetricError.value=''
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
   if(liveMode)void loadFormOptions(kind)
 }
 async function loadFormOptions(kind:HealthKind){
-  const version=++formOptionsSequence
-  const valid=()=>version===formOptionsSequence&&sheet.value==='edit'&&editKind.value===kind
-  const kinds:HealthKind[]=kind==='observation'?['metric','document']:kind==='document'?['event']:kind==='regimen'?['document']:[]
+  cancelFormOptions()
+  const version=formOptionsSequence,spaceId=selectedSpaceId.value
+  const controller=new AbortController();formOptionsController=controller
+  const valid=()=>version===formOptionsSequence&&sheet.value==='edit'&&editKind.value===kind&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
   formOptionsLoading.value=true;formOptionsError.value=''
-  try{await ensureOptionKinds(kinds,valid)}catch(e){if(valid()&&!optionDenied(e))formOptionsError.value=e instanceof Error?e.message:'表单选项加载失败'}
-  finally{if(version===formOptionsSequence)formOptionsLoading.value=false}
+  try{
+    // Only resolve already-selected references; the chooser fetches candidates on opening.
+    const tasks:Promise<HealthRecord[]>[]=[]
+    if(kind==='observation'&&draft.value.metricId)tasks.push(readSelectedRows(spaceId,'metric',[String(draft.value.metricId)],controller.signal,valid))
+    if((kind==='observation'||kind==='regimen')&&draft.value.sourceDocumentId)tasks.push(readSelectedRows(spaceId,'document',[String(draft.value.sourceDocumentId)],controller.signal,valid))
+    if(kind==='document'&&draft.value.eventId)tasks.push(readSelectedRows(spaceId,'event',[String(draft.value.eventId)],controller.signal,valid))
+    await Promise.all(tasks)
+  }catch(e){if(valid()&&!optionDenied(e))formOptionsError.value=e instanceof Error?e.message:'表单选项加载失败'}
+  finally{if(valid()){formOptionsLoading.value=false;formOptionsController=null}}
 }
 async function formSave() {
   if(saving.value||quickMetricSaving.value||formOptionsLoading.value||formOptionsError.value)return
@@ -1258,10 +1343,10 @@ async function formSave() {
   if(kind==='event') formError.value=validateEventTime(v.timeStart,v.timeEnd)??''
   if(kind==='regimen') formError.value=validateRegimen(v.startDate,v.endDate,v.recurrence,v.firstDueDate)??''
   if(kind==='observation') formError.value=validateObservation(demo.metrics.find(m=>m.id===v.metricId),String(v.value??''))??''
-  if(kind==='metric' && demo.metrics.some(m=>m.name.trim()===String(v.name).trim() && m.id!==editId.value)) formError.value='已有同名指标，可直接使用现有指标'
+  if(!liveMode&&kind==='metric' && demo.metrics.some(m=>m.name.trim()===String(v.name).trim() && m.id!==editId.value)) formError.value='已有同名指标，可直接使用现有指标'
   if(kind==='metric' && v.valueType==='number') formError.value=validateReferenceDraft(v.referenceLow,v.referenceHigh,v.referenceSource,'number')??formError.value
   if(kind==='observation' && demo.metrics.find(m=>m.id===v.metricId)?.valueType==='number') formError.value=validateReferenceDraft(v.referenceLow,v.referenceHigh,v.referenceSource,'number')??formError.value
-  if(kind==='metric' && editId.value && demo.metrics.find(m=>m.id===editId.value)?.valueType!==v.valueType && demo.observations.some(o=>o.metricId===editId.value)) formError.value='已经有历史记录的指标不能改动记录方式'
+  if(!liveMode&&kind==='metric' && editId.value && demo.metrics.find(m=>m.id===editId.value)?.valueType!==v.valueType && demo.observations.some(o=>o.metricId===editId.value)) formError.value='已经有历史记录的指标不能改动记录方式'
   if(formError.value) return
   const payload:any={...v}
   // This is an ALOHA presentation preference, never a canonical HealthConcern field.
@@ -1294,6 +1379,15 @@ async function formSave() {
         ? null : encodeHealthFields(kind,payload,subjectPersonId.value)
       const rows=getList(kind)
       const previous=editId.value ? rows.find(r=>r.id===editId.value) : null
+      if(editId.value&&!previous)throw Error('原记录不可见，请重新打开后再修改')
+      if(kind==='metric'){
+        if(await metricNameExists(String(v.name),editId.value))throw Error('已有同名指标，可直接使用现有指标')
+        if(previous&&previous.valueType!==v.valueType){
+          const history=await getHealthPage(selectedSpaceId.value,'health_observation',new URLSearchParams({limit:'1',metricId:previous.id}))
+          assertOwnScope(history.personId)
+          if(history.items.length||history.nextCursor)throw Error('已经有历史记录的指标不能改动记录方式')
+        }
+      }
       if(previous && fields) delete fields.subjectPersonId // immutable model ownership field
       const saved=kind==='document' && !previous
         ? await uploadHealthDocument(selectedSpaceId.value,uploadFile.value!,payload,
@@ -1329,7 +1423,7 @@ async function formSave() {
         :presentationError?'健康记录已保存，但关注度未同步：'+presentationError
         :'已保存至 LifeSpace。'
       if(selected.value?.kind!==kind || selected.value.id!==saved.id) show(kind,saved.id)
-    } catch(e) {formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
+    } catch(e) {if(!optionDenied(e))formError.value=e instanceof Error?e.message:'保存失败，请稍后重试'}
     finally {saving.value=false;uploadProgress.value=null;if(sheet.value!=='edit')uploadFile.value=null}
     return
   }
@@ -1761,7 +1855,7 @@ function detailName(kind: HealthKind,record:any) {
                   参考范围：{{ metricRangeLabel(current) }} · {{ current.referenceSource||'来源未注明' }}
                   <span>仅用于比较，不代表医学诊断。</span>
                 </p>
-                <HealthSkeleton v-if="liveMode&&current.valueType==='number'&&(!metricHistoryReady||metricTrendLoading)&&!metricHistoryError" label="正在加载完整趋势区间" :rows="3"/>
+                <HealthSkeleton v-if="liveMode&&current.valueType==='number'&&(!metricHistoryReady||metricTrendLoading||!metricTrendReady)&&!metricHistoryError&&!metricTrendError" label="正在加载完整趋势区间" :rows="3"/>
                  <p v-else-if="liveMode&&current.valueType==='number'&&(metricTrendError||metricHistoryError&&!metricHistoryReady)" role="alert" class="empty-inline">{{ metricTrendError||metricHistoryError }} <button class="inline-link" type="button" @click="metricHistoryReady?loadMetricTrend(current.id):retryMetricHistory(current.id)">重试</button></p>
                  <MetricTrend v-else-if="current.valueType==='number'"
                   :metric-name="current.name" :unit="current.defaultUnit"
@@ -1992,24 +2086,24 @@ function detailName(kind: HealthKind,record:any) {
             <div class="metric-selector-field">
               <span class="field-label">记录哪一项 <span class="required-mark" aria-hidden="true">*</span></span>
               <button type="button" class="metric-picker-toggle" :aria-expanded="metricPickerOpen" aria-controls="health-metric-options"
-                :disabled="quickMetricSaving||formOptionsLoading||!!formOptionsError" @click="metricPickerOpen=!metricPickerOpen;quickMetricOpen=false">
+                :disabled="quickMetricSaving||formOptionsLoading||!!formOptionsError" @click="toggleMetricPicker">
                 <span>{{ demo.metrics.find(m=>m.id===draft.metricId)?.name||'选择健康指标' }}</span><ChevronDown :size="17"/>
               </button>
               <div v-if="metricPickerOpen" id="health-metric-options" class="metric-picker-panel">
-                <label class="metric-picker-search"><Search :size="16"/><input v-model="metricSearch" type="search" autocomplete="off"
+                <label class="metric-picker-search"><Search :size="16"/><input v-model="metricSearch" type="search" maxlength="100" autocomplete="off"
                   placeholder="搜索指标名称" aria-label="搜索健康指标" @keydown.enter.prevent/></label>
                 <div class="metric-picker-scroll">
-                  <template v-if="!metricSearch.trim()&&recentMetrics.length">
+                  <template v-if="!liveMode&&!metricSearch.trim()&&recentMetrics.length">
                     <div class="metric-picker-heading">最近使用 · 最多 5 项</div>
                     <button v-for="m in recentMetrics" :key="'recent-'+m.id" type="button" class="metric-picker-option" @click="chooseObservationMetric(m)">
                       <Clock3 :size="15"/><span>{{ m.name }}</span><Check v-if="draft.metricId===m.id" :size="15"/>
                     </button>
                   </template>
-                  <div class="metric-picker-heading">{{ metricSearch.trim()?'搜索结果':'全部指标' }} · {{ metricMatches.length }}</div>
+                  <div class="metric-picker-heading">{{ metricSearch.trim()?'搜索结果':'全部指标' }} · {{ liveMode?'已加载 ':'' }}{{ metricMatches.length }}</div>
                   <button v-for="m in metricMatches" :key="m.id" type="button" class="metric-picker-option" @click="chooseObservationMetric(m)">
                     <Activity :size="15"/><span>{{ m.name }}</span><Check v-if="draft.metricId===m.id" :size="15"/>
                   </button>
-                  <p v-if="!metricMatches.length" class="empty-inline">没有匹配的指标，可以直接新建。</p>
+                  <p v-if="liveMode&&formChoiceLoading" class="helper-copy" role="status">正在读取指标…</p><p v-else-if="liveMode&&formChoiceError" role="alert" class="form-error">{{ formChoiceError }} <button class="inline-link" type="button" @click="loadFormChoices(!!formChoiceCursor)">重试</button></p><p v-else-if="!metricMatches.length&&!formChoiceCursor" class="empty-inline">没有匹配的指标，可以直接新建。</p><button v-if="liveMode&&formChoiceCursor&&!formChoiceError" class="quiet-button" type="button" :disabled="formChoiceLoading" @click="loadFormChoices(true)">加载更多指标</button>
                 </div>
                 <button type="button" class="metric-create-link" @click="openQuickMetric"><Plus :size="16"/> 新建指标</button>
               </div>
@@ -2038,7 +2132,13 @@ function detailName(kind: HealthKind,record:any) {
               <label>范围来源<input v-model="draft.referenceSource" placeholder="例如：本次化验报告"/></label>
             </fieldset>
             <label><span class="field-label">测量日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.observedDate" type="date" required/></label>
-            <label>参考资料<select v-model="draft.sourceDocumentId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
+            <HealthReferenceSelect v-if="liveMode" :label="editKind==='document'?'相关健康事件':'参考资料'"
+              :selected-label="formReferenceLabel" :selected-id="formReferenceId" :open="formReferenceOpen"
+              :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
+              :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
+              @toggle="toggleFormReference" @search="formReferenceSearch=$event" @choose="chooseFormReference"
+              @more="loadFormChoices(true)" @retry="loadFormChoices(!!formChoiceCursor)"/>
+            <label v-else>参考资料<select v-model="draft.sourceDocumentId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='event'">
@@ -2057,7 +2157,13 @@ function detailName(kind: HealthKind,record:any) {
             <label v-if="!editId"><span class="field-label">原始文件 <span class="required-mark" aria-hidden="true">*</span></span><input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" @change="pickFile"/><small v-if="liveMode">支持 PDF、PNG、JPEG、WebP，单个文件最多 15 MB。保存时会安全上传到 LifeSpace。</small><small v-else>仅演示文件名。</small></label><p v-else-if="liveMode" class="helper-copy">原文件已保存，无法在修改资料时替换。如需另一份文件，请新建资料。</p>
             <p v-if="draft.fileName" class="file-picked"><FileText :size="16"/>{{ draft.fileName }}</p>
             <div class="form-two"><label>资料日期<input v-model="draft.issuedDate" type="date"/></label><label>出具机构<input v-model="draft.issuerName" placeholder="选填"/></label></div>
-            <label>相关健康事件<select v-model="draft.eventId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">不关联</option><option v-for="e in demo.events" :key="e.id" :value="e.id">{{ e.summary }}</option></select></label>
+            <HealthReferenceSelect v-if="liveMode" :label="editKind==='document'?'相关健康事件':'参考资料'"
+              :selected-label="formReferenceLabel" :selected-id="formReferenceId" :open="formReferenceOpen"
+              :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
+              :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
+              @toggle="toggleFormReference" @search="formReferenceSearch=$event" @choose="chooseFormReference"
+              @more="loadFormChoices(true)" @retry="loadFormChoices(!!formChoiceCursor)"/>
+            <label v-else>相关健康事件<select v-model="draft.eventId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">不关联</option><option v-for="e in demo.events" :key="e.id" :value="e.id">{{ e.summary }}</option></select></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
           <template v-else-if="editKind==='assessment'">
@@ -2076,7 +2182,13 @@ function detailName(kind: HealthKind,record:any) {
             <div class="form-two"><label>开始日期<input v-model="draft.startDate" type="date"/></label><label>结束日期<input v-model="draft.endDate" type="date"/></label></div>
             <label>需要重复提醒吗？<select v-model="draft.recurrence"><option value="none">不重复</option><option value="daily">每天</option><option value="weekly">每周</option></select></label>
             <label v-if="draft.recurrence!=='none'"><span class="field-label">首次执行日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.firstDueDate" required type="date"/></label>
-            <label>参考资料<select v-model="draft.sourceDocumentId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
+            <HealthReferenceSelect v-if="liveMode" :label="editKind==='document'?'相关健康事件':'参考资料'"
+              :selected-label="formReferenceLabel" :selected-id="formReferenceId" :open="formReferenceOpen"
+              :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
+              :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
+              @toggle="toggleFormReference" @search="formReferenceSearch=$event" @choose="chooseFormReference"
+              @more="loadFormChoices(true)" @retry="loadFormChoices(!!formChoiceCursor)"/>
+            <label v-else>参考资料<select v-model="draft.sourceDocumentId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>方案来源<input v-model="draft.sourceNote" placeholder="例如：个人计划"/></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
             <p v-if="!liveMode" class="helper-copy">重复提醒尚未接入演示任务。</p>
