@@ -1,16 +1,20 @@
 import {test,expect,type Page} from '@playwright/test'
 
 /** No production endpoints, credentials or personal health records. */
-async function fixture(page:Page){
+async function fixture(page:Page,withTrend=false){
   const space={id:'spc_fake',name:'Synthetic workspace',role:'owner'}
   const personId='per_fake'
   let metrics=Array.from({length:22},(_,i)=>({
     id:'metric_fake_'+i,spaceId:space.id,modelKey:'health_metric',version:1,
     name:'合成指标 '+String(i+1).padStart(2,'0'),valueType:'number',defaultUnit:'unit',
+    ...(withTrend&&i===0?{referenceLow:2,referenceHigh:8,referenceSource:'Synthetic fixture'}:{}),
   }))
   let assessments=[1,2,3].map(i=>({id:'assessment_fake_'+i,spaceId:space.id,modelKey:'health_assessment',version:1,title:'合成评估 '+i,content:'Synthetic fixture',status:'final',assessedDate:'2026-01-0'+i})).reverse()
   const concern={id:'concern_fake',spaceId:space.id,modelKey:'health_concern',version:1,name:'合成关注',status:'active',summary:'Synthetic fixture'}
   const observation=(id:string)=>({id:'obs_'+id,spaceId:space.id,modelKey:'health_observation',version:1,metricId:id,observedDate:'2026-01-01',valueNumber:5,unit:'unit'})
+  const trendRows=[
+    ['2026-01-01',7],['2025-06-01',9],['2025-06-01',6],['2023-01-01',5],['2019-01-01',3],
+  ].map(([date,value],i)=>({...observation('metric_fake_0'),id:'trend_fake_'+i,observedDate:date,valueNumber:value,status:'final'}))
   const requests:{path:string;cursor:string|null;search:string|null}[]=[]
   let releaseFocus=()=>{}
   const focusGate=new Promise<void>(resolve=>{releaseFocus=resolve})
@@ -71,9 +75,10 @@ async function fixture(page:Page){
     }
     if(path.endsWith('/metric-summaries'))return reply({personId,items:(url.searchParams.get('metricIds')||'').split(',').filter(id=>id&&id!=='metric_fake_21').map(observation)})
     if(path.endsWith('/health_metric/selected-records'))return reply({personId,items:(url.searchParams.get('ids')||'').split(',').map(id=>metrics.find(m=>m.id===id)).filter(Boolean)})
+    if(path.endsWith('/health_observation/selected-records'))return reply({personId,items:trendRows.filter(r=>(url.searchParams.get('ids')||'').split(',').includes(r.id))})
     if(path.endsWith('/health_observation/page')){
       const id=url.searchParams.get('metricId')
-      return reply({personId,items:id&&id!=='metric_fake_21'?[observation(id)]:[],nextCursor:null})
+      return reply({personId,items:withTrend&&id==='metric_fake_0'?trendRows:id&&id!=='metric_fake_21'?[observation(id)]:[],nextCursor:null})
     }
     if(path.endsWith('/health_document/page')||path.endsWith('/health_regimen/page')||path.endsWith('/health_event/page')||path.endsWith('/health_assessment/page'))return reply({personId,items:[],nextCursor:null})
     return route.fulfill({status:500,json:{error:'Unexpected synthetic request'}})
@@ -283,4 +288,49 @@ test('timeline deletion retains text and type filter and removes deleted project
   await refresh().click()
   await expect(refresh()).toBeEnabled()
   await expect(rows).toHaveCount(2)
+})
+
+
+test('metric chart renders real dates, preserves duplicate-day readings and switches range',async({page},testInfo)=>{
+  const fake=await fixture(page,true)
+  fake.releaseFocus()
+  await page.goto('/health/')
+  await expect(page.getByText('合成关注',{exact:true}).first()).toBeVisible()
+  await page.getByRole('navigation',{name:'身体页面导航'}).getByRole('button',{name:'指标',exact:true}).click()
+  await page.locator('button.list-row').filter({hasText:'合成指标 01'}).click()
+  const trend=page.getByRole('region',{name:'观测趋势'})
+  const range=page.getByRole('combobox',{name:'趋势时间范围'})
+  await range.selectOption('all')
+  await expect(trend.getByText('实际观测 · 5 次')).toBeVisible()
+  const svg=trend.locator('.metric-trend-plot svg')
+  await expect(svg).toBeVisible()
+  await expect(trend.getByText('当前指标参考边界',{exact:true})).toBeVisible()
+  await expect(trend.getByRole('group',{name:'选择趋势时间维度'})).toHaveCount(0)
+  const picker=trend.getByRole('combobox',{name:'选择一条实际观测'})
+  await expect(picker.locator('option')).toHaveCount(6)
+  const fieldStyle=(el:Element)=>{
+    const style=getComputedStyle(el),a=el.getBoundingClientRect(),label=el.parentElement!.querySelector('span')!.getBoundingClientRect()
+    return {height:a.height,radius:style.borderRadius,arrow:style.backgroundImage,centerOffset:Math.abs((a.top+a.bottom-label.top-label.bottom)/2)}
+  }
+  const topField=await range.evaluate(fieldStyle),bottomField=await picker.evaluate(fieldStyle)
+  expect(topField.height).toBeCloseTo(bottomField.height,0)
+  expect(topField.radius).toBe(bottomField.radius)
+  expect(topField.arrow).not.toBe('none')
+  expect(topField.arrow).toBe(bottomField.arrow)
+  expect(topField.centerOffset).toBeLessThan(2)
+  expect(bottomField.centerOffset).toBeLessThan(2)
+  await expect.poll(()=>svg.locator('path[fill="none"]').evaluateAll(paths=>paths.some(p=>/[Cc]/.test(p.getAttribute('d')||'')&&p.getAttribute('stroke-width')==='2'))).toBe(true)
+  await picker.selectOption('trend_fake_2')
+  await expect(trend.getByText('已选 · 2025-06-01 · 原始观测')).toBeVisible()
+  await expect(trend.locator('.metric-trend-readout strong')).toHaveText('6 unit')
+  await expect(trend.getByRole('button',{name:'查看这条记录'})).toBeVisible()
+  await trend.getByRole('button',{name:'取消选中图表观测点'}).click()
+  await expect(trend.locator('.metric-trend-readout')).toHaveCount(0)
+  const fit=await svg.evaluate(el=>{const a=el.getBoundingClientRect(),b=el.closest('.metric-trend')!.getBoundingClientRect();return a.width>0&&a.left>=b.left-1&&a.right<=b.right+1})
+  expect(fit).toBe(true)
+  await trend.screenshot({path:testInfo.outputPath('metric-trend.png'),animations:'disabled'})
+  await range.selectOption('1')
+  await expect(trend.getByText('实际观测 · 3 次')).toBeVisible()
+  await expect(picker.locator('option')).toHaveCount(4)
+  await expect(svg).toBeVisible()
 })

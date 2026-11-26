@@ -19,7 +19,8 @@
     "vue": "^3.5.42",
     "lucide-vue-next": "^0.468.0",
     "@aloha/contracts": "*",
-    "pdfjs-dist": "5.4.624"
+    "pdfjs-dist": "5.4.624",
+    "echarts": "6.1.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
