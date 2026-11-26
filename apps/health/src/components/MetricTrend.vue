@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { X } from 'lucide-vue-next'
-import {
- buildTrendChart, projectReferenceLines, selectedTrendPoint,
- TREND_CHART_HEIGHT, TREND_CHART_LEFT, TREND_CHART_Y_LABEL_X, TREND_CHART_X_LABEL_Y,
- TREND_CHART_RIGHT_PADDING, type MetricGranularity, type NumericObservation
-} from '../metric-trend'
+import type { EChartsType, EChartsCoreOption } from 'echarts/core'
+import { formatTrendValue, referenceBounds, trendDomain, trendReadings, type NumericObservation } from '../metric-trend'
 
 const props=defineProps<{
  observations:NumericObservation[]
@@ -14,131 +11,168 @@ const props=defineProps<{
  referenceLow?:number|null
  referenceHigh?:number|null
  referenceSource?:string
+ rangeStart?:string
+ rangeEnd?:string
 }>()
 const emit=defineEmits<{openObservation:[id:string]}>()
-const mode=ref<MetricGranularity>('day')
-const modes=[
- {value:'day' as const,label:'日'},
- {value:'month' as const,label:'月'},
- {value:'year' as const,label:'年'},
-]
-const chartWidth=ref(680)
-const plotRef=ref<HTMLElement|null>(null)
-let plotResizeObserver:ResizeObserver|null=null
-function measurePlot(){
- const width=plotRef.value?.getBoundingClientRect().width
- if(width && Number.isFinite(width)) chartWidth.value=Math.max(320,Math.round(width))
+const readings=computed(()=>trendReadings(props.observations))
+const domain=computed(()=>trendDomain(readings.value,props.rangeStart,props.rangeEnd))
+const bounds=computed(()=>referenceBounds(props.referenceLow,props.referenceHigh))
+const plot=ref<HTMLElement|null>(null)
+const activeId=ref('')
+const active=computed(()=>readings.value.find(p=>p.id===activeId.value))
+const failed=ref(false)
+const loading=ref(false)
+let chart:EChartsType|undefined
+let observer:ResizeObserver|undefined
+let generation=0
+function css(el:HTMLElement,name:string,fallback:string){
+ return getComputedStyle(el).getPropertyValue(name).trim()||fallback
 }
-function observePlot(){
- measurePlot()
- if(typeof ResizeObserver!=='undefined' && plotRef.value && !plotResizeObserver){
-  plotResizeObserver=new ResizeObserver(measurePlot)
-  plotResizeObserver.observe(plotRef.value)
+function render(){
+ if(!chart||!plot.value||!domain.value)return
+ const el=plot.value
+ const ink=css(el,'--health-muted','#64748b'),brand=css(el,'--health-brand','#09845e')
+ const border=css(el,'--health-border-soft','#e2e8f0'),surface=css(el,'--health-surface','#ffffff')
+ const warning=css(el,'--health-attention-watch','#b7791f')
+ const {low,high}=bounds.value
+ const compact=el.clientWidth<440
+ const axisValues=[...readings.value.map(p=>p.value),...([low,high].filter((v):v is number=>v!==undefined))]
+ const min=Math.min(...axisValues),max=Math.max(...axisValues)
+ const span=max-min||Math.max(Math.abs(max)*.1,1)
+ const stepBase=10**Math.floor(Math.log10(span/4))
+ const step=[1,2,2.5,5,10].map(n=>n*stepBase).find(n=>n>=span/4)??stepBase*10
+ const yMin=Number((Math.floor((min-span*.05)/step)*step).toPrecision(12))
+ const yMax=Number((Math.ceil((max+span*.05)/step)*step).toPrecision(12))
+ const guides=[
+  ...(low===undefined?[]:[{name:low===high?'参考值':'下限',yAxis:low}]),
+  ...(high===undefined||high===low?[]:[{name:'上限',yAxis:high}])
+ ]
+ const option:EChartsCoreOption={
+  useUTC:true,animation:false,
+  grid:{left:compact?54:66,right:compact?16:24,top:24,bottom:68},
+  textStyle:{fontFamily:'inherit',color:ink},
+  xAxis:{type:'time',min:domain.value.min,max:domain.value.max,boundaryGap:false,
+   splitNumber:compact?4:8,axisLabel:{hideOverlap:true,color:ink,fontSize:compact?10:12,margin:12},
+   axisLine:{lineStyle:{color:border}},axisTick:{show:true,lineStyle:{color:border}},splitLine:{show:false}},
+  yAxis:{type:'value',scale:true,min:yMin,max:yMax,interval:step,
+   axisLabel:{color:ink,fontSize:12,formatter:(v:number)=>formatTrendValue(v)},
+   splitLine:{lineStyle:{color:border}},axisLine:{show:false},axisTick:{show:false}},
+  tooltip:{trigger:'item',renderMode:'richText',confine:true,backgroundColor:surface,borderColor:border,textStyle:{color:ink},
+   formatter:(params:unknown)=>{
+    const index=(params as {dataIndex?:number}).dataIndex
+    const p=index===undefined?undefined:readings.value[index]
+    return p?p.date+'\n'+formatTrendValue(p.value)+(props.unit?' '+props.unit:''):''
+   }},
+  dataZoom:[{type:'inside',xAxisIndex:0,zoomOnMouseWheel:'ctrl',moveOnMouseWheel:false,filterMode:'none'},
+   {type:'slider',xAxisIndex:0,bottom:12,height:20,filterMode:'none',showDetail:false,brushSelect:false,
+    borderColor:border,backgroundColor:surface,fillerColor:'rgba(9,132,94,.10)',handleStyle:{color:brand,borderColor:brand},showDataShadow:false}],
+  series:[{type:'line',name:props.metricName,smooth:false,showSymbol:true,symbol:'circle',symbolSize:compact?7:8,
+   lineStyle:{width:2,color:brand},itemStyle:{color:surface,borderColor:brand,borderWidth:2},
+   emphasis:{scale:1.5,itemStyle:{color:brand}},clip:true,
+   data:readings.value.map(p=>({value:[p.timestamp,p.value],itemStyle:{
+     borderColor:(low!==undefined&&p.value<low||high!==undefined&&p.value>high)?warning:brand
+   }})),
+   markLine:{silent:true,symbol:'none',lineStyle:{color:warning,type:'dashed',width:1},
+    label:{show:!compact,position:'insideEndTop',color:warning,formatter:'{b}: {c}'},data:guides},
+   ...(low!==undefined&&high!==undefined&&low<high?{markArea:{silent:true,itemStyle:{color:'rgba(9,132,94,.065)'},
+      data:[[{yAxis:low},{yAxis:high}]]}}:{})
+  }]
  }
+ chart.setOption(option,{notMerge:true})
 }
-onMounted(observePlot)
-onBeforeUnmount(()=>plotResizeObserver?.disconnect())
-const chart=computed(()=>buildTrendChart(props.observations,mode.value,chartWidth.value,TREND_CHART_HEIGHT,{
- referenceLow:props.referenceLow,referenceHigh:props.referenceHigh,
-}))
-// Plot may appear later when the first observation is recorded.
-watch(()=>chart.value.points.length,async count=>{
- if(count && !plotResizeObserver){await nextTick();observePlot()}
-})
-const referenceLines=computed(()=>projectReferenceLines(chart.value.domain,{
-  referenceLow:props.referenceLow,referenceHigh:props.referenceHigh,
-},TREND_CHART_HEIGHT))
-const activeKey=ref('')
-const active=computed(()=>selectedTrendPoint(chart.value.points,activeKey.value))
-function choosePoint(key:string){activeKey.value=activeKey.value===key?'':key}
-function formatValue(v:number){return Number(v.toFixed(2)).toLocaleString('zh-CN',{maximumFractionDigits:2})}
-const periodLabel=computed(()=>mode.value==='day'?'当日':mode.value==='month'?'当月':'当年')
-const chartDescription=computed(()=>{
- const pts=chart.value.points
- if(!pts.length)return props.metricName+'：暂无数值记录'
- return `${props.metricName}，${mode.value==='day'?'按日':mode.value==='month'?'按月':'按年'}展示共${pts.length}个记录周期，最早${pts[0]!.key}，最新${pts[pts.length-1]!.key}。空白周期仅平滑连接，没有补充记录。`
-})
+async function mount(el:HTMLElement|null){
+ const current=++generation
+ observer?.disconnect();observer=undefined
+ chart?.dispose();chart=undefined
+ failed.value=false
+ if(!el){loading.value=false;return}
+ loading.value=true
+ try{
+  const [core,charts,components,renderers]=await Promise.all([
+   import('echarts/core'),import('echarts/charts'),import('echarts/components'),import('echarts/renderers')
+  ])
+  if(current!==generation||plot.value!==el)return
+  core.use([charts.LineChart,components.GridComponent,components.TooltipComponent,components.DataZoomComponent,
+   components.MarkLineComponent,components.MarkAreaComponent,renderers.SVGRenderer])
+  chart=core.init(el,undefined,{renderer:'svg'})
+  chart.on('click',(params)=>{
+   if(params.componentType==='series'&&typeof params.dataIndex==='number'){
+    const p=readings.value[params.dataIndex]
+    if(p)activeId.value=activeId.value===p.id?'':p.id
+   }
+  })
+  render()
+  if(typeof ResizeObserver!=='undefined'){
+   let width=el.clientWidth
+   observer=new ResizeObserver(()=>{
+    if(!chart)return
+    chart.resize()
+    if((width<440)!==(el.clientWidth<440))render()
+    width=el.clientWidth
+   })
+   observer.observe(el)
+  }
+ }catch{
+  if(current===generation){chart?.dispose();chart=undefined;failed.value=true}
+ }finally{if(current===generation)loading.value=false}
+}
+watch(plot,mount,{flush:'post'})
+watch([readings,domain,bounds,()=>props.unit,()=>props.metricName],()=>{
+ activeId.value=''
+ render()
+},{flush:'post'})
+onBeforeUnmount(()=>{generation++;observer?.disconnect();chart?.dispose();chart=undefined})
 </script>
 
 <template>
  <section class="metric-trend" aria-label="观测趋势">
-   <div class="metric-trend-head">
-     <div class="metric-trend-switch" role="group" aria-label="选择趋势时间维度">
-       <button v-for="item in modes" :key="item.value" type="button"
-        :aria-pressed="mode===item.value" :class="{active:mode===item.value}" @click="mode=item.value;activeKey=''">
-         {{ item.label }}
-       </button>
-     </div>
+  <template v-if="readings.length">
+   <div class="metric-trend-legend">
+    <span><i class="trend-dot"/>实际观测 · {{ readings.length }} 次</span>
+    <span v-if="bounds.low!==undefined||bounds.high!==undefined"><i class="trend-ref"/>当前指标参考边界</span>
    </div>
-   <template v-if="chart.points.length">
-     <div ref="plotRef" class="metric-trend-plot">
-       <svg :viewBox="`0 0 ${chartWidth} ${TREND_CHART_HEIGHT}`" role="group" :aria-label="chartDescription">
-         <g class="metric-trend-grid">
-           <line v-for="tick in chart.yTicks" :key="'g'+tick.y" :x1="TREND_CHART_LEFT" :x2="chartWidth-TREND_CHART_RIGHT_PADDING" :y1="tick.y" :y2="tick.y"/>
-         </g>
-         <g class="metric-trend-reference-lines" aria-label="指标参考边界">
-           <g v-for="line in referenceLines" :key="line.side" :aria-label="line.label+' '+formatValue(line.value)+(unit?' '+unit:'')">
-             <line :x1="TREND_CHART_LEFT" :x2="chartWidth-TREND_CHART_RIGHT_PADDING"
-                :y1="line.y" :y2="line.y"/>
-             <text :x="chartWidth-TREND_CHART_RIGHT_PADDING-3" :y="line.y-7" text-anchor="end">
-                {{ line.label }} {{ formatValue(line.value) }}
-             </text>
-           </g>
-         </g>
-         <g class="metric-trend-axis" aria-hidden="true">
-           <text v-for="tick in chart.yTicks" :key="'y'+tick.y"  :x="TREND_CHART_Y_LABEL_X" :y="tick.y+5" text-anchor="end">{{ tick.label }}</text>
-           <text v-for="(tick,i) in chart.ticks" :key="'x'+tick.key" :x="tick.x"
-              :y="TREND_CHART_X_LABEL_Y" :text-anchor="i===0?'start':i===chart.ticks.length-1?'end':'middle'">{{ tick.label }}</text>
-         </g>
-         <path v-if="chart.points.length>=2" class="metric-trend-line" :d="chart.path"/>
-         <g v-for="point in chart.points" :key="point.key" class="metric-trend-point"
-           :class="{active:active?.key===point.key}" role="button" tabindex="0"
-           :aria-label="point.key+'，'+formatValue(point.value)+(unit?' '+unit:'')+'，'+point.count+'次观测'"
-           @click="choosePoint(point.key)" @keydown.enter.prevent="choosePoint(point.key)"
-           @keydown.space.prevent="choosePoint(point.key)">
-           <circle :cx="point.x" :cy="point.y" r="16" class="metric-trend-hit"/>
-           <circle :cx="point.x" :cy="point.y" r="4.5" class="metric-trend-dot"/>
-         </g>
-       </svg>
-     </div>
-     <div v-if="active" class="metric-trend-readout" role="status">
-       <div class="metric-trend-readout-main">
-         <span class="metric-trend-selection-caption">已选 · {{ active.key }} · {{ periodLabel }}{{ active.count>1?'平均':'观测' }}</span>
-         <strong>{{ formatValue(active.value) }}<small v-if="unit"> {{ unit }}</small></strong>
-         <span v-if="active.count>1">{{ active.count }} 次记录的平均值</span>
-       </div>
-       <button v-if="active.count===1" type="button" class="metric-trend-source"
-         @click="emit('openObservation',active.recordIds[0]!)">查看这条记录</button>
-       <button type="button" class="metric-trend-clear" aria-label="取消选中图表观测点" @click="activeKey=''"><X :size="16"/></button>
-     </div>
-     <p class="metric-trend-note">曲线连接已有记录，没有测量的日期不补值。</p>
-   </template>
-   <div v-else class="metric-trend-empty" role="status">
-     暂无可绘制的数值记录。添加测量后就能看到变化趋势。
+   <div class="metric-trend-chart-wrap">
+    <div ref="plot" class="metric-trend-plot" role="img" :aria-label="metricName+'，'+readings.length+'次真实观测，按实际日期显示'"/>
+    <p v-if="loading" class="metric-trend-message" role="status">正在加载趋势图…</p>
+    <p v-if="failed" class="metric-trend-message" role="alert">图表加载失败。<button type="button" class="metric-trend-source" @click="mount(plot)">重试</button></p>
    </div>
+   <div class="metric-trend-controls">
+    <label class="metric-trend-picker">查看观测
+     <select v-model="activeId" aria-label="选择一条实际观测">
+      <option value="">选择日期和数值</option>
+      <option v-for="p in readings.slice().reverse()" :key="p.id" :value="p.id">{{ p.date }} · {{ formatTrendValue(p.value) }} {{ unit }}</option>
+     </select>
+    </label>
+    <span class="metric-trend-note">拖动底部滑块缩放时间范围</span>
+   </div>
+   <div v-if="active" class="metric-trend-readout" role="status">
+    <div class="metric-trend-readout-main">
+     <span>已选 · {{ active.date }} · 原始观测</span>
+     <strong>{{ formatTrendValue(active.value) }}<small v-if="unit"> {{ unit }}</small></strong>
+    </div>
+    <button type="button" class="metric-trend-source" @click="emit('openObservation',active.id)">查看这条记录</button>
+    <button type="button" class="metric-trend-clear" aria-label="取消选中图表观测点" @click="activeId=''"><X :size="16"/></button>
+   </div>
+   <p class="metric-trend-note">折线仅连接真实观测，不代表测量间的实际变化；同日多次记录分别显示。</p>
+   <p v-if="(bounds.low!==undefined||bounds.high!==undefined)&&referenceSource" class="metric-trend-note">当前参考边界来源：{{ referenceSource }}</p>
+  </template>
+  <div v-else class="metric-trend-empty" role="status">暂无可绘制的数值记录。添加测量后就能看到变化趋势。</div>
  </section>
 </template>
 
 <style scoped>
 .metric-trend{min-width:0;margin:.5rem 0 var(--health-space-4)}
-.metric-trend-head{display:flex;align-items:center;justify-content:space-between;gap:.8rem;flex-wrap:wrap;margin:.4rem 0 .3rem}
-.metric-trend-switch{display:inline-flex;gap:.15rem;padding:.2rem;border:1px solid var(--health-border-soft);background:var(--health-surface-secondary);border-radius:var(--health-radius-control)}
-.metric-trend-switch button{border:0;border-radius:calc(var(--health-radius-control) - 3px);background:transparent;min-width:2.75rem;min-height:2rem;padding:.3rem .7rem;font-size:var(--health-type-label);font-weight:600;color:var(--health-muted)}
-.metric-trend-switch button.active{color:var(--health-brand-strong);background:var(--health-surface);box-shadow:0 0 0 1px var(--health-border)}
-.metric-trend-switch button:focus-visible,.metric-trend-source:focus-visible{outline:2px solid var(--health-brand);outline-offset:2px}
-.metric-trend-plot{width:100%;min-width:0;overflow:hidden}
-.metric-trend-plot svg{display:block;width:100%;height:320px;overflow:visible}
-.metric-trend-reference-lines {pointer-events:none}
-.metric-trend-reference-lines line {stroke:var(--health-attention-watch);stroke-width:1.25;stroke-opacity:.38;stroke-dasharray:5 7}
-.metric-trend-reference-lines text {fill:var(--health-attention-watch);font-size:12px;font-weight:500;fill-opacity:.65;paint-order:stroke;stroke:var(--health-surface);stroke-width:3px;stroke-opacity:.86}
-.metric-trend-grid line{stroke:var(--health-border-soft);stroke-width:1}
-.metric-trend-axis text{fill:var(--health-muted);font-size:14.5px;font-weight:500;font-variant-numeric:tabular-nums}
-.metric-trend-line{fill:none;stroke:var(--health-brand);stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round}
-.metric-trend-hit{fill:transparent}
-.metric-trend-dot{fill:var(--health-surface);stroke:var(--health-brand);stroke-width:2.5}
-.metric-trend-point{cursor:pointer;outline:none}
-.metric-trend-point.active .metric-trend-dot{fill:var(--health-brand);stroke:var(--health-surface);stroke-width:2.5;filter:drop-shadow(0 0 3px color-mix(in srgb,var(--health-brand) 28%,transparent))}
-.metric-trend-point:focus-visible .metric-trend-hit{stroke:var(--health-brand);stroke-width:2;fill:color-mix(in srgb,var(--health-brand) 8%,transparent)}
+.metric-trend-legend,.metric-trend-controls{display:flex;align-items:center;gap:.65rem 1rem;flex-wrap:wrap;color:var(--health-muted);font-size:var(--health-type-caption)}
+.metric-trend-legend span{display:inline-flex;align-items:center;gap:.35rem}
+.trend-dot{width:.55rem;height:.55rem;border-radius:50%;border:2px solid var(--health-brand);display:inline-block}
+.trend-ref{width:1rem;border-top:2px dashed var(--health-attention-watch);display:inline-block}
+.metric-trend-chart-wrap{position:relative;min-width:0}
+.metric-trend-plot{width:100%;height:320px;min-width:0}
+.metric-trend-message{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:.5rem;color:var(--health-muted);background:var(--health-surface)}
+.metric-trend-controls{justify-content:space-between;margin:.15rem 0 .5rem}
+.metric-trend-picker{display:flex;align-items:center;gap:.4rem;min-width:0}
+.metric-trend-picker select{min-width:0;max-width:100%;color:var(--health-ink);background:var(--health-surface);border:1px solid var(--health-border);border-radius:var(--health-radius-control);padding:.35rem}
 .metric-trend-readout{display:flex;align-items:center;gap:.65rem;padding:.55rem .7rem;margin:.15rem 0 .4rem;background:var(--health-surface-secondary);border:1px solid var(--health-border-soft);border-radius:var(--health-radius-control)}
 .metric-trend-readout-main{display:flex;flex:1;align-items:baseline;flex-wrap:wrap;gap:.25rem .65rem;min-width:0}
 .metric-trend-readout-main span{color:var(--health-muted);font-size:var(--health-type-caption)}
@@ -146,12 +180,8 @@ const chartDescription=computed(()=>{
 .metric-trend-readout-main strong small{color:var(--health-muted);font-size:var(--health-type-caption);font-weight:500}
 .metric-trend-source{flex:none;border:1px solid var(--health-border);border-radius:var(--health-radius-control);padding:.5rem .7rem;background:var(--health-surface);color:var(--health-brand-strong);font-size:var(--health-type-label)}
 .metric-trend-clear{display:grid;place-items:center;flex:none;width:2rem;height:2rem;border:0;border-radius:var(--health-radius-control);background:transparent;color:var(--health-muted);font-size:1.15rem}
-.metric-trend-clear:hover{color:var(--health-ink);background:var(--health-surface)}
 .metric-trend-note,.metric-trend-empty{color:var(--health-muted);font-size:var(--health-type-caption);line-height:1.7}
-.metric-trend-note{margin:.4rem 0 0}
+.metric-trend-note{margin:.3rem 0 0}
 .metric-trend-empty{padding:2rem .5rem;text-align:center}
-@media(max-width:47.999rem){
- .metric-trend-plot svg{width:100%;height:320px}
-  .metric-trend-readout{align-items:center;flex-wrap:wrap}
-}
+@media(max-width:47.999rem){.metric-trend-readout{flex-wrap:wrap}.metric-trend-picker{width:100%}.metric-trend-picker select{flex:1}}
 </style>
