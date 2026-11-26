@@ -145,7 +145,7 @@ onBeforeUnmount(()=>{generation++;observer?.disconnect();chart?.dispose();chart=
    <div v-if="active" class="metric-trend-readout" role="status">
     <div class="metric-trend-readout-main">
      <span>已选 · {{ active.date }} · 原始观测</span>
-     <strong>{{ formatTrendValue(active.value) }}<small v-if="unit"> {{ unit }}</small></strong>
+     <strong>{{ formatTrendValue(active.value) }}<small v-if="unit">{{ ' '+unit }}</small></strong>
     </div>
     <button type="button" class="metric-trend-source" @click="emit('openObservation',active.id)">查看这条记录</button>
     <button type="button" class="metric-trend-clear" aria-label="取消选中图表观测点" @click="activeId=''"><X :size="16"/></button>
