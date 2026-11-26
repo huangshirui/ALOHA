@@ -29,6 +29,10 @@ jobs:
       # npm Arborist peer-set crash; remove it when switching to npm ci.
       - run: npm install --legacy-peer-deps
       - run: npm run check
+      - name: Install Health browser test runtime
+        run: npm exec -w @aloha/health -- playwright install --with-deps chromium
+      - name: Health loading browser regression (synthetic data)
+        run: npm run test:browser -w @aloha/health
       - name: Dry-run package Health Worker (when runtime exists)
         run: |
           if [ -f apps/health/src/worker.ts ]; then
