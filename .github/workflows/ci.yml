@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 supports Ubuntu 24.04, not the newer ubuntu-latest image.
+    runs-on: ubuntu-24.04
     env:
       WRANGLER_LOG: error
       WRANGLER_LOG_SANITIZE: 'true'
@@ -29,6 +30,10 @@ jobs:
       # npm Arborist peer-set crash; remove it when switching to npm ci.
       - run: npm install --legacy-peer-deps
       - run: npm run check
+      - name: Install Health browser test runtime
+        run: npm exec -w @aloha/health -- playwright install --with-deps chromium
+      - name: Health loading browser regression (synthetic data)
+        run: npm run test:browser -w @aloha/health
       - name: Dry-run package Health Worker (when runtime exists)
         run: |
           if [ -f apps/health/src/worker.ts ]; then

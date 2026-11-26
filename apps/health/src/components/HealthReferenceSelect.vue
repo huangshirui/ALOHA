@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {ChevronDown,Check,Search} from 'lucide-vue-next'
+import HealthSkeleton from './HealthSkeleton.vue'
 defineProps<{label:string;selectedLabel:string;selectedId:string;open:boolean;disabled:boolean;search:string;
   candidates:{id:string;label:string}[];loading:boolean;error:string;hasMore:boolean}>()
 const emit=defineEmits<{toggle:[];search:[term:string];choose:[id:string];more:[];retry:[]}>()
@@ -15,7 +16,8 @@ const emit=defineEmits<{toggle:[];search:[term:string];choose:[id:string];more:[
       <div class="metric-picker-scroll">
         <button type="button" class="metric-picker-option" @click="emit('choose','')">不关联<Check v-if="!selectedId" :size="15"/></button>
         <button v-for="item in candidates" :key="item.id" class="metric-picker-option" type="button" @click="emit('choose',item.id)"><span>{{ item.label }}</span><Check v-if="item.id===selectedId" :size="15"/></button>
-        <p v-if="loading" class="helper-copy" role="status">正在加载记录…</p>
+        <HealthSkeleton v-if="loading&&!candidates.length" variant="choice" label="正在加载记录" :rows="3"/>
+        <p v-else-if="loading" class="helper-copy" role="status">正在更新候选…</p>
         <p v-else-if="error" class="form-error" role="alert">{{ error }} <button class="inline-link" type="button" @click="emit('retry')">重试</button></p>
         <p v-else-if="!candidates.length&&!hasMore" class="helper-copy">没有匹配的记录。</p>
         <button v-if="hasMore&&!error" type="button" class="quiet-button" :disabled="loading" @click="emit('more')">加载更多</button>
