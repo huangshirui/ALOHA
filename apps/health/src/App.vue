@@ -2151,6 +2151,8 @@ function detailName(kind: HealthKind,record:any) {
                   :metric-name="current.name" :unit="current.defaultUnit"
                   :reference-low="current.referenceLow" :reference-high="current.referenceHigh"
                   :reference-source="current.referenceSource"
+                  :range-start="liveMode&&trendRange!=='all'&&metricDetailLatest?.observedDate?trendDateWindow(metricDetailLatest.observedDate,trendRange).from:undefined"
+                  :range-end="liveMode&&trendRange!=='all'?metricDetailLatest?.observedDate:undefined"
                   :observations="(liveMode?metricTrendRows:demo.observations).filter(o=>o.metricId===current.id && (o.unit||current.defaultUnit)===current.defaultUnit)"
                   @open-observation="show('observation',$event)"/>
                 <p v-if="metricTrendReady&&metricTrendError" role="alert" class="empty-inline">{{ metricTrendError }} <button type="button" class="inline-link" @click="loadMetricTrend(current.id,true)">重试</button></p>
