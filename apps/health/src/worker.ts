@@ -7,6 +7,7 @@ import { parsePresentationPatch, type PresentationScope } from './health-present
 import { uploadHealthDocument, downloadHealthDocument } from './health-files'
 import { readHealthSession, makeHealthSessionCookie, signedTokenSubject, clearHealthSessionCookie } from './health-session'
 import { healthSnapshotQuery, snapshotModelKeys, type SnapshotModelKey } from './health-snapshot-query'
+import {healthPageQuery,isPageModel,type PageModel} from './health-page-query'
 import { concernRelationInput, concernTargetModels, isConcernRelation, isConcernTargetKind } from './health-concern-relations'
 export { HealthPresentationState } from './health-presentation-do'
 
@@ -63,6 +64,8 @@ function routeFor(url: URL, method: string): Route | null {
   const snapshot = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/snapshot$/.exec(p)
   if (snapshot && method === 'GET')
     return {spaceId:snapshot[1],path:'@snapshot'}
+  const page = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/models\/([a-z_]+)\/page$/.exec(p)
+  if(page&&method==='GET'&&isPageModel(page[2]!))return {spaceId:page[1],modelKey:page[2],path:'@health-page'}
   const ownPerson = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/own-person$/.exec(p)
   if (ownPerson && method === 'GET')
     return { spaceId: ownPerson[1], path: '@own-person' }
@@ -291,6 +294,28 @@ async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:str
   const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,verifiedUserId)
   if(scope instanceof Response) return scope
   return Response.json({data:{personId:scope.personId}},{headers:{'Cache-Control':'no-store'}})
+}
+
+/** One bounded page; fail closed on a broken upstream projection. */
+async function handleHealthPage(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,model:PageModel,params:URLSearchParams,userId:string|null):Promise<Response>{
+  try{healthPageQuery(model,'per_validation',params)}catch{return json('health_page_invalid',422)}
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,userId)
+  if(scope instanceof Response)return scope
+  const query=healthPageQuery(model,scope.personId,params)
+  const response=await send(fetchImpl,core+'/api/v1/spaces/'+spaceId+'/models/'+model+'/records/query',{
+    method:'POST',headers:{Authorization:'Bearer '+bearer,Accept:'application/json','Content-Type':'application/json'},
+    body:JSON.stringify(query),
+  })
+  if(!response.ok)return proxyResponse(response)
+  const payload:unknown=await response.json().catch(()=>null)
+  if(!object(payload)||!object(payload.data)||!Array.isArray(payload.data.items)||
+    payload.data.items.length>query.page.limit||
+    !(payload.data.nextCursor===null||typeof payload.data.nextCursor==='string')||
+    !payload.data.items.every(record=>object(record)&&typeof record.id==='string'&&
+      (model==='health_metric'||record.subjectPersonId===scope.personId)&&
+      (model!=='health_observation'||record.metricId===params.get('metricId'))))return json('invalid_core_response',502)
+  return Response.json({data:{personId:scope.personId,items:payload.data.items,nextCursor:payload.data.nextCursor}},
+    {headers:{'Cache-Control':'private, no-store'}})
 }
 
 /** One Access proof, one Identity exchange, seven concurrent Core model reads.
@@ -601,6 +626,8 @@ export async function handleHealthApi(
   }
   if(route.path==='@concern-relations')return withSessionCookie(
     await handleConcernRelations(request,fetchImpl,core,bearer,route,userId),session.cookie)
+  if(route.path==='@health-page')return withSessionCookie(
+    await handleHealthPage(fetchImpl,core,bearer,route.spaceId!,route.modelKey as PageModel,url.searchParams,userId),session.cookie)
   if(route.path==='@snapshot')return withSessionCookie(
     await handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs,url.searchParams,userId),session.cookie)
   if(route.path==='@own-person')return withSessionCookie(

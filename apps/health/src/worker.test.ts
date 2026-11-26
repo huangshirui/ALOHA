@@ -438,6 +438,31 @@ describe('Health trusted BFF', () => {
     expect([...started].sort()).toEqual(['concern','member'])
     expect(stub.fetch).toHaveBeenCalledTimes(1)
   })
+  it('returns one page and fails closed for mismatched Person or browser scope override',async()=>{
+    let queries=0,wrongPerson=false
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.endsWith('/health_document/records/query')){
+        queries++
+        expect(JSON.parse(String(init?.body)).page).toEqual({limit:40,cursor:null})
+        return success({items:[{id:'rec_one',subjectPersonId:wrongPerson?'per_other':'per_self'}],nextCursor:'opaque'})
+      }
+      throw Error('unexpected Core request')
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/models/health_document/page'
+    const response=await handleHealthApi(make(url),env,f)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toEqual({personId:'per_self',items:[{id:'rec_one',subjectPersonId:'per_self'}],nextCursor:'opaque'})
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(queries).toBe(1)
+    wrongPerson=true
+    expect((await handleHealthApi(make(url),env,f)).status).toBe(502)
+    expect((await handleHealthApi(make(url+'?personId=per_other'),env,f)).status).toBe(422)
+    expect(queries).toBe(2)
+  })
   it('reads only explicitly requested models from Core, not seven by default',async()=>{
     const stub={fetch:vi.fn(async()=>success({items:[]}))}
     const namespace={idFromName:vi.fn((x:string)=>x),get:vi.fn(()=>stub)}

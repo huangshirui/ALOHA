@@ -83,6 +83,10 @@ export const getHealthSnapshot = (spaceId:string,models:HealthModelKey[]) =>{
   const params=new URLSearchParams({models:models.join(',')})
   return api<HealthSnapshot>(`/spaces/${encodeURIComponent(spaceId)}/snapshot?${params}`)
 }
+/** A single bounded view page, with verified Person echoed by the BFF. */
+export interface ScopedHealthPage extends HealthPage<HealthRecord>{personId:string}
+export const getHealthPage=(spaceId:string,model:import('./health-page-query').PageModel,params:URLSearchParams,signal?:AbortSignal)=>
+  api<ScopedHealthPage>(`/spaces/${encodeURIComponent(spaceId)}/models/${model}/page?${params}`,{signal,cache:'no-store'})
 const recordsPath = (spaceId:string, model:HealthModelKey) =>
   `/spaces/${encodeURIComponent(spaceId)}/models/${model}/records`
 export const listHealthRecords = <T extends HealthRecord>(
