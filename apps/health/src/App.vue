@@ -301,6 +301,7 @@ const metricTrendReady=ref(false)
 const metricTrendError=ref('')
 const trendRange=ref<'1'|'3'|'5'|'all'>('3')
 const metricDetailLatest=computed(()=>liveMode?metricHistoryRows.value[0]:latestFor(current.value?.id??''))
+const metricLatestPending=computed(()=>liveMode&&(!metricHistoryReady.value||!metricDetailLatest.value&&(metricHistoryLoading.value||!!metricHistoryCursor.value||metricHistoryRebuild.value||!!metricHistoryError.value)))
 function cancelMetricDetail(){
   metricHistoryController?.abort();metricHistoryController=null
   metricTrendController?.abort();metricTrendController=null
@@ -725,7 +726,7 @@ async function loadMetricTrend(metricId:string,force=false){
   if(hit?.fresh&&!force){metricTrendController=null;return}
   metricTrendLoading.value=true
   try{
-    if(!metricHistoryReady.value)throw Error('请先加载最新测量')
+    if(!metricHistoryReady.value||!latest&&(metricHistoryError.value||metricHistoryCursor.value||metricHistoryRebuild.value))throw Error('请先加载最新测量')
     let rows:Observation[]=[]
     if(latest){
       const window=trendDateWindow(latest.observedDate,range)
@@ -2125,10 +2126,10 @@ function detailName(kind: HealthKind,record:any) {
               <section class="ui-card detail-primary">
                 <div class="metric-summary">
                   <div class="metric-hero">
-                    <span class="metric-value-row"><strong>{{ liveMode&&!metricHistoryReady?(metricHistoryError?'读取失败':'加载中…'):metricDetailLatest ? observationValue(metricDetailLatest,current) : '暂无记录' }}</strong>
+                    <span class="metric-value-row"><strong>{{ metricLatestPending?(metricHistoryError?'读取失败':metricHistoryRebuild?'待更新':'加载中…'):metricDetailLatest ? observationValue(metricDetailLatest,current) : '暂无记录' }}</strong>
                       <ReferenceIndicator v-if="metricDetailLatest&&(!liveMode||metricHistoryReady)" :comparison="referenceFor(metricDetailLatest,current)?.comparison"/>
                     </span>
-                    <span>{{ liveMode&&!metricHistoryReady?'正在确认最新记录':metricDetailLatest ? '最新记录 · '+displayDate(metricDetailLatest.observedDate) : '还没有观测记录' }}</span>
+                    <span>{{ metricLatestPending?'正在确认最新记录':metricDetailLatest ? '最新记录 · '+displayDate(metricDetailLatest.observedDate) : '还没有观测记录' }}</span>
                   </div>
                   <button class="primary-button metric-add-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
                 </div>
@@ -2287,7 +2288,7 @@ function detailName(kind: HealthKind,record:any) {
                 </template>
                 <template v-if="bodyTab==='timeline'">
                   <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
-                    :partial="liveMode" :has-more="timelineMore" :loading="timelineLoading" :ready="!liveMode||viewHasData&&!viewRefreshing&&!rebuildRequired&&!viewError" :error="timelineError"
+                    :partial="liveMode" :has-more="timelineMore" :loading="timelineLoading" :ready="!liveMode||viewHasData" :refreshing="liveMode&&(viewRefreshing||rebuildRequired||!!viewError)" :error="timelineError"
                     @update:selected-kind="changeTimelineKind" @open="show"/>
                   <div v-if="liveMode&&timelineError" class="list-toolbar"><button class="quiet-button" type="button" @click="loadTimeline(timelineMore)">重试</button></div>
                   <div v-else-if="liveMode&&timelineMore&&!rebuildRequired" class="list-toolbar"><button class="quiet-button" type="button" :disabled="timelineLoading" @click="loadTimeline(true)">{{ timelineLoading?'正在加载…':search.trim()?'继续搜索更早记录':'加载更多' }}</button></div>

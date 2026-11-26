@@ -14,6 +14,7 @@ const props=defineProps<{
   hasMore?:boolean
   loading?:boolean
   ready?:boolean
+  refreshing?:boolean
   error?:string
 }>()
 const emit=defineEmits<{
@@ -88,7 +89,7 @@ const counts=computed(()=>({
     </div>
     <p v-else-if="error" role="alert" class="form-error">{{ error }}</p>
     <p v-else-if="hasMore" class="helper-copy" role="status">当前已查询区间暂无匹配记录，仍可继续查找更早记录。</p>
-    <div v-else-if="ready!==false&&!loading" class="timeline-empty" role="status">
+    <div v-else-if="ready!==false&&!loading&&!refreshing" class="timeline-empty" role="status">
       <Search :size="23"/>
       <strong>{{ searchActive?'没有找到相关记录':selectedKind==='all'?'还没有健康记录':'还没有此类记录' }}</strong>
       <span>{{ searchActive?'换个关键词，或切换记录类型。':'你新增的测量、健康事件和评估会按日期出现在这里。' }}</span>
