@@ -2134,7 +2134,7 @@ function detailName(kind: HealthKind,record:any) {
                   <button class="primary-button metric-add-button" type="button" @click="openEditor('observation');draft.metricId=current.id;draft.unit=current.defaultUnit"><Plus :size="17"/> 记录一次</button>
                 </div>
                 <div class="card-heading metric-chart-heading"><h2>变化趋势</h2>
-                   <label v-if="liveMode&&current.valueType==='number'" class="quiet-caption">时间范围
+                   <label v-if="liveMode&&current.valueType==='number'" class="metric-trend-field metric-trend-range"><span>时间范围</span>
                      <select v-model="trendRange" aria-label="趋势时间范围" :disabled="!metricHistoryReady" @change="changeTrendRange">
                        <option value="1">近1年</option><option value="3">近3年</option><option value="5">近5年</option><option value="all">全部历史</option>
                      </select>
