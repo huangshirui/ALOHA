@@ -30,6 +30,8 @@ import BodyOverview from './components/BodyOverview.vue'
 import HealthTimeline from './components/HealthTimeline.vue'
 import MetricTrend from './components/MetricTrend.vue'
 import ReferenceIndicator from './components/ReferenceIndicator.vue'
+import HealthSkeleton from './components/HealthSkeleton.vue'
+import { latestObservationIndex, concernContentState } from './health-loading-ux'
 import {matchMetricReferenceFilter, metricReferenceState, type MetricReferenceFilter} from './metric-reference-filter'
 import type { TimelineFilter } from './health-timeline'
 import { compareReference,formatReferenceRange,parseReferenceDraft,validateReferenceDraft } from './health-reference'
@@ -234,6 +236,11 @@ const detailKinds:Record<HealthKind,HealthKind[]>={
 const loadedKinds=new Set<HealthKind>()
 const concernLinks=ref<ConcernRelation[]>([])
 const relationLoading=ref(false)
+const relationReadState=ref<'idle'|'loading'|'ready'|'error'>('idle')
+const relationReadError=ref('')
+const concernContent=computed(()=>concernContentState(liveMode,liveStatus.value,relationReadState.value))
+const metricVisibleLimit=ref(40)
+watch([search,metricReferenceFilter],()=>{metricVisibleLimit.value=40})
 const relationBusy=ref(false)
 const relationError=ref('')
 const relationKind=ref<ConcernTargetKind>('metric')
@@ -270,6 +277,7 @@ function clearLiveRecords() {
   ++relationSequence
   concernLinks.value=[]
   relationLoading.value=false
+  relationReadState.value='idle';relationReadError.value=''
   relationError.value=''
   relationTargetId.value=''
   loadedKinds.clear()
@@ -287,10 +295,10 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   const requested=section==='detail'
     ? detailKinds[selected.value?.kind??'concern'] : sectionKinds[section]
   const missing=requested.filter(kind=>!loadedKinds.has(kind))
+  const requestId=++liveLoadSequence
   if(!missing.length&&subjectPersonId.value) {
     liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return
   }
-  const requestId=++liveLoadSequence
   const spaceId=selectedSpaceId.value
   liveStatus.value='loading'
   liveMessage.value='正在加载'+(section==='focus'?'关注事项':section==='metrics'?'健康指标':section==='timeline'?'健康时间线':section==='documents'?'健康资料':section==='regimens'?'健康方案':'关联记录')+'…'
@@ -378,7 +386,8 @@ const current = computed<any | null>(() => selected.value ? getList(selected.val
 const selectedConcern = computed(() => selected.value?.kind === 'concern' ? selected.value.id : '')
 const related = (record: {concernIds?:string[]},id:string) => (record.concernIds ?? []).includes(id)
 const activeConcerns = computed(() => demo.concerns.filter(c=>c.status==='active'))
-const latestFor = (metricId:string) => [...demo.observations].filter(o=>o.metricId===metricId).sort((a,b)=>b.observedDate.localeCompare(a.observedDate))[0]
+const latestObservations=computed(()=>latestObservationIndex(demo.observations))
+const latestFor = (metricId:string) => latestObservations.value.get(metricId)
 const referenceFor=(observation:Observation,metric?:Metric)=>metric?compareReference(metric,observation):null
 const metricRangeLabel=(metric:Metric)=>formatReferenceRange(metric,metric.defaultUnit)
 const observationTitle = (o: Observation) => nameOfMetric(o.metricId) + ' · ' + observationValue(o,demo.metrics.find(m=>m.id===o.metricId))
@@ -467,20 +476,21 @@ function relationRecordName(kind:ConcernTargetKind,id:string){
 async function refreshConcernLinks(concernId:string){
   if(!liveMode||!selectedSpaceId.value)return
   const spaceId=selectedSpaceId.value,version=++relationSequence
-  relationLoading.value=true;relationError.value='';concernLinks.value=[]
+  relationLoading.value=true;relationReadState.value='loading';relationReadError.value='';relationError.value='';concernLinks.value=[]
   try{
     const response=await listConcernRelations(spaceId,concernId)
     if(version!==relationSequence||spaceId!==selectedSpaceId.value||
        selected.value?.kind!=='concern'||selected.value.id!==concernId)return
     concernLinks.value=response.items
+    relationReadState.value='ready'
   }catch(e){
-    if(version===relationSequence)relationError.value=e instanceof Error?e.message:'关联读取失败'
+    if(version===relationSequence){relationReadState.value='error';relationReadError.value=e instanceof Error?e.message:'关联读取失败'}
   }finally{if(version===relationSequence)relationLoading.value=false}
 }
 async function addConcernLink(){
   const id=selected.value?.kind==='concern'?selected.value.id:null
   const spaceId=selectedSpaceId.value,targetId=relationTargetId.value,kind=relationKind.value
-  if(!id||!spaceId||!targetId||relationBusy.value)return
+  if(!id||!spaceId||!targetId||relationBusy.value||concernContent.value!=='ready')return
   relationBusy.value=true;relationError.value=''
   try{
     const saved=await linkConcernRecord(spaceId,id,kind,targetId)
@@ -496,7 +506,7 @@ async function removeConcernLink(edge:ConcernRelation){
   if(!window.confirm('确定解除与“'+relationRecordName(relationTargetKind(edge),edge.target.recordId)+'”的关联吗？\n原记录不会被删除。'))return
   const id=selected.value?.kind==='concern'?selected.value.id:null
   const spaceId=selectedSpaceId.value
-  if(!id||!spaceId||relationBusy.value)return
+  if(!id||!spaceId||relationBusy.value||concernContent.value!=='ready')return
   relationBusy.value=true;relationError.value=''
   try{
     await unlinkConcernRecord(spaceId,id,edge.id)
@@ -523,13 +533,15 @@ function location(): HealthLocation {
 }
 function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
+  ++relationSequence;relationLoading.value=false;relationReadState.value='idle'
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body',false);changeBodyTab(tab) }
 function changeBodyTab(tab:BodyTab) {
-  selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value=''
+  ++relationSequence;relationLoading.value=false;relationReadState.value='idle'
+  selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value='';metricVisibleLimit.value=40
   if(liveMode&&selectedSpaceId.value)void loadLiveRecords(tab)
 }
 function show(kind: HealthKind,id: string) {
@@ -537,12 +549,12 @@ function show(kind: HealthKind,id: string) {
   if(activeTab.value==='body' && bodyTab.value==='timeline' && !selected.value)
     timelineScrollPosition.value=window.scrollY
   routeStack.value.push(location())
-  ++relationSequence;concernLinks.value=[];relationError.value='';resetConcernPages()
+  ++relationSequence;concernLinks.value=[];relationError.value='';relationReadState.value='idle';relationReadError.value='';relationLoading.value=false;resetConcernPages()
   activeTab.value='body'; selected.value=saveDestination(kind,id);sheet.value='';search.value=''
-  if(liveMode&&selectedSpaceId.value)void loadLiveRecords('detail').then(()=>{
-    if(kind==='concern'&&selected.value?.kind==='concern'&&selected.value.id===id&&liveStatus.value==='ready')
-      return refreshConcernLinks(id)
-  })
+  if(liveMode&&selectedSpaceId.value){
+    void loadLiveRecords('detail')
+    if(kind==='concern')void refreshConcernLinks(id)
+  }
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function back() {
@@ -550,12 +562,12 @@ function back() {
   if(previous) {
     activeTab.value=previous.tab
     bodyTab.value=previous.section
-    ++relationSequence;concernLinks.value=[];relationError.value='';resetConcernPages()
+    ++relationSequence;concernLinks.value=[];relationError.value='';relationReadState.value='idle';relationReadError.value='';relationLoading.value=false;resetConcernPages()
     selected.value=previous.record
-    if(liveMode&&selectedSpaceId.value)void loadLiveRecords(previous.record?'detail':previous.section).then(()=>{
-      if(previous.record?.kind==='concern'&&liveStatus.value==='ready')
-        return refreshConcernLinks(previous.record.id)
-    })
+    if(liveMode&&selectedSpaceId.value){
+      void loadLiveRecords(previous.record?'detail':previous.section)
+      if(previous.record?.kind==='concern')void refreshConcernLinks(previous.record.id)
+    }
   } else selected.value=null
   if(previous?.tab==='body' && previous.section==='timeline' && !previous.record)
     nextTick(()=>window.scrollTo({top:timelineScrollPosition.value,behavior:'auto'}))
@@ -900,7 +912,7 @@ function detailName(kind: HealthKind,record:any) {
             <p>{{ liveMessage }}</p>
             <button type="button" class="quiet-button" @click="initializeLive">重新检查</button>
           </template>
-          <p v-else>正在连接健康档案…</p>
+          <HealthSkeleton v-else label="正在连接健康档案" :rows="4"/>
         </div>
         <template v-else>
         <section v-if="activeTab==='home'" class="home-view">
@@ -963,7 +975,8 @@ function detailName(kind: HealthKind,record:any) {
                   :aria-label="liveMode?'删除健康记录':'删除演示记录'" @click="removeCurrent"><Trash2 :size="18"/></button>
               </template>
             </HealthPageHeader>
-            <div v-if="selected.kind==='concern'" class="detail-columns concern-detail">
+            <HealthSkeleton v-if="liveMode&&liveStatus==='loading'&&selected.kind!=='concern'" label="正在加载记录详情" :rows="5"/>
+            <div v-else-if="selected.kind==='concern'" class="detail-columns concern-detail">
               <!-- Four product-purpose cards. Relation management is hidden by default,
                    and always scoped to the card's own record categories. -->
               <section class="ui-card detail-primary concern-status-card">
@@ -986,10 +999,12 @@ function detailName(kind: HealthKind,record:any) {
                 <p v-if="current.notes" class="helper-copy concern-note">{{ current.notes }}</p>
 
                 <div class="concern-section-heading">
-                  <h3>追踪指标 <span>{{ concernRelated.metrics.length }}</span></h3>
+                  <h3>追踪指标 <span v-if="concernContent==='ready'">{{ concernRelated.metrics.length }}</span></h3>
                   <span class="quiet-caption">看趋势</span>
                 </div>
-                <div v-if="pagedConcern.metrics.length" class="concern-metric-list">
+                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载追踪指标" :rows="2"/>
+                <div v-else-if="concernContent==='error'" role="alert" class="empty-inline">{{ relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="refreshConcernLinks(current.id)">重试</button></div>
+                <div v-else-if="pagedConcern.metrics.length" class="concern-metric-list">
                   <div v-for="m in pagedConcern.metrics" :key="m.id" class="concern-record-row">
                     <button type="button" class="concern-metric-link" @click="show('metric',m.id)">
                       <Activity :size="17"/><span>{{ m.name }}</span><ChevronRight :size="15"/>
@@ -999,14 +1014,16 @@ function detailName(kind: HealthKind,record:any) {
                       title="解除指标关联" @click="removeConcernLink(concernEdge('metric',m.id)!)"><Link2 :size="15"/></button>
                   </div>
                 </div>
-                <p v-else-if="!relationLoading" class="empty-inline">尚未追踪指标，可从下方关联。</p>
-                <ConcernPager :page="concernPage.metrics" :total="concernLists.metrics.length" @change="concernPage.metrics=$event"/>
+                <p v-else class="empty-inline">尚未追踪指标，可从下方关联。</p>
+                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.metrics" :total="concernLists.metrics.length" @change="concernPage.metrics=$event"/>
 
                 <div class="concern-section-heading concern-section-separated">
-                  <h3>近期测量 <span>{{ concernRelated.observations.length }}</span></h3>
+                  <h3>近期测量 <span v-if="concernContent==='ready'">{{ concernRelated.observations.length }}</span></h3>
                   <span class="quiet-caption">最新在前</span>
                 </div>
-                <div v-for="o in pagedConcern.observations" :key="o.id" class="concern-record-row">
+                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载近期测量" :rows="2"/>
+                <p v-else-if="concernContent==='error'" role="alert" class="empty-inline">关联读取失败，请重试追踪指标区的关联读取。</p>
+                <div v-for="o in (concernContent==='ready'?pagedConcern.observations:[])" :key="o.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('observation',o.id)">
                     <span class="list-icon"><Activity :size="18"/></span>
                     <span class="row-main">
@@ -1024,11 +1041,11 @@ function detailName(kind: HealthKind,record:any) {
                     class="concern-unlink" :disabled="relationBusy" :aria-label="'解除测量关联：'+nameOfMetric(o.metricId)"
                     title="解除测量关联" @click="removeConcernLink(concernEdge('observation',o.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!concernRelated.observations.length&&!relationLoading" class="empty-inline">尚无关联测量记录。</p>
-                <ConcernPager :page="concernPage.observations" :total="concernLists.observations.length" @change="concernPage.observations=$event"/>
+                <p v-if="!concernRelated.observations.length&&concernContent==='ready'" class="empty-inline">尚无关联测量记录。</p>
+                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.observations" :total="concernLists.observations.length" @change="concernPage.observations=$event"/>
                 <div class="concern-card-actions">
                   <button class="soft-button" type="button" @click="openEditor('observation','',current.id)"><Plus :size="16"/> 添加测量</button>
-                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :aria-expanded="activeRelationCard==='status'"
+                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :disabled="concernContent!=='ready'" :aria-expanded="activeRelationCard==='status'"
                     @click="toggleRelationCard('status')"><Link2 :size="15"/>{{ activeRelationCard==='status'?'完成管理':'管理关联' }}</button>
                 </div>
                 <ConcernLinkEditor v-if="liveMode&&activeRelationCard==='status'"
@@ -1040,8 +1057,10 @@ function detailName(kind: HealthKind,record:any) {
               </section>
 
               <section class="ui-card concern-business-card">
-                <div class="card-heading"><h2>正在做什么？</h2><span class="quiet-caption">{{ concernRelated.regimens.length }} 项方案</span></div>
-                <div v-for="r in pagedConcern.regimens" :key="r.id" class="concern-record-row">
+                <div class="card-heading"><h2>正在做什么？</h2><span v-if="concernContent==='ready'" class="quiet-caption">{{ concernRelated.regimens.length }} 项方案</span></div>
+                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载健康方案" :rows="2"/>
+                <p v-else-if="concernContent==='error'" role="alert" class="empty-inline">关联读取失败，请重试追踪指标区的关联读取。</p>
+                <div v-for="r in (concernContent==='ready'?pagedConcern.regimens:[])" :key="r.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('regimen',r.id)">
                     <span class="list-icon"><ListChecks :size="18"/></span>
                     <span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenStatuses,r.status) }} · {{ displayDate(r.startDate) }}</small></span>
@@ -1050,11 +1069,11 @@ function detailName(kind: HealthKind,record:any) {
                   <button v-if="activeRelationCard==='regimens'&&concernEdge('regimen',r.id)" class="concern-unlink" type="button"
                     :aria-label="'解除方案关联：'+r.name" :disabled="relationBusy" @click="removeConcernLink(concernEdge('regimen',r.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!concernRelated.regimens.length&&!relationLoading" class="empty-inline">还没有关联的健康方案。</p>
-                <ConcernPager :page="concernPage.regimens" :total="concernLists.regimens.length" @change="concernPage.regimens=$event"/>
+                <p v-if="!concernRelated.regimens.length&&concernContent==='ready'" class="empty-inline">还没有关联的健康方案。</p>
+                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.regimens" :total="concernLists.regimens.length" @change="concernPage.regimens=$event"/>
                 <div class="concern-card-actions">
                   <button class="soft-button" type="button" @click="openEditor('regimen','',current.id)"><Plus :size="16"/> 添加方案</button>
-                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :aria-expanded="activeRelationCard==='regimens'"
+                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :disabled="concernContent!=='ready'" :aria-expanded="activeRelationCard==='regimens'"
                     @click="toggleRelationCard('regimens')"><Link2 :size="15"/>{{ activeRelationCard==='regimens'?'完成管理':'管理关联' }}</button>
                 </div>
                 <ConcernLinkEditor v-if="liveMode&&activeRelationCard==='regimens'"
@@ -1066,8 +1085,10 @@ function detailName(kind: HealthKind,record:any) {
               </section>
 
               <section class="ui-card concern-business-card">
-                <div class="card-heading"><h2>最近发生了什么？</h2><span class="quiet-caption">{{ concernRelated.events.length }} 条事件</span></div>
-                <div v-for="e in pagedConcern.events" :key="e.id" class="concern-record-row">
+                <div class="card-heading"><h2>最近发生了什么？</h2><span v-if="concernContent==='ready'" class="quiet-caption">{{ concernRelated.events.length }} 条事件</span></div>
+                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载健康事件" :rows="2"/>
+                <p v-else-if="concernContent==='error'" role="alert" class="empty-inline">关联读取失败，请重试追踪指标区的关联读取。</p>
+                <div v-for="e in (concernContent==='ready'?pagedConcern.events:[])" :key="e.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('event',e.id)">
                     <span class="list-icon"><CalendarDays :size="18"/></span>
                     <span class="row-main"><b>{{ e.summary }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/>
@@ -1075,11 +1096,11 @@ function detailName(kind: HealthKind,record:any) {
                   <button v-if="activeRelationCard==='events'&&concernEdge('event',e.id)" class="concern-unlink" type="button"
                     :aria-label="'解除事件关联：'+e.summary" :disabled="relationBusy" @click="removeConcernLink(concernEdge('event',e.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!concernRelated.events.length&&!relationLoading" class="empty-inline">还没有关联的健康事件。</p>
-                <ConcernPager :page="concernPage.events" :total="concernLists.events.length" @change="concernPage.events=$event"/>
+                <p v-if="!concernRelated.events.length&&concernContent==='ready'" class="empty-inline">还没有关联的健康事件。</p>
+                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.events" :total="concernLists.events.length" @change="concernPage.events=$event"/>
                 <div class="concern-card-actions">
                   <button class="soft-button" type="button" @click="openEditor('event','',current.id)"><Plus :size="16"/> 记录事件</button>
-                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :aria-expanded="activeRelationCard==='events'"
+                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :disabled="concernContent!=='ready'" :aria-expanded="activeRelationCard==='events'"
                     @click="toggleRelationCard('events')"><Link2 :size="15"/>{{ activeRelationCard==='events'?'完成管理':'管理关联' }}</button>
                 </div>
                 <ConcernLinkEditor v-if="liveMode&&activeRelationCard==='events'"
@@ -1091,8 +1112,10 @@ function detailName(kind: HealthKind,record:any) {
               </section>
 
               <section class="ui-card concern-business-card">
-                <div class="card-heading"><h2>有哪些依据？</h2><span class="quiet-caption">{{ concernLists.evidence.length }} 份资料与评估</span></div>
-                <div v-for="e in pagedConcern.evidence" :key="e.kind+e.id" class="concern-record-row">
+                <div class="card-heading"><h2>有哪些依据？</h2><span v-if="concernContent==='ready'" class="quiet-caption">{{ concernLists.evidence.length }} 份资料与评估</span></div>
+                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载资料与评估" :rows="2"/>
+                <p v-else-if="concernContent==='error'" role="alert" class="empty-inline">关联读取失败，请重试追踪指标区的关联读取。</p>
+                <div v-for="e in (concernContent==='ready'?pagedConcern.evidence:[])" :key="e.kind+e.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show(e.kind,e.id)">
                     <span class="list-icon"><FileText v-if="e.kind==='document'" :size="18"/><BadgeCheck v-else :size="18"/></span>
                     <span class="row-main"><b>{{ e.title }}</b><small>{{ e.subtitle }} · {{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/>
@@ -1100,14 +1123,14 @@ function detailName(kind: HealthKind,record:any) {
                   <button v-if="activeRelationCard==='evidence'&&concernEdge(e.kind,e.id)" class="concern-unlink" type="button"
                     :aria-label="'解除资料关联：'+e.title" :disabled="relationBusy" @click="removeConcernLink(concernEdge(e.kind,e.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!concernLists.evidence.length&&!relationLoading" class="empty-inline">还没有报告或评估记录。</p>
-                <ConcernPager :page="concernPage.evidence" :total="concernLists.evidence.length" @change="concernPage.evidence=$event"/>
+                <p v-if="!concernLists.evidence.length&&concernContent==='ready'" class="empty-inline">还没有报告或评估记录。</p>
+                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.evidence" :total="concernLists.evidence.length" @change="concernPage.evidence=$event"/>
                 <div class="concern-card-actions">
                   <div class="action-row">
                     <button class="soft-button" type="button" @click="openImport(current.id)"><Plus :size="16"/> 添加资料</button>
                     <button class="soft-button" type="button" @click="openEditor('assessment','',current.id)"><Plus :size="16"/> 新建评估</button>
                   </div>
-                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :aria-expanded="activeRelationCard==='evidence'"
+                  <button v-if="liveMode" class="concern-manage-toggle" type="button" :disabled="concernContent!=='ready'" :aria-expanded="activeRelationCard==='evidence'"
                     @click="toggleRelationCard('evidence')"><Link2 :size="15"/>{{ activeRelationCard==='evidence'?'完成管理':'管理关联' }}</button>
                 </div>
                 <ConcernLinkEditor v-if="liveMode&&activeRelationCard==='evidence'"
@@ -1190,6 +1213,11 @@ function detailName(kind: HealthKind,record:any) {
             </div>
           </template>
 
+          <template v-else-if="selected&&liveMode">
+            <HealthPageHeader title="记录详情" can-back :agent-open="agentOpen" :agent-enabled="false" @back="back"/>
+            <HealthSkeleton v-if="liveStatus==='loading'" label="正在加载记录详情" :rows="4"/>
+            <p v-else class="empty-inline">此记录当前不可见或已删除。</p>
+          </template>
           <template v-else>
             <HealthPageHeader title="身体健康" subtitle="健康问题、指标、事件与资料"
               :agent-open="agentOpen" :agent-enabled="!liveMode"
@@ -1207,7 +1235,8 @@ function detailName(kind: HealthKind,record:any) {
             <nav class="sub-navigation" aria-label="身体页面导航">
               <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="changeBodyTab(item.id)">{{ item.title }}</button>
             </nav>
-            <div v-if="bodyTab==='focus'" class="body-overview">
+            <HealthSkeleton v-if="liveMode&&liveStatus!=='ready'" label="正在加载当前页面的数据" :rows="6"/>
+            <div v-else-if="bodyTab==='focus'" class="body-overview">
               <BodyOverview
                 :concerns="demo.concerns"
                 :bindings="bodyBindings"
@@ -1236,10 +1265,11 @@ function detailName(kind: HealthKind,record:any) {
                       @click="metricReferenceFilter=option.value">
                       {{ option.label }} <small>{{ metricReferenceCounts[option.value] }}</small>
                     </button>
-                  </div><button v-for="m in filteredMetrics" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong>
+                  </div><button v-for="m in filteredMetrics.slice(0,metricVisibleLimit)" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong>
                     <ReferenceIndicator v-if="latestFor(m.id)"
                       :comparison="referenceFor(latestFor(m.id)!,m)?.comparison"/>
                   </span><ChevronRight :size="18"/></button>
+                  <div v-if="metricVisibleLimit<filteredMetrics.length" class="list-toolbar"><button class="quiet-button" type="button" @click="metricVisibleLimit+=40">显示更多指标（{{ Math.min(metricVisibleLimit,filteredMetrics.length) }} / {{ filteredMetrics.length }}）</button></div>
                   <p v-if="!filteredMetrics.length" class="empty-inline metric-reference-empty">
                     {{ search.trim()?'没有找到符合条件的指标。':metricReferenceFilter==='all'?'还没有指标，添加后可以查看测量变化。':'目前没有这类指标，可以切换其他筛选。' }}
                   </p>
