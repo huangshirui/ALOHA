@@ -13,6 +13,9 @@ async function fixture(page:Page){
   const requests:{path:string;cursor:string|null;search:string|null}[]=[]
   let releaseFocus=()=>{}
   const focusGate=new Promise<void>(resolve=>{releaseFocus=resolve})
+  let releaseRelations=()=>{}
+  const relationsGate=new Promise<void>(resolve=>{releaseRelations=resolve})
+  let relationFailure=0
   let metricFailure=0
   let metricGate:Promise<void>|null=null
   await page.route('**/health/api/v1/**',async route=>{
@@ -26,6 +29,12 @@ async function fixture(page:Page){
     if(path.endsWith('/snapshot')){
       await focusGate
       return reply({personId,models:{health_concern:[concern]},presentation:{items:[]}})
+    }
+    if(path.endsWith('/health_concern/selected-records'))return reply({personId,items:[concern]})
+    if(path.endsWith('/relations')){
+      await relationsGate
+      if(relationFailure)return route.fulfill({status:relationFailure,json:{error:'fixture'}})
+      return reply({items:[{id:'rel_fake',spaceId:space.id,source:{kind:'record',modelKey:'health_concern',recordId:concern.id},predicate:'monitors',target:{kind:'record',modelKey:'health_metric',recordId:metrics[0].id},createdAt:'2026-01-01T00:00:00Z'}]})
     }
     if(path.endsWith('/health_metric/page')){
       if(metricGate)await metricGate
@@ -43,7 +52,9 @@ async function fixture(page:Page){
     return route.fulfill({status:500,json:{error:'Unexpected synthetic request'}})
   })
   return {
-    releaseFocus,
+    releaseFocus,releaseRelations,
+    failRelations:(status:number)=>{relationFailure=status},
+    relationReads:()=>requests.filter(r=>r.path.endsWith('/relations')).length,
     metricReads:()=>requests.filter(r=>r.path.endsWith('/health_metric/page')).length,
     metricCursors:()=>requests.filter(r=>r.path.endsWith('/health_metric/page')).map(r=>r.cursor),
     failMetric:(status:number)=>{metricFailure=status},
@@ -65,6 +76,8 @@ test('first load, warm navigation, pagination, detail return and scoped refresh'
   const rows=page.locator('button.list-row').filter({hasText:'合成指标'})
   await tab('指标').click()
   await expect(rows).toHaveCount(20)
+  await page.getByRole('button',{name:'加载更多',exact:true}).waitFor({state:'visible'})
+  await expect(page.getByRole('button',{name:'加载更多',exact:true})).toBeEnabled()
   await page.getByRole('button',{name:'加载更多',exact:true}).click()
   await expect(rows).toHaveCount(22)
   await expect(refresh()).toBeEnabled()
@@ -110,4 +123,34 @@ test('first load, warm navigation, pagination, detail return and scoped refresh'
   await refresh().click()
   await expect(page.getByText(/当前用户没有该空间或模型的访问权限/)).toBeVisible()
   await expect(rows).toHaveCount(0)
+})
+
+test('concern groups never claim empty before completion and keep last success on refresh failure',async({page})=>{
+  const fake=await fixture(page)
+  fake.releaseFocus()
+  await page.goto('/health/')
+  await page.getByRole('button',{name:/合成关注.*未定位/}).click()
+  await expect(page.getByRole('heading',{name:'合成关注',exact:true})).toBeVisible()
+  await expect(page.getByRole('status',{name:'正在加载追踪指标'})).toBeVisible()
+  await expect(page.getByText('尚未追踪指标，可从下方关联。')).toHaveCount(0)
+  await expect(page.getByText('尚无关联测量记录。')).toHaveCount(0)
+  fake.releaseRelations()
+  const metric=page.locator('.concern-metric-link').filter({hasText:'合成指标 01'})
+  await expect(metric).toBeVisible()
+  await expect(page.getByText('尚无关联测量记录。')).toBeVisible()
+  const refresh=page.getByRole('button',{name:'刷新当前页面',exact:true})
+  await expect(refresh).toBeEnabled()
+  const before=fake.relationReads()
+  await metric.click()
+  await expect(page.getByRole('heading',{name:'合成指标 01',exact:true})).toBeVisible()
+  await expect(refresh).toBeEnabled()
+  await page.getByRole('button',{name:'返回列表'}).click()
+  await expect(metric).toBeVisible()
+  await expect(refresh).toBeEnabled()
+  expect(fake.relationReads()).toBe(before)
+  fake.failRelations(503)
+  await refresh.click()
+  await expect(page.getByText(/关联更新失败，显示上次数据/).first()).toBeVisible()
+  await expect(metric).toBeVisible()
+  await expect(page.getByText('尚未追踪指标，可从下方关联。')).toHaveCount(0)
 })

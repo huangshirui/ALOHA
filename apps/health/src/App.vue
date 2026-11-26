@@ -1912,7 +1912,7 @@ function detailName(kind: HealthKind,record:any) {
                 <HealthSkeleton v-if="concernSectionState('metrics')==='loading'" label="正在加载追踪指标" :rows="2"/>
                 <div v-else-if="concernSectionState('metrics')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.metrics || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('metrics')">重试</button></div>
                 <p v-if="concernSectionState('metrics')==='ready'&&(concernReadErrors.metrics||relationReadError)" class="empty-inline" role="alert">{{ concernReadErrors.metrics||relationReadError }} <button type="button" class="inline-link" @click="retryConcernGroup('metrics')">重试</button></p>
-                <div v-else-if="pagedConcern.metrics.length" class="concern-metric-list">
+                <div v-if="concernSectionState('metrics')==='ready'&&pagedConcern.metrics.length" class="concern-metric-list">
                   <div v-for="m in pagedConcern.metrics" :key="m.id" class="concern-record-row">
                     <button type="button" class="concern-metric-link" @click="show('metric',m.id)">
                       <Activity :size="17"/><span>{{ m.name }}</span><ChevronRight :size="15"/>
@@ -1922,7 +1922,7 @@ function detailName(kind: HealthKind,record:any) {
                       title="解除指标关联" @click="removeConcernLink(concernEdge('metric',m.id)!)"><Link2 :size="15"/></button>
                   </div>
                 </div>
-                <p v-else class="empty-inline">尚未追踪指标，可从下方关联。</p>
+                <p v-if="concernSectionState('metrics')==='ready'&&!concernRelated.metrics.length" class="empty-inline">尚未追踪指标，可从下方关联。</p>
                 <ConcernPager v-if="concernSectionState('metrics')==='ready'" :page="concernPage.metrics" :total="concernLists.metrics.length" @change="concernPage.metrics=$event"/>
 
                 <div class="concern-section-heading concern-section-separated">
