@@ -308,6 +308,18 @@ test('metric chart renders real dates, preserves duplicate-day readings and swit
   await expect(trend.getByRole('group',{name:'选择趋势时间维度'})).toHaveCount(0)
   const picker=trend.getByRole('combobox',{name:'选择一条实际观测'})
   await expect(picker.locator('option')).toHaveCount(6)
+  const fieldStyle=(el:Element)=>{
+    const style=getComputedStyle(el),a=el.getBoundingClientRect(),label=el.parentElement!.querySelector('span')!.getBoundingClientRect()
+    return {height:a.height,radius:style.borderRadius,arrow:style.backgroundImage,centerOffset:Math.abs((a.top+a.bottom-label.top-label.bottom)/2)}
+  }
+  const topField=await range.evaluate(fieldStyle),bottomField=await picker.evaluate(fieldStyle)
+  expect(topField.height).toBeCloseTo(bottomField.height,0)
+  expect(topField.radius).toBe(bottomField.radius)
+  expect(topField.arrow).not.toBe('none')
+  expect(topField.arrow).toBe(bottomField.arrow)
+  expect(topField.centerOffset).toBeLessThan(2)
+  expect(bottomField.centerOffset).toBeLessThan(2)
+  await expect.poll(()=>svg.locator('path[fill="none"]').evaluateAll(paths=>paths.some(p=>/[Cc]/.test(p.getAttribute('d')||'')&&p.getAttribute('stroke-width')==='2'))).toBe(true)
   await picker.selectOption('trend_fake_2')
   await expect(trend.getByText('已选 · 2025-06-01 · 原始观测')).toBeVisible()
   await expect(trend.locator('.metric-trend-readout strong')).toHaveText('6 unit')
