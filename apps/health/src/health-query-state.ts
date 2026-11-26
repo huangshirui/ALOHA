@@ -29,6 +29,17 @@ export class HealthQueryState {
     }
   }
   isInvalidated(key:QueryKey){return this.entries.get(JSON.stringify(key))?.invalidated===true}
+  /** Reconcile a confirmed mutation in matching projections without renewing freshness.
+   * Returning undefined discards only a projection that can no longer be trusted. */
+  updatePrefix<T>(prefix:QueryKey,update:(data:T,key:QueryKey)=>T|undefined){
+    for(const [id,entry] of this.entries){
+      const key=JSON.parse(id) as QueryKey
+      if(prefix.length>key.length||!prefix.every((part,index)=>part===key[index]))continue
+      const next=update(entry.data as T,key)
+      if(next===undefined)this.entries.delete(id)
+      else if(next!==entry.data){entry.data=next;entry.invalidated=true}
+    }
+  }
   invalidate(...tags:QueryTag[]){
     for(const entry of this.entries.values())if(entry.tags.some(tag=>tags.includes(tag)))entry.invalidated=true
   }
@@ -44,6 +55,7 @@ export class HealthViewState<T>{
     while(this.views.size>this.limit)this.views.delete(this.views.keys().next().value!)
   }
   restore(key:QueryKey):T|undefined{return this.views.get(JSON.stringify(key))}
+  remove(key:QueryKey){this.views.delete(JSON.stringify(key))}
   clear(){this.views.clear()}
 }
 type Flight={controller:AbortController;promise:Promise<unknown>;users:number}

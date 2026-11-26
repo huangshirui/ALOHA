@@ -18,6 +18,19 @@ describe('Health query/view lifecycle',()=>{
     expect(state.get(['documents'],1)?.fresh).toBe(true)
     state.clear();expect(state.get(['metrics'],2)).toBeUndefined()
   })
+  it('reconciles a confirmed mutation without renewing freshness, changing cursors or crossing scope',()=>{
+    const state=new HealthQueryState(),prefix=['session','space','person','list','metrics']
+    const key=[...prefix,'term'],other=['session','other','person','list','metrics','term']
+    const data={ids:['fake-a','fake-b'],cursor:'opaque',pages:2}
+    state.set(key,data,['metric'],2,0)
+    state.set(other,data,['metric'],2,0)
+    state.updatePrefix<typeof data>(prefix,p=>({...p,ids:p.ids.filter(id=>id!=='fake-b')}))
+    expect(state.get(key,1)).toEqual({data:{ids:['fake-a'],cursor:'opaque',pages:2},fresh:false,updatedAt:0})
+    expect(state.get(other,1)).toEqual({data,fresh:true,updatedAt:0})
+    state.updatePrefix<typeof data>(prefix,()=>undefined)
+    expect(state.get(key,2)).toBeUndefined()
+    expect(state.get(other,2)?.data).toEqual(data)
+  })
   it('restores exact view parameters and scroll separately from queries',()=>{
     const views=new HealthViewState<{search:string;scroll:number}>()
     views.save(['metrics'],{search:'test',scroll:320})

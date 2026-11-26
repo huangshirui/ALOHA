@@ -125,6 +125,7 @@ const editId = ref('')
 const draft = ref<Record<string,any>>({})
 const formError = ref('')
 const saving=ref(false)
+const deleting=ref(false)
 const uploadProgress=ref<FileUploadProgress|null>(null)
 const uploadFile=shallowRef<File|null>(null)
 /** Searchable Metric chooser and an inline quick-create path.
@@ -817,7 +818,7 @@ async function loadMetricDetail(metricId:string,force=false,rebuild=false){
     })
     await Promise.all([header,history])
     if(!valid())return
-    if(metricHistoryReady.value&&current.value?.valueType==='number')await loadMetricTrend(metricId,force&&!metricHistoryError.value)
+    if(metricHistoryReady.value&&current.value?.valueType==='number'&&!metricHistoryRebuild.value)await loadMetricTrend(metricId,force&&!metricHistoryError.value)
     if(valid())finishView(hit?.fresh&&!force?hit.updatedAt:Date.now())
   }catch(e){
     if(!valid()||optionDenied(e))return
@@ -992,7 +993,7 @@ async function recheckHealthScope(){
     const person=await getOwnSpacePerson(spaceId)
     if(generation!==scopeGeneration)return
     if(person.personId!==personId)throw new HealthApiError(403,null)
-    if(activeTab.value==='body'&&!sheet.value&&!saving.value&&!viewBusy.value)void activateHealthView()
+    if(activeTab.value==='body'&&!sheet.value&&!saving.value&&!deleting.value&&!viewBusy.value)void activateHealthView()
   }catch(e){if(generation===scopeGeneration){clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法验证当前健康档案'}}
   finally{scopeChecking.value=false;if(generation===scopeGeneration)void nextTick(()=>window.scrollTo({top:scroll,behavior:'auto'}))}
 }
@@ -1004,7 +1005,7 @@ function onHealthVisibility(){
   else refreshStaleVisibleView()
 }
 function refreshStaleVisibleView(){
-  if(liveMode&&document.visibilityState==='visible'&&activeTab.value==='body'&&!viewBusy.value&&!scopeChecking.value&&!sheet.value&&!saving.value&&viewUpdatedAt.value!==null&&Date.now()-viewUpdatedAt.value>=HEALTH_STALE_MS)void activateHealthView()
+  if(liveMode&&document.visibilityState==='visible'&&activeTab.value==='body'&&!viewBusy.value&&!scopeChecking.value&&!sheet.value&&!saving.value&&!deleting.value&&viewUpdatedAt.value!==null&&Date.now()-viewUpdatedAt.value>=HEALTH_STALE_MS)void activateHealthView()
 }
 onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',onHealthVisibility);window.removeEventListener('online',refreshStaleVisibleView);readCoordinator.clear();queryState.clear();viewStates.clear()})
 onMounted(()=>{
@@ -1269,8 +1270,8 @@ function restoreViewState(loc:HealthLocation){
   restoringView=false
   return state?.scroll??0
 }
-function leaveView(){
-  saveViewState()
+function leaveView(save=true){
+  if(save)saveViewState()
   ++liveLoadSequence;++relationSequence
   cancelPage();cancelSnapshot();cancelMetricDetail();resetDocumentRelated();resetConcernReads();cancelRelationOptions()
   activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle';relationReadError.value='';relationError.value='';concernLinks.value=[]
@@ -1285,7 +1286,7 @@ async function activateHealthView(force=false,rebuild=false){
   if(record?.kind==='document'&&selected.value?.kind==='document'&&selected.value.id===record.id&&current.value&&documentRelatedActivated.value)await loadDocumentRelated(record.id,force)
 }
 function refreshCurrentView(rebuild=false){
-  if(!liveMode||viewBusy.value||scopeChecking.value||sheet.value||saving.value||relationBusy.value)return
+  if(!liveMode||viewBusy.value||scopeChecking.value||sheet.value||saving.value||deleting.value||relationBusy.value)return
   if(!subjectPersonId.value){void initializeLive();return}
   void activateHealthView(true,rebuild)
 }
@@ -1296,7 +1297,7 @@ function restoreLocation(loc:HealthLocation){
   void activateHealthView()
   void nextTick(()=>{if(key===JSON.stringify(locationKey()))window.scrollTo({top:scroll,behavior:'auto'})})
 }
-function navigationBlocked(){return scopeChecking.value||saving.value||quickMetricSaving.value||relationBusy.value}
+function navigationBlocked(){return scopeChecking.value||saving.value||deleting.value||quickMetricSaving.value||relationBusy.value}
 function navigate(tab:Tab){
   if(navigationBlocked())return
   const target=tab==='home'?'body':tab
@@ -1316,10 +1317,16 @@ function show(kind:HealthKind,id:string){
   const previous=location();leaveView();routeStack.value.push(previous)
   restoreLocation({tab:'body',section:bodyTab.value,record:saveDestination(kind,id)})
 }
-function back(){
-  if(navigationBlocked())return
+function returnToPrevious(deleted?:{kind:HealthKind;id:string}){
+  if(deleted){
+    viewStates.remove(locationKey())
+    routeStack.value=routeStack.value.filter(loc=>loc.record?.kind!==deleted.kind||loc.record.id!==deleted.id)
+  }
   const previous=routeStack.value.pop()??{tab:'body' as const,section:bodyTab.value,record:null}
-  leaveView();restoreLocation(previous)
+  leaveView(!deleted);restoreLocation(previous)
+}
+function back(){
+  if(!navigationBlocked())returnToPrevious()
 }
 async function startCreate(kind: HealthKind) {
   if(liveMode && (!selectedSpaceId.value || !subjectPersonId.value || liveStatus.value!=='ready')) {
@@ -1486,7 +1493,7 @@ async function metricNameExists(name:string,exceptId=''){
   throw Error('同名指标查询未完成，请缩小名称范围后重试')
 }
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
-  if(saving.value)return
+  if(saving.value||deleting.value)return
   const record=id ? getList(kind).find(r=>r.id===id) : null
   if (id && !record) {notice.value='这条记录已不存在，请刷新后重试。';return}
   const d=record ? editableSnapshot(record) : makeEmpty(kind,today)
@@ -1639,24 +1646,69 @@ async function formSave() {
   sheet.value=''
   formError.value=''
   notice.value='已保存。当前为演示数据，刷新页面后将恢复。'
-  search.value=''
   // Save -> detail -> Back returns to the exact list, concern or metric that started the action.
   if(selected.value?.kind===kind && selected.value.id===savedId) return
   show(kind,savedId)
 }
+/** A successful delete is authoritative; stale cached query projections must not
+ * resurrect that record during navigation or a failed refresh. Keep view state
+ * and the old pagination window independently; invalidation forces a new chain. */
+function reconcileDeletedRecord(kind:HealthKind,id:string){
+  queryState.remove(scopeKey('detail',kind,id))
+  if(kind==='concern'){
+    queryState.updatePrefix<string[]>(scopeKey('focus'),ids=>ids.includes(id)?ids.filter(item=>item!==id):ids)
+    queryState.remove(scopeKey('concern-relations',id))
+    queryState.updatePrefix<[string,string][]>(scopeKey('concern-group',id),()=>undefined)
+  }else{
+    queryState.updatePrefix<ConcernRelation[]>(scopeKey('concern-relations'),edges=>edges.some(e=>e.target.modelKey===healthModelKey[kind]&&e.target.recordId===id)?edges.filter(e=>e.target.modelKey!==healthModelKey[kind]||e.target.recordId!==id):edges)
+  }
+  if(kind==='metric'||kind==='document'||kind==='regimen'){
+    const section=kind==='metric'?'metrics':kind==='document'?'documents':'regimens'
+    queryState.updatePrefix<ListProjection>(scopeKey('list',section),p=>p.ids.includes(id)?{...p,ids:p.ids.filter(x=>x!==id),latest:p.latest.filter(([key])=>key!==id),ready:p.ready.filter(key=>key!==id)}:p)
+  }
+  if(kind==='metric'){
+    queryState.updatePrefix<ReferenceProjection>(scopeKey('reference'),p=>p.metrics.some(m=>m.id===id)?{metrics:p.metrics.filter(m=>m.id!==id),latest:p.latest.filter(([key])=>key!==id)}:p)
+    queryState.remove(scopeKey('history',id))
+    queryState.updatePrefix<Observation[]>(scopeKey('trend',id),()=>undefined)
+  }
+  if(kind==='observation'){
+    queryState.updatePrefix<ListProjection>(scopeKey('list','metrics'),p=>{
+      const affected=new Set(p.latest.filter(([,row])=>row.id===id).map(([key])=>key))
+      return affected.size?{...p,latest:p.latest.filter(([key])=>!affected.has(key)),ready:p.ready.filter(key=>!affected.has(key))}:p
+    })
+    // Cannot classify a metric against a deleted latest measurement until the
+    // replacement latest measurement is known. Keep the user's filter, not a false classification.
+    queryState.updatePrefix<ReferenceProjection>(scopeKey('reference'),p=>p.latest.some(([,row])=>row.id===id)?undefined:p)
+    queryState.updatePrefix<HistoryProjection>(scopeKey('history'),p=>p.rows.some(row=>row.id===id)?{...p,rows:p.rows.filter(row=>row.id!==id)}:p)
+    queryState.updatePrefix<Observation[]>(scopeKey('trend'),rows=>rows.some(row=>row.id===id)?rows.filter(row=>row.id!==id):rows)
+    queryState.updatePrefix<string[]>(scopeKey('document-related'),ids=>ids.includes(id)?ids.filter(item=>item!==id):ids)
+  }
+  if(kind==='observation'||kind==='event'||kind==='assessment'){
+    const keep=(row:TimelineEntry)=>row.kind!==kind||row.id!==id
+    queryState.updatePrefix<TimelineProjection>(scopeKey('timeline'),p=>{
+      if(p.entries.every(keep)&&p.streams.every(stream=>stream.buffer.every(keep)))return p
+      return {...p,entries:p.entries.filter(keep),streams:p.streams.map(stream=>({...stream,buffer:stream.buffer.filter(keep)}))}
+    })
+  }
+  queryState.updatePrefix<ChoiceProjection>(scopeKey('picker',kind),p=>p.ids.includes(id)?{...p,ids:p.ids.filter(item=>item!==id)}:p)
+}
 async function removeCurrent() {
-  if(!selected.value||!current.value) return
+  if(navigationBlocked()||!selected.value||!current.value||sheet.value) return
   const kind=selected.value.kind,id=selected.value.id
   if(liveMode&&kind==='metric'&&(!metricHistoryReady.value||metricHistoryLoading.value||metricHistoryError.value)){notice.value='请先确认该指标的测量记录已加载。';return}
   if(kind==='metric' && (liveMode?(metricHistoryRows.value.length>0||!!metricHistoryCursor.value):demo.observations.some(o=>o.metricId===id))) {notice.value='该指标已有测量记录，请先保留指标与历史数据。';return}
   // Partial caches are not proof that references do not exist. Check on explicit deletion.
   if(!window.confirm(liveMode?'确定从 LifeSpace 删除这条健康记录吗？此操作会记录变更历史。':'要从本次演示中删除这条记录吗？')) return
+  const generation=scopeGeneration,spaceId=selectedSpaceId.value,personId=subjectPersonId.value
+  const stillCurrent=()=>generation===scopeGeneration&&spaceId===selectedSpaceId.value&&personId===subjectPersonId.value&&selected.value?.kind===kind&&selected.value.id===id
+  deleting.value=true
+  let deleted=false
+  try{
   if(liveMode) {
     try {
-      if(!selectedSpaceId.value || !Number.isInteger(current.value.version))
+      if(!spaceId || !personId || !Number.isInteger(current.value.version))
         throw new Error('缺少记录版本，无法安全删除')
-      const spaceId=selectedSpaceId.value,personId=subjectPersonId.value,version=current.value.version
-      const stillCurrent=()=>spaceId===selectedSpaceId.value&&personId===subjectPersonId.value&&selected.value?.kind===kind&&selected.value.id===id
+      const version=current.value.version
       if(kind==='document'||kind==='event'){
         const result=await getHealthSnapshot(spaceId,kind==='document'?['health_observation','health_regimen']:['health_document'])
         if(!stillCurrent())return
@@ -1677,13 +1729,15 @@ async function removeCurrent() {
       }
       if(!stillCurrent())return
       await deleteHealthRecord(spaceId,healthModelKey[kind],id,version)
+      if(!stillCurrent())return
       invalidateHealth(kind,'relation')
-    } catch(e) {notice.value=e instanceof Error?e.message:'删除失败';return}
+      reconcileDeletedRecord(kind,id)
+    } catch(e) {if(stillCurrent()&&!optionDenied(e))notice.value=e instanceof Error?e.message:'删除失败';return}
   }
   const rows=getList(kind)
   const i=rows.findIndex(r=>r.id===id)
   if(i>=0) rows.splice(i,1)
-  if(liveMode&&kind==='concern'){const hit=queryState.get<string[]>(scopeKey('focus'));if(hit){focusIds.value=hit.data.filter(item=>item!==id);queryState.set(scopeKey('focus'),[...focusIds.value],['concern','presentation'],focusIds.value.length,Date.now(),hit.updatedAt);queryState.invalidate('concern')}}
+  if(liveMode&&kind==='concern')focusIds.value=focusIds.value.filter(item=>item!==id)
   // Remove orphaned UI-only relation indexes without cascading health facts.
   if(kind==='document') {
     demo.observations.forEach(o=>{if(o.sourceDocumentId===id)o.sourceDocumentId=''})
@@ -1694,8 +1748,9 @@ async function removeCurrent() {
   if(kind==='event')demo.documents.forEach(d=>{if(d.eventId===id)d.eventId=''})
   let presentationCleanupFailed=false
   if(liveMode && kind==='concern') {
-    try { await deleteConcernPresentation(selectedSpaceId.value,id) }
-    catch { presentationCleanupFailed=true }
+    try { await deleteConcernPresentation(spaceId,id) }
+    catch(e) { if(stillCurrent()&&optionDenied(e))return;presentationCleanupFailed=true }
+    if(!stillCurrent())return
   }
   if(kind==='concern') {
     if(mapSelectedConcern.value===id) mapSelectedConcern.value=null
@@ -1707,7 +1762,11 @@ async function removeCurrent() {
   notice.value=liveMode
     ? presentationCleanupFailed?'健康记录已删除，展示设置清理失败（不会再显示旧定位）。':'已从 LifeSpace 删除。'
     :'已从演示页面移除。'
-  back()
+  deleted=true
+  }finally{
+    deleting.value=false
+    if(deleted&&stillCurrent())returnToPrevious({kind,id})
+  }
 }
 function togglePlan(id: string) {
   if(liveMode){notice.value='真实任务完成状态需要由 LifeSpace Task/Recurrence 管理，尚未接入。';return}
@@ -1817,7 +1876,7 @@ function detailName(kind: HealthKind,record:any) {
         <section v-if="activeTab==='home'" class="home-view">
           <HealthPageHeader title="健康概览" subtitle="持续关注与最近变化"
             :agent-open="agentOpen" :agent-enabled="!liveMode"
-              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||relationBusy" @refresh="refreshCurrentView()"
+              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||deleting||relationBusy" @refresh="refreshCurrentView()"
             
             @ask="openAgent">
             <template #actions>
@@ -1865,15 +1924,15 @@ function detailName(kind: HealthKind,record:any) {
             <HealthPageHeader :title="detailName(selected.kind,current)" :context="labelForKind(selected.kind)"
               :subtitle="selected.kind==='concern' ? (current.summary || '持续关注的健康问题') : undefined"
               can-back :agent-open="agentOpen" :agent-enabled="!liveMode"
-              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||relationBusy" @refresh="refreshCurrentView()"
+              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||deleting||relationBusy" @refresh="refreshCurrentView()"
             
             @ask="openAgent" @back="back">
               <template #actions>
-                <button type="button" class="quiet-button detail-edit-button" aria-label="修改记录" title="修改记录" @click="openEditor(selected.kind,current.id)">
+                <button type="button" class="quiet-button detail-edit-button" aria-label="修改记录" title="修改记录" :disabled="deleting" @click="openEditor(selected.kind,current.id)">
                   <Pencil :size="16"/><span class="detail-edit-label">修改</span>
                 </button>
                 <button type="button" class="icon-button destructive" :title="liveMode?'删除健康记录':'删除演示记录'"
-                  :aria-label="liveMode?'删除健康记录':'删除演示记录'" @click="removeCurrent"><Trash2 :size="18"/></button>
+                  :aria-label="liveMode?'删除健康记录':'删除演示记录'" :disabled="deleting||saving" :aria-busy="deleting" @click="removeCurrent"><Trash2 :size="18"/></button>
               </template>
             </HealthPageHeader>
             <div v-if="liveMode" class="health-query-status" aria-live="polite">
@@ -2100,7 +2159,7 @@ function detailName(kind: HealthKind,record:any) {
                 <button v-for="o in (liveMode?metricHistoryRows:demo.observations.filter(o=>o.metricId===current.id).sort((a,b)=>b.observedDate.localeCompare(a.observedDate)))" :key="o.id" type="button" class="row-link" @click="show('observation',o.id)"><span class="row-main"><span class="metric-reading-inline"><b>{{ observationValue(o,current) }}</b><ReferenceIndicator :comparison="referenceFor(o,current)?.comparison"/></span><small>{{ displayDate(o.observedDate) }}</small></span><ChevronRight :size="16"/></button>
                 <HealthSkeleton v-if="liveMode&&metricHistoryLoading&&!metricHistoryReady" label="正在加载历史记录" variant="history" :rows="3"/>
                  <p v-else-if="liveMode&&metricHistoryError" role="alert" class="empty-inline">{{ metricHistoryError }} <button class="inline-link" type="button" @click="retryMetricHistory(current.id)">重试</button></p>
-                 <p v-else-if="liveMode?metricHistoryReady&&!metricHistoryRows.length:!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
+                 <p v-else-if="liveMode?metricHistoryReady&&!metricHistoryLoading&&!metricHistoryRebuild&&!metricHistoryRows.length&&!metricHistoryCursor:!demo.observations.some(o=>o.metricId===current.id)" class="empty-inline">暂时没有历史记录。</p>
                  <p v-if="metricHistoryRebuild" class="helper-copy">保留已加载历史。 <button type="button" class="inline-link" @click="refreshCurrentView(true)">重新加载首批历史</button></p>
                   <button v-if="liveMode&&metricHistoryCursor&&!metricHistoryError&&!metricHistoryRebuild" type="button" class="quiet-button" :disabled="metricHistoryLoading" @click="loadMetricHistory(current.id,true)">{{ metricHistoryLoading?'正在加载…':'加载更早记录' }}</button>
               </section>
@@ -2164,7 +2223,7 @@ function detailName(kind: HealthKind,record:any) {
           <template v-else>
             <HealthPageHeader title="身体健康" subtitle="健康问题、指标、事件与资料"
               :agent-open="agentOpen" :agent-enabled="!liveMode"
-              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||relationBusy" @refresh="refreshCurrentView()"
+              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||deleting||relationBusy" @refresh="refreshCurrentView()"
               
               @ask="openAgent">
               <template #actions>
@@ -2222,13 +2281,13 @@ function detailName(kind: HealthKind,record:any) {
                       :comparison="referenceFor(metricRowLatest(m.id)!,m)?.comparison"/>
                   </span><ChevronRight :size="18"/></button>
                   <div v-if="(!liveMode||!usesPagedSection('metrics'))&&metricVisibleLimit<filteredMetrics.length" class="list-toolbar"><button class="quiet-button" type="button" @click="metricVisibleLimit+=40">显示更多指标（{{ Math.min(metricVisibleLimit,filteredMetrics.length) }} / {{ filteredMetrics.length }}）</button></div>
-                  <p v-if="(!liveMode||viewHasData)&&!viewError&&!pagedError&&!referenceError&&!pagedCursor&&!filteredMetrics.length" class="empty-inline metric-reference-empty">
+                  <p v-if="(!liveMode||viewHasData&&!viewRefreshing&&!rebuildRequired)&&!viewError&&!pagedError&&!referenceError&&!pagedCursor&&!filteredMetrics.length" class="empty-inline metric-reference-empty">
                     {{ search.trim()?'没有找到符合条件的指标。':metricReferenceFilter==='all'?'还没有指标，添加后可以查看测量变化。':'目前没有这类指标，可以切换其他筛选。' }}
                   </p>
                 </template>
                 <template v-if="bodyTab==='timeline'">
                   <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
-                    :partial="liveMode" :has-more="timelineMore" :loading="timelineLoading" :ready="!liveMode||viewHasData" :error="timelineError"
+                    :partial="liveMode" :has-more="timelineMore" :loading="timelineLoading" :ready="!liveMode||viewHasData&&!viewRefreshing&&!rebuildRequired&&!viewError" :error="timelineError"
                     @update:selected-kind="changeTimelineKind" @open="show"/>
                   <div v-if="liveMode&&timelineError" class="list-toolbar"><button class="quiet-button" type="button" @click="loadTimeline(timelineMore)">重试</button></div>
                   <div v-else-if="liveMode&&timelineMore&&!rebuildRequired" class="list-toolbar"><button class="quiet-button" type="button" :disabled="timelineLoading" @click="loadTimeline(true)">{{ timelineLoading?'正在加载…':search.trim()?'继续搜索更早记录':'加载更多' }}</button></div>
@@ -2240,7 +2299,7 @@ function detailName(kind: HealthKind,record:any) {
                 <div v-if="liveMode&&bodyTab==='metrics'&&metricReferenceFilter!=='all'&&referenceError" role="alert" class="empty-inline">{{ referenceError }} <button type="button" class="inline-link" @click="loadReferenceIndex(true)">重试统计</button></div>
                 <div v-if="liveMode&&bodyTab==='metrics'&&metricSummaryError" role="alert" class="empty-inline">{{ metricSummaryError }} <button class="inline-link" type="button" @click="loadPagedSection('metrics')">重新加载指标</button></div>
                 <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedCursor&&!rebuildRequired&&!pagedError&&!metricSummaryError" class="list-toolbar"><button class="quiet-button" type="button"  :disabled="pagedLoadingMore||metricSummaryLoading||pagedRefreshing" @click="loadPagedSection(bodyTab,true)">{{ pagedLoadingMore?'正在加载更多…':metricSummaryLoading?'正在读取最新值…':'加载更多' }}</button></div>
-                <div v-if="(!liveMode||viewHasData)&&!viewError&&!pagedError&&!pagedCursor&&((bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
+                <div v-if="(!liveMode||viewHasData&&!viewRefreshing&&!rebuildRequired)&&!viewError&&!pagedError&&!pagedCursor&&((bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
               </div>
               <p v-if="bodyTab==='documents'&&!liveMode" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
             </template>
@@ -2251,7 +2310,7 @@ function detailName(kind: HealthKind,record:any) {
           <HealthPageHeader :title="activeTab==='food'?'饮食管理':'运动管理'"
               subtitle="逐步连接日常习惯与身体变化"
               :agent-open="agentOpen" :agent-enabled="!liveMode"
-              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||relationBusy" @refresh="refreshCurrentView()"
+              :refresh-enabled="liveMode&&activeTab==='body'" :refreshing="viewBusy" :refresh-disabled="!!sheet||saving||deleting||relationBusy" @refresh="refreshCurrentView()"
             
             @ask="openAgent"/>
           <div class="future-card"><component :is="activeTab==='food'?Utensils:Activity" :size="36"/><h2>先把重要的健康记录整理好</h2><p>饮食和运动会继续沿用这套操作方式，提供各自更适合的记录和分析页面。</p><button class="quiet-button" type="button" @click="openBody('focus')">看看身体管理 <ArrowRight :size="16"/></button></div></section>
