@@ -237,7 +237,7 @@ test('edit and delete restore original filtered paginated metric list, including
   page.once('dialog',d=>d.accept())
   await remove.click()
   await expect(remove).toBeDisabled()
-  expect(fake.deleteCount()).toBe(2)
+  await expect.poll(() => fake.deleteCount()).toBe(2)
   release()
   // Delete succeeded even though the following list refresh failed.
   await expect(search).toHaveValue('合成指标')
