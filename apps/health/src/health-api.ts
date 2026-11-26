@@ -79,9 +79,9 @@ export interface HealthSnapshot {
   models:Partial<Record<HealthModelKey,HealthRecord[]>>
   presentation:{items:import('./health-presentation').ConcernPresentation[]}
 }
-export const getHealthSnapshot = (spaceId:string,models:HealthModelKey[]) =>{
+export const getHealthSnapshot = (spaceId:string,models:HealthModelKey[],signal?:AbortSignal) =>{
   const params=new URLSearchParams({models:models.join(',')})
-  return api<HealthSnapshot>(`/spaces/${encodeURIComponent(spaceId)}/snapshot?${params}`)
+  return api<HealthSnapshot>(`/spaces/${encodeURIComponent(spaceId)}/snapshot?${params}`,{signal,cache:'no-store'})
 }
 /** A single bounded view page, with verified Person echoed by the BFF. */
 export interface ScopedHealthPage extends HealthPage<HealthRecord>{personId:string}

@@ -16,9 +16,10 @@ import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   getHealthSnapshot, getHealthPage, getMetricSummaries, HealthApiError, updateHealthRecord, uploadHealthDocument,
   listConcernRelations,linkConcernRecord,unlinkConcernRecord,
   type FileUploadProgress,
-  type HealthRecord } from './health-api'
+  type HealthRecord, type ScopedHealthPage } from './health-api'
 import { decodeHealthRecord, emptyHealthData, encodeHealthFields, healthKinds, healthModelKey } from './health-live'
 import {METRIC_PAGE_SIZE} from './health-page-query'
+import {HealthPageCache} from './health-page-cache'
 import { concernTargetHasRelation,concernTargetModels,
   type ConcernRelation,type ConcernTargetKind } from './health-concern-relations'
 import AlohaHub from '@aloha/ui/AlohaHub.vue'
@@ -172,6 +173,7 @@ async function saveQuickMetric(){
       ?await createHealthRecord<HealthRecord>(selectedSpaceId.value,'health_metric',fields)
       :({id:'demo-'+(++nextRecordId),version:1,...fields} as HealthRecord)
     const metric=decodeHealthRecord('metric',record) as Metric
+    if(liveMode)pageCache.clear()
     demo.metrics.unshift(metric)
     chooseObservationMetric(metric)
     quickMetricOpen.value=false
@@ -234,6 +236,14 @@ const detailKinds:Record<HealthKind,HealthKind[]>={
   assessment:['assessment','observation','document'],
 }
 const loadedKinds=reactive(new Set<HealthKind>())
+const loadedAt=new Map<HealthKind,number>()
+const modelCacheTtl:Record<HealthKind,number>={metric:300_000,observation:60_000,concern:60_000,event:60_000,document:120_000,regimen:120_000,assessment:60_000}
+function markModelLoaded(kind:HealthKind){loadedKinds.add(kind);loadedAt.set(kind,Date.now())}
+function expireModelCache(){for(const kind of loadedKinds){if(Date.now()-(loadedAt.get(kind)??0)>=modelCacheTtl[kind]){loadedKinds.delete(kind);loadedAt.delete(kind)}}}
+const pageCache=new HealthPageCache()
+const pagedRefreshing=ref(false)
+let snapshotController:AbortController|null=null
+function cancelSnapshot(){snapshotController?.abort();snapshotController=null}
 const metricCatalogAvailable=computed(()=>liveMode&&bodyTab.value==='metrics'&&!selected.value&&loadedKinds.has('metric'))
 const metricSummariesReady=computed(()=>!liveMode||(loadedKinds.has('metric')&&loadedKinds.has('observation')))
 let metricHistoryController:AbortController|null=null
@@ -253,15 +263,16 @@ const isPagedSection=(section:string):section is PagedSection=>section==='metric
 const usesPagedSection=(section:string):section is PagedSection=>isPagedSection(section)&&(section!=='metrics'||(metricReferenceFilter.value==='all'&&!metricSummariesReady.value))
 function selectMetricReferenceFilter(filter:MetricReferenceFilter){
   if(metricReferenceFilter.value===filter)return
+  expireModelCache()
   metricReferenceFilter.value=filter
   if(liveMode&&!metricSummariesReady.value)void loadLiveRecords('metrics',false,filter!=='all')
 }
 function cancelPage(){
   pageController?.abort();pageController=null
   if(pageSearchTimer!==undefined){clearTimeout(pageSearchTimer);pageSearchTimer=undefined}
-  pagedLoadingMore.value=false;metricSummaryLoading.value=false
+  pagedLoadingMore.value=false;metricSummaryLoading.value=false;pagedRefreshing.value=false
 }
-onBeforeUnmount(cancelPage)
+onBeforeUnmount(()=>{cancelPage();cancelSnapshot();pageCache.clear()})
 watch(search,()=>{
   if(!liveMode||selected.value||!usesPagedSection(bodyTab.value)||activeTab.value!=='body')return
   cancelPage()
@@ -318,7 +329,7 @@ function clearLiveRecords() {
   relationReadState.value='idle';relationReadError.value=''
   relationError.value=''
   relationTargetId.value=''
-  loadedKinds.clear()
+  loadedKinds.clear();loadedAt.clear();pageCache.clear();cancelSnapshot()
   for(const kind of healthKinds) getList(kind).splice(0)
   // Never retain another Space/Person's coordinates or attention when switching.
   bodyBindings.value=[]
@@ -329,8 +340,8 @@ function clearLiveRecords() {
 }
 async function loadPagedSection(section:PagedSection,more=false){
   if(!selectedSpaceId.value)return
-  if(more&&(!pagedCursor.value||pagedLoadingMore.value||metricSummaryLoading.value||metricSummaryError.value))return
-  cancelPage()
+  if(more&&(!pagedCursor.value||pagedLoadingMore.value||pagedRefreshing.value||metricSummaryLoading.value||metricSummaryError.value))return
+  cancelPage();cancelSnapshot()
   metricHistoryController?.abort();metricHistoryController=null
   const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
   const controller=new AbortController();pageController=controller
@@ -342,22 +353,41 @@ async function loadPagedSection(section:PagedSection,more=false){
   pagedError.value=''
   if(more)pagedLoadingMore.value=true
   else{pagedIds.value=[];pagedCursor.value=null;metricPageLatest.clear();metricPageReady.clear();metricSummaryError.value='';liveStatus.value='loading'}
-  try{
-    const result=await getHealthPage(spaceId,kind==='metric'?'health_metric':kind==='document'?'health_document':'health_regimen',params,controller.signal)
-    if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
-    if(subjectPersonId.value&&result.personId!==subjectPersonId.value)throw new HealthApiError(403,null)
-    if(!result.personId||!Array.isArray(result.items)||!(result.nextCursor===null||typeof result.nextCursor==='string'))throw Error('健康档案响应不完整')
-    subjectPersonId.value=result.personId
+  const cached=!more?pageCache.get(spaceId,subjectPersonId.value,section,term):undefined
+  function applyPage(result:ScopedHealthPage,append:boolean){
     const rows=getList(kind)
     const records=result.items.map(record=>decodeHealthRecord(kind,record))
     for(const record of records){
       const index=rows.findIndex(row=>row.id===record.id)
       if(index===-1)rows.push(record);else rows.splice(index,1,record)
     }
-    // A page is not a complete model snapshot. Keep it separate from model completeness.
-    loadedKinds.delete(kind)
-    pagedIds.value=[...new Set([...pagedIds.value,...records.map(record=>record.id)])]
+    loadedKinds.delete(kind);loadedAt.delete(kind)
+    pagedIds.value=[...new Set([...(append?pagedIds.value:[]),...records.map(record=>record.id)])]
     pagedCursor.value=result.nextCursor
+    return records
+  }
+  function applySummaries(ids:string[],items:HealthRecord[]){
+    for(const id of ids){metricPageLatest.delete(id);metricPageReady.add(id)}
+    for(const record of items){
+      const observation=decodeHealthRecord('observation',record) as Observation
+      metricPageLatest.set(observation.metricId,observation)
+    }
+  }
+  if(cached){
+    const records=applyPage(cached.page,false)
+    if(kind==='metric'&&cached.summaries)applySummaries(records.map(record=>record.id),cached.summaries)
+    liveStatus.value='ready';pagedRefreshing.value=true
+  }
+  try{
+    const result=await getHealthPage(spaceId,kind==='metric'?'health_metric':kind==='document'?'health_document':'health_regimen',params,controller.signal)
+    if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
+    if(subjectPersonId.value&&result.personId!==subjectPersonId.value)throw new HealthApiError(403,null)
+    if(!result.personId||!Array.isArray(result.items)||!(result.nextCursor===null||typeof result.nextCursor==='string'))throw Error('健康档案响应不完整')
+    subjectPersonId.value=result.personId
+    const records=applyPage(result,more)
+    // Persist only in memory and only after the current authoritative response.
+    if(!more&&kind!=='metric')pageCache.set(spaceId,result.personId,section,term,{page:result})
+    if(!more&&kind==='metric'&&!records.length)pageCache.set(spaceId,result.personId,section,term,{page:result,summaries:[]})
     liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'
     if(kind==='metric'&&records.length){
       metricSummaryLoading.value=true
@@ -367,15 +397,12 @@ async function loadPagedSection(section:PagedSection,more=false){
         if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
         if(summary.personId!==subjectPersonId.value)throw new HealthApiError(403,null)
         if(!Array.isArray(summary.items))throw Error('健康指标摘要响应不完整')
-        for(const record of summary.items){
-          const observation=decodeHealthRecord('observation',record) as Observation
-          metricPageLatest.set(observation.metricId,observation)
-        }
-        // Missing rows are confirmed empty only after the bounded summary succeeds.
-        for(const id of ids)metricPageReady.add(id)
+        applySummaries(ids,summary.items)
+        if(!more)pageCache.set(spaceId,result.personId,section,term,{page:result,summaries:summary.items})
       }catch(e){
         if(requestId!==liveLoadSequence||controller.signal.aborted)return
         if(e instanceof HealthApiError&&[401,403].includes(e.status))throw e
+        for(const id of ids){metricPageReady.delete(id);metricPageLatest.delete(id)}
         metricSummaryError.value=e instanceof Error?e.message:'指标摘要读取失败'
       }
     }
@@ -384,15 +411,16 @@ async function loadPagedSection(section:PagedSection,more=false){
     if(e instanceof HealthApiError&&[401,403].includes(e.status)){
       clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e.message;return
     }
-    pagedError.value=e instanceof Error?e.message:'健康档案读取失败'
+    pagedError.value=(cached?'刷新失败，显示此前已加载的数据：':'')+(e instanceof Error?e.message:'健康档案读取失败')
     liveStatus.value='ready'
   }finally{
-    if(requestId===liveLoadSequence){pagedLoadingMore.value=false;metricSummaryLoading.value=false;pageController=null}
+    if(requestId===liveLoadSequence){pagedLoadingMore.value=false;metricSummaryLoading.value=false;pagedRefreshing.value=false;pageController=null}
   }
 }
 async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false,fullMetricIndex=false) {
   if(!selectedSpaceId.value)return
   if(refresh)clearLiveRecords()
+  expireModelCache();cancelSnapshot()
   if(usesPagedSection(section)&&(section!=='metrics'||(!fullMetricIndex&&activeTab.value==='body'&&bodyTab.value==='metrics'&&!selected.value))){await loadPagedSection(section);return}
   cancelPage();pagedError.value='';pagedCursor.value=null;metricSummaryError.value=''
   metricHistoryController?.abort();metricHistoryController=null
@@ -405,18 +433,19 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false,fu
     liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return
   }
   const spaceId=selectedSpaceId.value
+  const snapshotAbort=new AbortController();snapshotController=snapshotAbort
   liveStatus.value='loading'
   liveMessage.value='正在加载'+(section==='focus'?'关注事项':section==='metrics'?'健康指标':section==='timeline'?'健康时间线':section==='documents'?'健康资料':section==='regimens'?'健康方案':'关联记录')+'…'
   try {
     // The metric catalog is usable before the complete observation summary.
     if(section==='metrics'&&missing.includes('metric')&&missing.includes('observation')){
-      const catalog=await getHealthSnapshot(spaceId,['health_metric'])
+      const catalog=await getHealthSnapshot(spaceId,['health_metric'],snapshotAbort.signal)
       if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
       if(subjectPersonId.value&&subjectPersonId.value!==catalog.personId)throw new HealthApiError(403,null)
       if(!catalog.personId||!Array.isArray(catalog.models?.health_metric))throw Error('健康指标响应不完整')
       const records=catalog.models.health_metric.map(record=>decodeHealthRecord('metric',record) as Metric)
       demo.metrics.splice(0,demo.metrics.length,...records)
-      subjectPersonId.value=catalog.personId;loadedKinds.add('metric')
+      subjectPersonId.value=catalog.personId;markModelLoaded('metric')
       missing.splice(missing.indexOf('metric'),1)
     }
     // A single metric's history must not fetch the entire observation collection.
@@ -443,7 +472,7 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false,fu
       metricHistoryController=null
     }
     if(!missing.length){liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return}
-    const snapshot=await getHealthSnapshot(spaceId,missing.map(kind=>healthModelKey[kind]))
+    const snapshot=await getHealthSnapshot(spaceId,missing.map(kind=>healthModelKey[kind]),snapshotAbort.signal)
     if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
     if(subjectPersonId.value&&subjectPersonId.value!==snapshot.personId) {
       clearLiveRecords()
@@ -468,7 +497,7 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false,fu
     for(const {kind,records} of decoded) {
       const rows=getList(kind)
       rows.splice(0,rows.length,...records)
-      loadedKinds.add(kind)
+      markModelLoaded(kind)
     }
     if(missing.includes('concern')) {
       const ids=new Set(demo.concerns.map(concern=>concern.id))
@@ -484,7 +513,7 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false,fu
     if(!subjectPersonId.value||(e instanceof HealthApiError&&[401,403].includes(e.status))){clearLiveRecords();subjectPersonId.value=''}
     liveStatus.value='error'
     liveMessage.value=e instanceof Error?e.message:'健康档案读取失败'
-  }
+  }finally{if(requestId===liveLoadSequence)snapshotController=null}
 }
 async function chooseLiveSpace(spaceId:string) {
   clearLiveRecords()
@@ -519,7 +548,20 @@ async function loadHubProfile(){
   try {hubProfile.value=await getAlohaUserProfile()}
   catch {hubProfile.value=null} // no synthetic identity or stale profile
 }
+let hiddenAt=0
+function onHealthVisibility(){
+  if(document.visibilityState==='hidden'){hiddenAt=Date.now();return}
+  if(!liveMode||!hiddenAt||Date.now()-hiddenAt<60_000)return
+  hiddenAt=0
+  loadedKinds.clear();loadedAt.clear();pageCache.clear()
+  if(activeTab.value==='body'&&!sheet.value&&!saving.value&&liveStatus.value==='ready'&&selectedSpaceId.value){
+    void loadLiveRecords(selected.value?'detail':bodyTab.value)
+    if(selected.value?.kind==='concern')void refreshConcernLinks(selected.value.id)
+  }
+}
+onBeforeUnmount(()=>document.removeEventListener('visibilitychange',onHealthVisibility))
 onMounted(()=>{
+  document.addEventListener('visibilitychange',onHealthVisibility)
   if(liveMode){void initializeLive();void loadHubProfile()}
 })
 const current = computed<any | null>(() => selected.value ? getList(selected.value.kind).find(item=>item.id===selected.value?.id) ?? null : null)
@@ -678,7 +720,7 @@ function location(): HealthLocation {
 }
 function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
-  ++liveLoadSequence;metricHistoryController?.abort();metricHistoryController=null;cancelPage()
+  ++liveLoadSequence;metricHistoryController?.abort();metricHistoryController=null;cancelPage();cancelSnapshot()
   ++relationSequence;relationLoading.value=false;relationReadState.value='idle'
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
@@ -864,6 +906,7 @@ async function formSave() {
           ? await updateHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],
               previous.id,previous.version,fields!)
           : await createHealthRecord<HealthRecord>(selectedSpaceId.value,healthModelKey[kind],fields!)
+      pageCache.clear()
       const mapped=decodeHealthRecord(kind,saved)
       if(kind==='document' && !previous) mapped.fileName=uploadFile.value?.name??'已上传原始资料'
       if(previous) rows.splice(rows.indexOf(previous),1,mapped)
@@ -927,6 +970,7 @@ async function removeCurrent() {
       if(!selectedSpaceId.value || !Number.isInteger(current.value.version))
         throw new Error('缺少记录版本，无法安全删除')
       await deleteHealthRecord(selectedSpaceId.value,healthModelKey[kind],id,current.value.version)
+      pageCache.clear()
     } catch(e) {notice.value=e instanceof Error?e.message:'删除失败';return}
   }
   const rows=getList(kind)
@@ -1402,7 +1446,8 @@ function detailName(kind: HealthKind,record:any) {
                 <label class="search-field"><Search :size="17"/><input v-model="search" maxlength="100"
                   aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
               </div>
-              <div v-if="liveMode&&liveStatus==='loading'" class="save-progress" role="status"><span class="saving-spinner" aria-hidden="true"/>正在加载当前页面的数据…</div>
+              <div v-if="liveMode&&pagedRefreshing" class="save-progress" role="status"><span class="saving-spinner" aria-hidden="true"/>正在后台刷新…</div>
+              <div v-else-if="liveMode&&liveStatus==='loading'" class="save-progress" role="status"><span class="saving-spinner" aria-hidden="true"/>正在加载当前页面的数据…</div>
               <div class="list-panel">
                 <template v-if="bodyTab==='metrics'">
                   <div class="metric-reference-filters" role="group" aria-label="按参考范围筛选健康指标">
@@ -1417,7 +1462,7 @@ function detailName(kind: HealthKind,record:any) {
                       :comparison="referenceFor(metricRowLatest(m.id)!,m)?.comparison"/>
                   </span><ChevronRight :size="18"/></button>
                   <div v-if="(!liveMode||!usesPagedSection('metrics'))&&metricVisibleLimit<filteredMetrics.length" class="list-toolbar"><button class="quiet-button" type="button" @click="metricVisibleLimit+=40">显示更多指标（{{ Math.min(metricVisibleLimit,filteredMetrics.length) }} / {{ filteredMetrics.length }}）</button></div>
-                  <p v-if="liveStatus==='ready'&&!pagedError&&!pagedCursor&&!filteredMetrics.length" class="empty-inline metric-reference-empty">
+                  <p v-if="(!liveMode||liveStatus==='ready')&&!pagedError&&!pagedCursor&&!filteredMetrics.length" class="empty-inline metric-reference-empty">
                     {{ search.trim()?'没有找到符合条件的指标。':metricReferenceFilter==='all'?'还没有指标，添加后可以查看测量变化。':'目前没有这类指标，可以切换其他筛选。' }}
                   </p>
                 </template>
@@ -1428,9 +1473,9 @@ function detailName(kind: HealthKind,record:any) {
                 <HealthSkeleton v-if="liveMode&&bodyTab!=='metrics'&&usesPagedSection(bodyTab)&&liveStatus==='loading'" label="正在加载列表" :rows="5"/>
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
-                <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedError" role="alert" class="empty-inline">{{ pagedError }} <button type="button" class="inline-link" @click="loadPagedSection(bodyTab,Boolean(pagedCursor))">重试</button></div>
+                <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedError" role="alert" class="empty-inline">{{ pagedError }} <button type="button" class="inline-link" @click="loadPagedSection(bodyTab,Boolean(pagedCursor)&&!pagedError.startsWith('刷新失败'))">重试</button></div>
                 <div v-if="liveMode&&bodyTab==='metrics'&&metricSummaryError" role="alert" class="empty-inline">{{ metricSummaryError }} <button class="inline-link" type="button" @click="loadPagedSection('metrics')">重新加载指标</button></div>
-                <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedCursor&&!pagedError&&!metricSummaryError" class="list-toolbar"><button class="quiet-button" type="button" :disabled="pagedLoadingMore||metricSummaryLoading" @click="loadPagedSection(bodyTab,true)">{{ pagedLoadingMore?'正在加载更多…':metricSummaryLoading?'正在读取最新值…':'加载更多' }}</button></div>
+                <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedCursor&&!pagedError&&!metricSummaryError" class="list-toolbar"><button class="quiet-button" type="button"  :disabled="pagedLoadingMore||metricSummaryLoading||pagedRefreshing" @click="loadPagedSection(bodyTab,true)">{{ pagedLoadingMore?'正在加载更多…':metricSummaryLoading?'正在读取最新值…':'加载更多' }}</button></div>
                 <div v-if="liveStatus!=='loading'&&!pagedError&&!pagedCursor&&((bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
               </div>
               <p v-if="bodyTab==='documents'&&!liveMode" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
