@@ -13,7 +13,7 @@ import {
 import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   getAlohaWorkspace, getAlohaUserProfile, patchConcernPresentation,
-  getHealthSnapshot, getHealthPage, getMetricSummaries, HealthApiError, updateHealthRecord, uploadHealthDocument,
+  getHealthSnapshot, getHealthPage, getMetricSummaries, getSelectedHealthRecords, HealthApiError, updateHealthRecord, uploadHealthDocument,
   listConcernRelations,linkConcernRecord,unlinkConcernRecord,
   type FileUploadProgress,
   type HealthRecord, type ScopedHealthPage } from './health-api'
@@ -227,7 +227,7 @@ const sectionKinds:Record<BodyTab,HealthKind[]>={
   documents:['document'],regimens:['regimen'],
 }
 const detailKinds:Record<HealthKind,HealthKind[]>={
-  concern:[...healthKinds],
+  concern:['concern'],
   metric:['metric','observation'],
   observation:['observation','metric','document'],
   event:['event','document'],
@@ -295,6 +295,85 @@ const relationTargetId=ref('')
 type ConcernCard='status'|'regimens'|'events'|'evidence'
 type ConcernList='metrics'|'observations'|'regimens'|'events'|'evidence'
 const activeRelationCard=ref<ConcernCard|null>(null)
+type CardReadState='idle'|'loading'|'ready'|'error'
+const concernReads=reactive<Record<ConcernList,CardReadState>>({metrics:'idle',observations:'idle',regimens:'idle',events:'idle',evidence:'idle'})
+const concernReadErrors=reactive<Record<ConcernList,string>>({metrics:'',observations:'',regimens:'',events:'',evidence:''})
+const concernMetricDates=reactive(new Map<string,string>())
+let concernAbort:AbortController|null=null
+const concernGroupKinds:Record<ConcernList,ConcernTargetKind[]>={metrics:['metric'],observations:['observation'],regimens:['regimen'],events:['event'],evidence:['document','assessment']}
+function concernSectionState(key:ConcernList){
+  if(!liveMode)return 'ready'
+  if(concernContent.value==='error'||concernReads[key]==='error')return 'error'
+  return concernContent.value==='ready'&&concernReads[key]==='ready'?'ready':'loading'
+}
+function resetConcernReads(){
+  concernAbort?.abort();concernAbort=null
+  concernMetricDates.clear()
+  for(const key of Object.keys(concernReads) as ConcernList[]){concernReads[key]='idle';concernReadErrors[key]=''}
+}
+onBeforeUnmount(resetConcernReads)
+function mergeHealthRecords(kind:HealthKind,records:HealthRecord[]){
+  const rows=getList(kind)
+  for(const raw of records){
+    const decoded=decodeHealthRecord(kind,raw),index=rows.findIndex(row=>row.id===decoded.id)
+    if(index===-1)rows.push(decoded);else rows.splice(index,1,decoded)
+  }
+}
+function assertOwnScope(personId:string){
+  if(!personId||subjectPersonId.value&&personId!==subjectPersonId.value)throw new HealthApiError(403,null)
+  subjectPersonId.value=personId
+}
+async function readSelectedRows(spaceId:string,kind:HealthKind,ids:string[],signal:AbortSignal,valid:()=>boolean){
+  const unique=[...new Set(ids.filter(Boolean))]
+  const records:HealthRecord[]=[]
+  for(let offset=0;offset<unique.length;offset+=12){
+    if(!valid()||signal.aborted)return []
+    const batch=unique.slice(offset,offset+12)
+    const result=await getSelectedHealthRecords(spaceId,healthModelKey[kind],batch,signal)
+    if(!valid()||signal.aborted)return []
+    assertOwnScope(result.personId)
+    if(!Array.isArray(result.items)||result.items.length!==batch.length||
+       result.items.some((item,index)=>item.id!==batch[index]))throw Error('关联记录响应不完整')
+    records.push(...result.items)
+  }
+  if(valid()&&!signal.aborted)mergeHealthRecords(kind,records)
+  return records
+}
+async function loadConcernGroup(key:ConcernList,spaceId:string,version:number,signal:AbortSignal){
+  const valid=()=>version===relationSequence&&spaceId===selectedSpaceId.value&&!signal.aborted&&selected.value?.kind==='concern'
+  concernReads[key]='loading';concernReadErrors[key]=''
+  try{
+    for(const kind of concernGroupKinds[key]){
+      const ids=concernLinks.value.filter(edge=>edge.target.modelKey===concernTargetModels[kind]).map(edge=>edge.target.recordId)
+      const records=await readSelectedRows(spaceId,kind,ids,signal,valid)
+      if(!valid())return
+      if(kind==='observation')await readSelectedRows(spaceId,'metric',records.map(record=>String(record.metricId??'')),signal,valid)
+      if(kind==='metric'){
+        for(let offset=0;offset<ids.length;offset+=METRIC_PAGE_SIZE){
+          if(!valid())return
+          const summary=await getMetricSummaries(spaceId,ids.slice(offset,offset+METRIC_PAGE_SIZE),signal)
+          if(!valid())return
+          assertOwnScope(summary.personId)
+          for(const row of summary.items)concernMetricDates.set(String(row.metricId),String(row.observedDate))
+        }
+      }
+    }
+    if(valid())concernReads[key]='ready'
+  }catch(e){
+    if(!valid())return
+    if(e instanceof HealthApiError&&[401,403].includes(e.status)){
+      clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e.message;return
+    }
+    concernReads[key]='error';concernReadErrors[key]=e instanceof Error?e.message:'关联记录读取失败'
+  }
+}
+function retryConcernGroup(key:ConcernList){
+  if(relationReadState.value!=='ready'||!concernAbort||!selectedSpaceId.value){
+    if(selected.value?.kind==='concern')void refreshConcernLinks(selected.value.id)
+    return
+  }
+  void loadConcernGroup(key,selectedSpaceId.value,relationSequence,concernAbort.signal)
+}
 const concernPage=reactive<Record<ConcernList,number>>({
   metrics:0,observations:0,regimens:0,events:0,evidence:0,
 })
@@ -310,6 +389,7 @@ function toggleRelationCard(card:ConcernCard){
   relationError.value=''
 }
 function resetConcernPages(){
+  resetConcernReads()
   for(const key of Object.keys(concernPage) as ConcernList[])concernPage[key]=0
   activeRelationCard.value=null
   relationTargetId.value=''
@@ -324,6 +404,7 @@ function clearLiveRecords() {
   metricHistoryController?.abort();metricHistoryController=null
   cancelPage();pagedIds.value=[];pagedCursor.value=null;pagedError.value='';metricPageLatest.clear();metricPageReady.clear();metricSummaryError.value=''
   ++relationSequence
+  resetConcernReads()
   concernLinks.value=[]
   relationLoading.value=false
   relationReadState.value='idle';relationReadError.value=''
@@ -625,7 +706,7 @@ const evidenceEntries=computed(()=>newestFirst([
 ],r=>r.date))
 const concernLists=computed(()=>({
   metrics:newestFirst(concernRelated.value.metrics,m=>
-    demo.observations.filter(o=>o.metricId===m.id).reduce((latest,o)=>o.observedDate>latest?o.observedDate:latest,'')),
+    liveMode?(concernMetricDates.get(m.id)??''):demo.observations.filter(o=>o.metricId===m.id).reduce((latest,o)=>o.observedDate>latest?o.observedDate:latest,'')),
   observations:newestFirst(concernRelated.value.observations,r=>r.observedDate),
   regimens:newestFirst(concernRelated.value.regimens,r=>r.startDate),
   events:newestFirst(concernRelated.value.events,r=>r.date),
@@ -649,6 +730,39 @@ const relationChoices=[
   {kind:'assessment' as const,label:'健康评估'},
   {kind:'regimen' as const,label:'健康方案'},
 ]
+const relationOptionsLoading=ref(false)
+let optionsSequence=0
+async function ensureOptionKinds(kinds:HealthKind[],valid:()=>boolean){
+  expireModelCache()
+  const missing=[...new Set(kinds)].filter(kind=>!loadedKinds.has(kind))
+  if(!missing.length)return
+  const spaceId=selectedSpaceId.value
+  const result=await getHealthSnapshot(spaceId,missing.map(kind=>healthModelKey[kind]))
+  if(!valid()||spaceId!==selectedSpaceId.value)return
+  assertOwnScope(result.personId)
+  for(const kind of missing){
+    const records=result.models[healthModelKey[kind]]
+    if(!Array.isArray(records))throw Error('选项响应不完整')
+    const rows=getList(kind);rows.splice(0,rows.length,...records.map(record=>decodeHealthRecord(kind,record)))
+    markModelLoaded(kind)
+  }
+}
+function optionDenied(e:unknown){
+  if(e instanceof HealthApiError&&[401,403].includes(e.status)){
+    clearLiveRecords();subjectPersonId.value='';sheet.value='';liveStatus.value='error';liveMessage.value=e.message;return true
+  }
+  return false
+}
+async function loadRelationOptions(){
+  if(!liveMode||!activeRelationCard.value)return
+  const version=++optionsSequence,kind=relationKind.value
+  const valid=()=>version===optionsSequence&&!!activeRelationCard.value&&selected.value?.kind==='concern'&&relationKind.value===kind
+  relationOptionsLoading.value=true;relationError.value=''
+  try{await ensureOptionKinds(kind==='observation'?['observation','metric']:[kind],valid)}
+  catch(e){if(valid()&&!optionDenied(e))relationError.value=e instanceof Error?e.message:'选项加载失败'}
+  finally{if(version===optionsSequence)relationOptionsLoading.value=false}
+}
+watch([activeRelationCard,relationKind],()=>{if(activeRelationCard.value)void loadRelationOptions();else{++optionsSequence;relationOptionsLoading.value=false}})
 const relationCandidates=computed(()=>getList(relationKind.value).filter(r=>
   !concernTargetHasRelation(concernLinks.value,relationKind.value,r.id)))
 function relationTargetKind(edge:ConcernRelation):ConcernTargetKind {
@@ -662,14 +776,17 @@ function relationRecordName(kind:ConcernTargetKind,id:string){
 }
 async function refreshConcernLinks(concernId:string){
   if(!liveMode||!selectedSpaceId.value)return
+  resetConcernReads()
+  const controller=new AbortController();concernAbort=controller
   const spaceId=selectedSpaceId.value,version=++relationSequence
   relationLoading.value=true;relationReadState.value='loading';relationReadError.value='';relationError.value='';concernLinks.value=[]
   try{
-    const response=await listConcernRelations(spaceId,concernId)
+    const response=await listConcernRelations(spaceId,concernId,controller.signal)
     if(version!==relationSequence||spaceId!==selectedSpaceId.value||
        selected.value?.kind!=='concern'||selected.value.id!==concernId)return
     concernLinks.value=response.items
     relationReadState.value='ready'
+    await Promise.all((Object.keys(concernGroupKinds) as ConcernList[]).map(key=>loadConcernGroup(key,spaceId,version,controller.signal)))
   }catch(e){
     if(version===relationSequence){
       if(e instanceof HealthApiError&&[401,403].includes(e.status)){
@@ -683,7 +800,7 @@ async function refreshConcernLinks(concernId:string){
 async function addConcernLink(){
   const id=selected.value?.kind==='concern'?selected.value.id:null
   const spaceId=selectedSpaceId.value,targetId=relationTargetId.value,kind=relationKind.value
-  if(!id||!spaceId||!targetId||relationBusy.value||concernContent.value!=='ready')return
+  if(!id||!spaceId||!targetId||relationBusy.value||relationOptionsLoading.value||concernContent.value!=='ready')return
   relationBusy.value=true;relationError.value=''
   try{
     const saved=await linkConcernRecord(spaceId,id,kind,targetId)
@@ -691,6 +808,7 @@ async function addConcernLink(){
       if(!concernLinks.value.some(r=>r.id===saved.id))concernLinks.value=[...concernLinks.value,saved]
       relationTargetId.value=''
       notice.value='已关联现有记录。'
+      void refreshConcernLinks(id)
     }
   }catch(e){relationError.value=e instanceof Error?e.message:'关联失败'}
   finally{relationBusy.value=false}
@@ -727,14 +845,14 @@ function location(): HealthLocation {
 function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
   ++liveLoadSequence;metricHistoryController?.abort();metricHistoryController=null;cancelPage();cancelSnapshot()
-  ++relationSequence;relationLoading.value=false;relationReadState.value='idle'
+  ++relationSequence;resetConcernReads();relationLoading.value=false;relationReadState.value='idle'
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
   window.scrollTo({top:0,behavior:'smooth'})
 }
 function openBody(tab: BodyTab) { navigate('body',false);changeBodyTab(tab) }
 function changeBodyTab(tab:BodyTab) {
-  ++relationSequence;relationLoading.value=false;relationReadState.value='idle'
+  ++relationSequence;resetConcernReads();relationLoading.value=false;relationReadState.value='idle'
   selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value='';metricVisibleLimit.value=40
   if(tab==='metrics'&&!metricSummariesReady.value)metricReferenceFilter.value='all'
   if(liveMode&&selectedSpaceId.value)void loadLiveRecords(tab)
@@ -828,6 +946,8 @@ async function clearConcernPoint(id:string) {
     notice.value=liveMode?'人体定位已移除并同步。':'人体定位已移除（仅本次演示）。'
   } catch(e) {notice.value=e instanceof Error?e.message:'移除定位失败'}
 }
+const formOptionsLoading=ref(false)
+let formOptionsSequence=0
 function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if(saving.value)return
   const record=id ? getList(kind).find(r=>r.id===id) : null
@@ -846,9 +966,18 @@ function openEditor(kind: HealthKind,id='',presetConcernId='') {
   if (kind==='observation' && !d.metricId) d.metricId=demo.metrics[0]?.id ?? ''
   metricPickerOpen.value=false;metricSearch.value='';quickMetricOpen.value=false;quickMetricError.value=''
   editKind.value=kind;editId.value=id;draft.value=d;formError.value='';sheet.value='edit'
+  if(liveMode)void loadFormOptions(kind)
+}
+async function loadFormOptions(kind:HealthKind){
+  const version=++formOptionsSequence
+  const valid=()=>version===formOptionsSequence&&sheet.value==='edit'&&editKind.value===kind
+  const kinds:HealthKind[]=kind==='observation'?['metric','document']:kind==='document'?['event']:kind==='regimen'?['document']:[]
+  formOptionsLoading.value=true
+  try{await ensureOptionKinds(kinds,valid)}catch(e){if(valid()&&!optionDenied(e))formError.value=e instanceof Error?e.message:'表单选项加载失败'}
+  finally{if(version===formOptionsSequence)formOptionsLoading.value=false}
 }
 async function formSave() {
-  if(saving.value||quickMetricSaving.value)return
+  if(saving.value||quickMetricSaving.value||formOptionsLoading.value)return
   formError.value=''
   const v=draft.value, kind=editKind.value
   const mandatory: Record<HealthKind,string[]> = {
@@ -1196,11 +1325,11 @@ function detailName(kind: HealthKind,record:any) {
                 <p v-if="current.notes" class="helper-copy concern-note">{{ current.notes }}</p>
 
                 <div class="concern-section-heading">
-                  <h3>追踪指标 <span v-if="concernContent==='ready'">{{ concernRelated.metrics.length }}</span></h3>
+                  <h3>追踪指标 <span v-if="concernSectionState('metrics')==='ready'">{{ concernRelated.metrics.length }}</span></h3>
                   <span class="quiet-caption">看趋势</span>
                 </div>
-                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载追踪指标" :rows="2"/>
-                <div v-else-if="concernContent==='error'" role="alert" class="empty-inline">{{ relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="refreshConcernLinks(current.id)">重试</button></div>
+                <HealthSkeleton v-if="concernSectionState('metrics')==='loading'" label="正在加载追踪指标" :rows="2"/>
+                <div v-else-if="concernSectionState('metrics')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.metrics || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('metrics')">重试</button></div>
                 <div v-else-if="pagedConcern.metrics.length" class="concern-metric-list">
                   <div v-for="m in pagedConcern.metrics" :key="m.id" class="concern-record-row">
                     <button type="button" class="concern-metric-link" @click="show('metric',m.id)">
@@ -1212,15 +1341,15 @@ function detailName(kind: HealthKind,record:any) {
                   </div>
                 </div>
                 <p v-else class="empty-inline">尚未追踪指标，可从下方关联。</p>
-                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.metrics" :total="concernLists.metrics.length" @change="concernPage.metrics=$event"/>
+                <ConcernPager v-if="concernSectionState('metrics')==='ready'" :page="concernPage.metrics" :total="concernLists.metrics.length" @change="concernPage.metrics=$event"/>
 
                 <div class="concern-section-heading concern-section-separated">
-                  <h3>近期测量 <span v-if="concernContent==='ready'">{{ concernRelated.observations.length }}</span></h3>
+                  <h3>近期测量 <span v-if="concernSectionState('observations')==='ready'">{{ concernRelated.observations.length }}</span></h3>
                   <span class="quiet-caption">最新在前</span>
                 </div>
-                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载近期测量" :rows="2"/>
-                <p v-else-if="concernContent==='error'" role="alert" class="empty-inline">关联读取失败，请重试追踪指标区的关联读取。</p>
-                <div v-for="o in (concernContent==='ready'?pagedConcern.observations:[])" :key="o.id" class="concern-record-row">
+                <HealthSkeleton v-if="concernSectionState('observations')==='loading'" label="正在加载近期测量" :rows="2"/>
+                <p v-else-if="concernSectionState('observations')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.observations || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('observations')">重试</button></p>
+                <div v-for="o in (concernSectionState('observations')==='ready'?pagedConcern.observations:[])" :key="o.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('observation',o.id)">
                     <span class="list-icon"><Activity :size="18"/></span>
                     <span class="row-main">
@@ -1238,8 +1367,8 @@ function detailName(kind: HealthKind,record:any) {
                     class="concern-unlink" :disabled="relationBusy" :aria-label="'解除测量关联：'+nameOfMetric(o.metricId)"
                     title="解除测量关联" @click="removeConcernLink(concernEdge('observation',o.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!concernRelated.observations.length&&concernContent==='ready'" class="empty-inline">尚无关联测量记录。</p>
-                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.observations" :total="concernLists.observations.length" @change="concernPage.observations=$event"/>
+                <p v-if="!concernRelated.observations.length&&concernSectionState('observations')==='ready'" class="empty-inline">尚无关联测量记录。</p>
+                <ConcernPager v-if="concernSectionState('observations')==='ready'" :page="concernPage.observations" :total="concernLists.observations.length" @change="concernPage.observations=$event"/>
                 <div class="concern-card-actions">
                   <button class="soft-button" type="button" @click="openEditor('observation','',current.id)"><Plus :size="16"/> 添加测量</button>
                   <button v-if="liveMode" class="concern-manage-toggle" type="button" :disabled="concernContent!=='ready'" :aria-expanded="activeRelationCard==='status'"
@@ -1249,15 +1378,15 @@ function detailName(kind: HealthKind,record:any) {
                   :kinds="relationChoices.filter(c=>relationKindForCard.status.includes(c.kind))"
                   :kind="relationKind" :target-id="relationTargetId"
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
-                  :busy="relationBusy" :error="relationError"
+                  :busy="relationBusy||relationOptionsLoading" :error="relationError"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
               <section class="ui-card concern-business-card">
-                <div class="card-heading"><h2>正在做什么？</h2><span v-if="concernContent==='ready'" class="quiet-caption">{{ concernRelated.regimens.length }} 项方案</span></div>
-                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载健康方案" :rows="2"/>
-                <p v-else-if="concernContent==='error'" role="alert" class="empty-inline">关联读取失败，请重试追踪指标区的关联读取。</p>
-                <div v-for="r in (concernContent==='ready'?pagedConcern.regimens:[])" :key="r.id" class="concern-record-row">
+                <div class="card-heading"><h2>正在做什么？</h2><span v-if="concernSectionState('regimens')==='ready'" class="quiet-caption">{{ concernRelated.regimens.length }} 项方案</span></div>
+                <HealthSkeleton v-if="concernSectionState('regimens')==='loading'" label="正在加载健康方案" :rows="2"/>
+                <p v-else-if="concernSectionState('regimens')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.regimens || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('regimens')">重试</button></p>
+                <div v-for="r in (concernSectionState('regimens')==='ready'?pagedConcern.regimens:[])" :key="r.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('regimen',r.id)">
                     <span class="list-icon"><ListChecks :size="18"/></span>
                     <span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenStatuses,r.status) }} · {{ displayDate(r.startDate) }}</small></span>
@@ -1266,8 +1395,8 @@ function detailName(kind: HealthKind,record:any) {
                   <button v-if="activeRelationCard==='regimens'&&concernEdge('regimen',r.id)" class="concern-unlink" type="button"
                     :aria-label="'解除方案关联：'+r.name" :disabled="relationBusy" @click="removeConcernLink(concernEdge('regimen',r.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!concernRelated.regimens.length&&concernContent==='ready'" class="empty-inline">还没有关联的健康方案。</p>
-                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.regimens" :total="concernLists.regimens.length" @change="concernPage.regimens=$event"/>
+                <p v-if="!concernRelated.regimens.length&&concernSectionState('regimens')==='ready'" class="empty-inline">还没有关联的健康方案。</p>
+                <ConcernPager v-if="concernSectionState('regimens')==='ready'" :page="concernPage.regimens" :total="concernLists.regimens.length" @change="concernPage.regimens=$event"/>
                 <div class="concern-card-actions">
                   <button class="soft-button" type="button" @click="openEditor('regimen','',current.id)"><Plus :size="16"/> 添加方案</button>
                   <button v-if="liveMode" class="concern-manage-toggle" type="button" :disabled="concernContent!=='ready'" :aria-expanded="activeRelationCard==='regimens'"
@@ -1277,15 +1406,15 @@ function detailName(kind: HealthKind,record:any) {
                   :kinds="relationChoices.filter(c=>relationKindForCard.regimens.includes(c.kind))"
                   :kind="relationKind" :target-id="relationTargetId"
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
-                  :busy="relationBusy" :error="relationError"
+                  :busy="relationBusy||relationOptionsLoading" :error="relationError"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
               <section class="ui-card concern-business-card">
-                <div class="card-heading"><h2>最近发生了什么？</h2><span v-if="concernContent==='ready'" class="quiet-caption">{{ concernRelated.events.length }} 条事件</span></div>
-                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载健康事件" :rows="2"/>
-                <p v-else-if="concernContent==='error'" role="alert" class="empty-inline">关联读取失败，请重试追踪指标区的关联读取。</p>
-                <div v-for="e in (concernContent==='ready'?pagedConcern.events:[])" :key="e.id" class="concern-record-row">
+                <div class="card-heading"><h2>最近发生了什么？</h2><span v-if="concernSectionState('events')==='ready'" class="quiet-caption">{{ concernRelated.events.length }} 条事件</span></div>
+                <HealthSkeleton v-if="concernSectionState('events')==='loading'" label="正在加载健康事件" :rows="2"/>
+                <p v-else-if="concernSectionState('events')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.events || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('events')">重试</button></p>
+                <div v-for="e in (concernSectionState('events')==='ready'?pagedConcern.events:[])" :key="e.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show('event',e.id)">
                     <span class="list-icon"><CalendarDays :size="18"/></span>
                     <span class="row-main"><b>{{ e.summary }}</b><small>{{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/>
@@ -1293,8 +1422,8 @@ function detailName(kind: HealthKind,record:any) {
                   <button v-if="activeRelationCard==='events'&&concernEdge('event',e.id)" class="concern-unlink" type="button"
                     :aria-label="'解除事件关联：'+e.summary" :disabled="relationBusy" @click="removeConcernLink(concernEdge('event',e.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!concernRelated.events.length&&concernContent==='ready'" class="empty-inline">还没有关联的健康事件。</p>
-                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.events" :total="concernLists.events.length" @change="concernPage.events=$event"/>
+                <p v-if="!concernRelated.events.length&&concernSectionState('events')==='ready'" class="empty-inline">还没有关联的健康事件。</p>
+                <ConcernPager v-if="concernSectionState('events')==='ready'" :page="concernPage.events" :total="concernLists.events.length" @change="concernPage.events=$event"/>
                 <div class="concern-card-actions">
                   <button class="soft-button" type="button" @click="openEditor('event','',current.id)"><Plus :size="16"/> 记录事件</button>
                   <button v-if="liveMode" class="concern-manage-toggle" type="button" :disabled="concernContent!=='ready'" :aria-expanded="activeRelationCard==='events'"
@@ -1304,15 +1433,15 @@ function detailName(kind: HealthKind,record:any) {
                   :kinds="relationChoices.filter(c=>relationKindForCard.events.includes(c.kind))"
                   :kind="relationKind" :target-id="relationTargetId"
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
-                  :busy="relationBusy" :error="relationError"
+                  :busy="relationBusy||relationOptionsLoading" :error="relationError"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
               <section class="ui-card concern-business-card">
-                <div class="card-heading"><h2>有哪些依据？</h2><span v-if="concernContent==='ready'" class="quiet-caption">{{ concernLists.evidence.length }} 份资料与评估</span></div>
-                <HealthSkeleton v-if="concernContent==='loading'" label="正在加载资料与评估" :rows="2"/>
-                <p v-else-if="concernContent==='error'" role="alert" class="empty-inline">关联读取失败，请重试追踪指标区的关联读取。</p>
-                <div v-for="e in (concernContent==='ready'?pagedConcern.evidence:[])" :key="e.kind+e.id" class="concern-record-row">
+                <div class="card-heading"><h2>有哪些依据？</h2><span v-if="concernSectionState('evidence')==='ready'" class="quiet-caption">{{ concernLists.evidence.length }} 份资料与评估</span></div>
+                <HealthSkeleton v-if="concernSectionState('evidence')==='loading'" label="正在加载资料与评估" :rows="2"/>
+                <p v-else-if="concernSectionState('evidence')==='error'" role="alert" class="empty-inline">{{ concernReadErrors.evidence || relationReadError || '关联读取失败' }} <button class="inline-link" type="button" @click="retryConcernGroup('evidence')">重试</button></p>
+                <div v-for="e in (concernSectionState('evidence')==='ready'?pagedConcern.evidence:[])" :key="e.kind+e.id" class="concern-record-row">
                   <button type="button" class="row-link" @click="show(e.kind,e.id)">
                     <span class="list-icon"><FileText v-if="e.kind==='document'" :size="18"/><BadgeCheck v-else :size="18"/></span>
                     <span class="row-main"><b>{{ e.title }}</b><small>{{ e.subtitle }} · {{ displayDate(e.date) }}</small></span><ChevronRight :size="17"/>
@@ -1320,8 +1449,8 @@ function detailName(kind: HealthKind,record:any) {
                   <button v-if="activeRelationCard==='evidence'&&concernEdge(e.kind,e.id)" class="concern-unlink" type="button"
                     :aria-label="'解除资料关联：'+e.title" :disabled="relationBusy" @click="removeConcernLink(concernEdge(e.kind,e.id)!)"><Link2 :size="15"/></button>
                 </div>
-                <p v-if="!concernLists.evidence.length&&concernContent==='ready'" class="empty-inline">还没有报告或评估记录。</p>
-                <ConcernPager v-if="concernContent==='ready'" :page="concernPage.evidence" :total="concernLists.evidence.length" @change="concernPage.evidence=$event"/>
+                <p v-if="!concernLists.evidence.length&&concernSectionState('evidence')==='ready'" class="empty-inline">还没有报告或评估记录。</p>
+                <ConcernPager v-if="concernSectionState('evidence')==='ready'" :page="concernPage.evidence" :total="concernLists.evidence.length" @change="concernPage.evidence=$event"/>
                 <div class="concern-card-actions">
                   <div class="action-row">
                     <button class="soft-button" type="button" @click="openImport(current.id)"><Plus :size="16"/> 添加资料</button>
@@ -1334,7 +1463,7 @@ function detailName(kind: HealthKind,record:any) {
                   :kinds="relationChoices.filter(c=>relationKindForCard.evidence.includes(c.kind))"
                   :kind="relationKind" :target-id="relationTargetId"
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
-                  :busy="relationBusy" :error="relationError"
+                  :busy="relationBusy||relationOptionsLoading" :error="relationError"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
             </div>
@@ -1667,7 +1796,7 @@ function detailName(kind: HealthKind,record:any) {
             <p v-if="!liveMode" class="helper-copy">重复提醒尚未接入演示任务。</p>
           </template>
           <fieldset v-if="!liveMode&&editKind!=='metric'&&editKind!=='concern'" class="check-group"><legend>相关健康问题（可多选）</legend><label v-for="c in demo.concerns" :key="c.id" class="checkbox-line"><input v-model="draft.concernIds" type="checkbox" :value="c.id"/>{{ c.name }}</label><p v-if="!demo.concerns.length" class="helper-copy">可以先创建健康问题，后续再关联。</p></fieldset>
-          <p v-if="formError" class="form-error" role="alert"><Info :size="16"/>{{ formError }}</p>
+          <p v-if="formOptionsLoading" class="helper-copy" role="status">正在读取可选关联记录…</p><p v-if="formError" class="form-error" role="alert"><Info :size="16"/>{{ formError }}</p>
           <div v-if="saving && uploadProgress" class="upload-progress" role="status" aria-live="polite" aria-label="文档上传状态">
             <div class="upload-progress-text">
               <span>{{ uploadProgress.phase==='uploading'?'正在上传文件':'文件已发送，正在保存资料' }}</span>
@@ -1678,7 +1807,7 @@ function detailName(kind: HealthKind,record:any) {
             <progress v-else-if="uploadProgress.phase==='processing'" value="100" max="100" aria-label="文件已传输，正在保存"/>
             <p v-else class="helper-copy">正在传输文件，等待浏览器报告字节进度…</p>
           </div>
-          <div class="form-actions"><button type="button" class="quiet-button" :disabled="saving" @click="closeSheet">取消</button><button type="submit" class="primary-button" :disabled="saving" :aria-busy="saving"><span v-if="saving" class="saving-spinner" aria-hidden="true"/><Check v-else :size="17"/> {{ saving?'正在保存…':editId?'保存修改':'保存记录' }}</button></div>
+          <div class="form-actions"><button type="button" class="quiet-button" :disabled="saving" @click="closeSheet">取消</button><button type="submit" class="primary-button" :disabled="saving||formOptionsLoading" :aria-busy="saving"><span v-if="saving" class="saving-spinner" aria-hidden="true"/><Check v-else :size="17"/> {{ saving?'正在保存…':editId?'保存修改':'保存记录' }}</button></div>
           <p v-if="!liveMode" class="privacy-note"><ShieldCheck :size="15"/> 当前是演示数据，刷新后将恢复示例。</p>
         </form>
 
