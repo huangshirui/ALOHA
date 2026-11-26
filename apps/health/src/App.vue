@@ -35,7 +35,8 @@ import ReferenceIndicator from './components/ReferenceIndicator.vue'
 import HealthSkeleton from './components/HealthSkeleton.vue'
 import { latestObservationIndex, concernContentState } from './health-loading-ux'
 import {matchMetricReferenceFilter, metricReferenceState, type MetricReferenceFilter} from './metric-reference-filter'
-import type { TimelineFilter } from './health-timeline'
+import type { TimelineFilter, TimelineKind, TimelineEntry } from './health-timeline'
+import {mergeTimelinePage,newTimelineStreams,type TimelineStream} from './health-timeline-page'
 import { compareReference,formatReferenceRange,parseReferenceDraft,validateReferenceDraft } from './health-reference'
 import { removeConcernPoint, seedBodyBindings, setConcernPoint, type BodyMapBinding, type BodyPoint, type BodyView } from './body-map'
 import { concernAttentionOptions, attentionColor, parseConcernAttention, type ConcernAttention } from './concern-attention'
@@ -257,6 +258,11 @@ const pagedIds=ref<string[]>([])
 const pagedCursor=ref<string|null>(null)
 const pagedLoadingMore=ref(false)
 const pagedError=ref('')
+const timelineEntries=ref<TimelineEntry[]>([])
+const timelineMore=ref(false)
+const timelineLoading=ref(false)
+const timelineError=ref('')
+let timelineStreams:TimelineStream[]=[]
 let pageController:AbortController|null=null
 let pageSearchTimer:ReturnType<typeof setTimeout>|undefined
 const isPagedSection=(section:string):section is PagedSection=>section==='metrics'||section==='documents'||section==='regimens'
@@ -270,16 +276,16 @@ function selectMetricReferenceFilter(filter:MetricReferenceFilter){
 function cancelPage(){
   pageController?.abort();pageController=null
   if(pageSearchTimer!==undefined){clearTimeout(pageSearchTimer);pageSearchTimer=undefined}
-  pagedLoadingMore.value=false;metricSummaryLoading.value=false;pagedRefreshing.value=false
+  pagedLoadingMore.value=false;metricSummaryLoading.value=false;pagedRefreshing.value=false;timelineLoading.value=false
 }
 onBeforeUnmount(()=>{cancelPage();cancelSnapshot();pageCache.clear()})
 watch(search,()=>{
-  if(!liveMode||selected.value||!usesPagedSection(bodyTab.value)||activeTab.value!=='body')return
+  if(!liveMode||selected.value||(!usesPagedSection(bodyTab.value)&&bodyTab.value!=='timeline')||activeTab.value!=='body')return
   cancelPage()
   ++liveLoadSequence
   pagedIds.value=[];pagedCursor.value=null;pagedError.value='';metricPageLatest.clear();metricPageReady.clear();metricSummaryError.value=''
   liveStatus.value='loading'
-  pageSearchTimer=setTimeout(()=>{pageSearchTimer=undefined;void loadPagedSection(bodyTab.value as PagedSection)},250)
+  pageSearchTimer=setTimeout(()=>{pageSearchTimer=undefined;if(bodyTab.value==='timeline')void loadTimeline();else void loadPagedSection(bodyTab.value as PagedSection)},250)
 },{flush:'sync'})
 const concernLinks=ref<ConcernRelation[]>([])
 const relationLoading=ref(false)
@@ -411,6 +417,7 @@ function clearLiveRecords() {
   relationError.value=''
   relationTargetId.value=''
   loadedKinds.clear();loadedAt.clear();pageCache.clear();cancelSnapshot()
+  timelineEntries.value=[];timelineStreams=[];timelineMore.value=false;timelineError.value=''
   for(const kind of healthKinds) getList(kind).splice(0)
   // Never retain another Space/Person's coordinates or attention when switching.
   bodyBindings.value=[]
@@ -498,10 +505,65 @@ async function loadPagedSection(section:PagedSection,more=false){
     if(requestId===liveLoadSequence){pagedLoadingMore.value=false;metricSummaryLoading.value=false;pagedRefreshing.value=false;pageController=null}
   }
 }
+async function loadTimeline(more=false){
+  if(!selectedSpaceId.value||more&&(!timelineMore.value||timelineLoading.value))return
+  cancelPage();cancelSnapshot();metricHistoryController?.abort();metricHistoryController=null
+  const controller=new AbortController();pageController=controller
+  const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
+  const valid=()=>requestId===liveLoadSequence&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
+  if(!more){timelineEntries.value=[];timelineStreams=newTimelineStreams(timelineKind.value);timelineMore.value=false;liveStatus.value='loading'}
+  timelineLoading.value=true;timelineError.value=''
+  const term=search.value.trim()
+  const timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'
+  try{
+    const result=await mergeTimelinePage(timelineStreams,async(kind:TimelineKind,cursor:string|null)=>{
+      if(!valid())throw Error('请求已取消')
+      const params=new URLSearchParams({limit:'30'})
+      if(cursor)params.set('cursor',cursor)
+      if(kind==='observation')params.set('view','timeline')
+      if(kind==='event')params.set('timezone',timezone)
+      const model=kind==='observation'?'health_observation':kind==='event'?'health_event':'health_assessment'
+      const page=await getHealthPage(spaceId,model,params,controller.signal)
+      if(!valid())throw Error('请求已取消')
+      assertOwnScope(page.personId)
+      if(kind==='observation'){
+        const metricIds=page.items.map(row=>String(row.metricId??'')).filter(id=>!demo.metrics.some(metric=>metric.id===id))
+        await readSelectedRows(spaceId,'metric',metricIds,controller.signal,valid)
+      }
+      if(!valid())throw Error('请求已取消')
+      mergeHealthRecords(kind,page.items)
+      const items=page.items.map(raw=>{
+        if(kind==='observation'){
+          const o=decodeHealthRecord(kind,raw) as Observation
+          return {id:o.id,kind,date:o.observedDate,title:observationTitle(o),meta:'测量记录'}
+        }
+        const row=getList(kind).find(item=>item.id===raw.id)!
+        return kind==='event'?{id:row.id,kind,date:row.date,title:row.summary,meta:eventName(row)+(row.timeStart?' · '+row.timeStart:'')}:
+          {id:row.id,kind,date:row.assessedDate,title:row.title,meta:'评估记录'}
+      })
+      return {items,nextCursor:page.nextCursor}
+    },term,new Set(timelineEntries.value.map(row=>row.kind+':'+row.id)))
+    if(!valid())return
+    timelineStreams=result.streams;timelineMore.value=result.hasMore
+    timelineEntries.value=[...timelineEntries.value,...result.items]
+    liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'
+  }catch(e){
+    if(!valid())return
+    if(optionDenied(e))return
+    timelineError.value=e instanceof Error?e.message:'时间线加载失败'
+    liveStatus.value='ready'
+  }finally{if(valid()){timelineLoading.value=false;pageController=null}}
+}
+function changeTimelineKind(kind:TimelineFilter){
+  if(timelineKind.value===kind)return
+  timelineKind.value=kind
+  if(liveMode)void loadTimeline()
+}
 async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false,fullMetricIndex=false) {
   if(!selectedSpaceId.value)return
   if(refresh)clearLiveRecords()
   expireModelCache();cancelSnapshot()
+  if(section==='timeline'){await loadTimeline();return}
   if(usesPagedSection(section)&&(section!=='metrics'||(!fullMetricIndex&&activeTab.value==='body'&&bodyTab.value==='metrics'&&!selected.value))){await loadPagedSection(section);return}
   cancelPage();pagedError.value='';pagedCursor.value=null;metricSummaryError.value=''
   metricHistoryController?.abort();metricHistoryController=null
@@ -685,7 +747,7 @@ const metricRowLatest=(id:string)=>liveMode&&usesPagedSection('metrics')?metricP
 const metricRowReady=(id:string)=>metricSummariesReady.value||metricPageReady.has(id)
 const filteredDocuments = computed(()=>liveMode?pagedIds.value.map(id=>demo.documents.find(row=>row.id===id)).filter((row):row is NonNullable<typeof row>=>!!row):demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
 const filteredRegimens = computed(()=>liveMode?pagedIds.value.map(id=>demo.regimens.find(row=>row.id===id)).filter((row):row is NonNullable<typeof row>=>!!row):demo.regimens.filter(r=>r.name.includes(search.value)))
-const filteredTimeline = computed(()=>timeline.value.filter(e=>e.title.includes(search.value) || e.meta.includes(search.value)))
+const filteredTimeline = computed(()=>liveMode?timelineEntries.value:timeline.value.filter(e=>e.title.includes(search.value) || e.meta.includes(search.value)))
 const contextName = computed(()=>current.value ? (current.value.name || current.value.title || current.value.summary || nameOfMetric(current.value.metricId)) : activeTab.value === 'body' ? '身体' : navItems.find(n=>n.id===activeTab.value)?.title ?? '首页')
 const concernRelated = computed(() => {
   const id=selectedConcern.value
@@ -1603,7 +1665,10 @@ function detailName(kind: HealthKind,record:any) {
                 </template>
                 <template v-if="bodyTab==='timeline'">
                   <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
-                    @update:selected-kind="timelineKind=$event" @open="show"/>
+                    :partial="liveMode" :has-more="timelineMore" :loading="timelineLoading" :error="timelineError"
+                    @update:selected-kind="changeTimelineKind" @open="show"/>
+                  <div v-if="liveMode&&timelineError" class="list-toolbar"><button class="quiet-button" type="button" @click="loadTimeline(timelineMore)">重试</button></div>
+                  <div v-else-if="liveMode&&timelineMore" class="list-toolbar"><button class="quiet-button" type="button" :disabled="timelineLoading" @click="loadTimeline(true)">{{ timelineLoading?'正在加载…':search.trim()?'继续搜索更早记录':'加载更多' }}</button></div>
                 </template>
                 <HealthSkeleton v-if="liveMode&&bodyTab!=='metrics'&&usesPagedSection(bodyTab)&&liveStatus==='loading'" label="正在加载列表" :rows="5"/>
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
