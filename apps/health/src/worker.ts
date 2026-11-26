@@ -7,6 +7,7 @@ import { parsePresentationPatch, type PresentationScope } from './health-present
 import { uploadHealthDocument, downloadHealthDocument } from './health-files'
 import { readHealthSession, makeHealthSessionCookie, signedTokenSubject, clearHealthSessionCookie } from './health-session'
 import { healthSnapshotQuery, snapshotModelKeys, type SnapshotModelKey } from './health-snapshot-query'
+import {healthPageQuery,isPageModel,summaryMetricIds,metricSummaryQuery,type PageModel} from './health-page-query'
 import { concernRelationInput, concernTargetModels, isConcernRelation, isConcernTargetKind } from './health-concern-relations'
 export { HealthPresentationState } from './health-presentation-do'
 
@@ -63,6 +64,13 @@ function routeFor(url: URL, method: string): Route | null {
   const snapshot = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/snapshot$/.exec(p)
   if (snapshot && method === 'GET')
     return {spaceId:snapshot[1],path:'@snapshot'}
+  const selectedRecords = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/models\/([a-z_]+)\/selected-records$/.exec(p)
+  if(selectedRecords&&method==='GET'&&modelKeys.has(selectedRecords[2]!))
+    return {spaceId:selectedRecords[1],modelKey:selectedRecords[2],path:'@selected-records'}
+  const metricSummary = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/metric-summaries$/.exec(p)
+  if(metricSummary&&method==='GET')return {spaceId:metricSummary[1],path:'@metric-summaries'}
+  const page = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/models\/([a-z_]+)\/page$/.exec(p)
+  if(page&&method==='GET'&&isPageModel(page[2]!))return {spaceId:page[1],modelKey:page[2],path:'@health-page'}
   const ownPerson = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/own-person$/.exec(p)
   if (ownPerson && method === 'GET')
     return { spaceId: ownPerson[1], path: '@own-person' }
@@ -291,6 +299,92 @@ async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:str
   const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,verifiedUserId)
   if(scope instanceof Response) return scope
   return Response.json({data:{personId:scope.personId}},{headers:{'Cache-Control':'no-store'}})
+}
+
+/** Bounded selected-record hydration. Each GET keeps Core's own authorization,
+ * plus the Health own-Person projection boundary. Never scan an entire collection.
+ * Missing or denied targets are errors, not a successful empty list.
+ */
+async function handleSelectedRecords(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,model:string,params:URLSearchParams,userId:string|null):Promise<Response>{
+  const ids=(params.get('ids')??'').split(',')
+  if([...params.keys()].some(key=>key!=='ids')||params.getAll('ids').length!==1||
+     ids.length>12||new Set(ids).size!==ids.length||ids.some(id=>!recordPattern.test(id)))
+    return json('selected_records_invalid',422)
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,userId)
+  if(scope instanceof Response)return scope
+  const items:JsonObject[]=[]
+  for(let offset=0;offset<ids.length;offset+=4){
+    const group=ids.slice(offset,offset+4)
+    const results=await Promise.all(group.map(id=>getRecord(fetchImpl,core,bearer,
+      '/api/v1/spaces/'+spaceId+'/models/'+model+'/records/'+id)))
+    for(let i=0;i<results.length;i++){
+      const row=results[i]!
+      if(row instanceof Response)return row
+      if(row.id!==group[i])return json('invalid_core_response',502)
+      if(model!=='health_metric'&&row.subjectPersonId!==scope.personId)return json('record_not_owned',403)
+      items.push(row)
+    }
+  }
+  return Response.json({data:{personId:scope.personId,items}},{headers:{'Cache-Control':'private, no-store'}})
+}
+
+/** Latest values for one visible metric page. No one-request-per-metric fanout.
+ * Stop once all requested metrics have a latest row or Core exhausts the scoped query.
+ * If the read budget is exceeded, fail explicitly instead of fabricating empty values.
+ */
+async function handleMetricSummaries(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,params:URLSearchParams,userId:string|null):Promise<Response>{
+  let ids:string[]
+  try{ids=summaryMetricIds(params)}catch{return json('health_page_invalid',422)}
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,userId)
+  if(scope instanceof Response)return scope
+  const wanted=new Set(ids),latest=new Map<string,JsonObject>()
+  // Exclude metrics already resolved instead of paging their older history.
+  // Each successful nonterminal round resolves at least one additional metric.
+  for(let index=0;index<ids.length;index++){
+    const remaining=ids.filter(id=>!latest.has(id))
+    const query=metricSummaryQuery(scope.personId,remaining,null)
+    const response=await send(fetchImpl,core+'/api/v1/spaces/'+spaceId+'/models/health_observation/records/query',{
+      method:'POST',headers:{Authorization:'Bearer '+bearer,Accept:'application/json','Content-Type':'application/json'},
+      body:JSON.stringify(query),
+    })
+    if(!response.ok)return proxyResponse(response)
+    const payload:unknown=await response.json().catch(()=>null)
+    if(!object(payload)||!object(payload.data)||!Array.isArray(payload.data.items)||payload.data.items.length>query.page.limit||
+      !(payload.data.nextCursor===null||typeof payload.data.nextCursor==='string'))return json('invalid_core_response',502)
+    for(const record of payload.data.items){
+      if(!object(record)||typeof record.id!=='string'||record.subjectPersonId!==scope.personId||
+        typeof record.metricId!=='string'||!remaining.includes(record.metricId)||typeof record.observedDate!=='string')return json('invalid_core_response',502)
+      if(!latest.has(record.metricId))latest.set(record.metricId,record)
+    }
+    if(!payload.data.items.length&&payload.data.nextCursor!==null)return json('invalid_core_response',502)
+    if(latest.size===wanted.size||payload.data.nextCursor===null)return Response.json({data:{personId:scope.personId,items:[...latest.values()]}},
+      {headers:{'Cache-Control':'private, no-store'}})
+  }
+  return json('invalid_core_response',502)
+}
+
+/** One bounded page; fail closed on a broken upstream projection. */
+async function handleHealthPage(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,model:PageModel,params:URLSearchParams,userId:string|null):Promise<Response>{
+  try{healthPageQuery(model,'per_validation',params)}catch{return json('health_page_invalid',422)}
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,userId)
+  if(scope instanceof Response)return scope
+  const query=healthPageQuery(model,scope.personId,params)
+  const response=await send(fetchImpl,core+'/api/v1/spaces/'+spaceId+'/models/'+model+'/records/query',{
+    method:'POST',headers:{Authorization:'Bearer '+bearer,Accept:'application/json','Content-Type':'application/json'},
+    body:JSON.stringify(query),
+  })
+  if(!response.ok)return proxyResponse(response)
+  const payload:unknown=await response.json().catch(()=>null)
+  if(!object(payload)||!object(payload.data)||!Array.isArray(payload.data.items)||
+    payload.data.items.length>query.page.limit||
+    !(payload.data.nextCursor===null||typeof payload.data.nextCursor==='string')||
+    !payload.data.items.every(record=>object(record)&&typeof record.id==='string'&&
+      (model==='health_metric'||record.subjectPersonId===scope.personId)&&
+      (model!=='health_observation'||!params.has('metricId')||record.metricId===params.get('metricId'))&&
+      (model!=='health_observation'||!params.has('from')||typeof record.observedDate==='string'&&record.observedDate>=params.get('from')!)&&
+      (model!=='health_observation'||!params.has('to')||typeof record.observedDate==='string'&&record.observedDate<=params.get('to')!)))return json('invalid_core_response',502)
+  return Response.json({data:{personId:scope.personId,items:payload.data.items,nextCursor:payload.data.nextCursor}},
+    {headers:{'Cache-Control':'private, no-store'}})
 }
 
 /** One Access proof, one Identity exchange, seven concurrent Core model reads.
@@ -601,6 +695,12 @@ export async function handleHealthApi(
   }
   if(route.path==='@concern-relations')return withSessionCookie(
     await handleConcernRelations(request,fetchImpl,core,bearer,route,userId),session.cookie)
+  if(route.path==='@selected-records')return withSessionCookie(
+    await handleSelectedRecords(fetchImpl,core,bearer,route.spaceId!,route.modelKey!,url.searchParams,userId),session.cookie)
+  if(route.path==='@metric-summaries')return withSessionCookie(
+    await handleMetricSummaries(fetchImpl,core,bearer,route.spaceId!,url.searchParams,userId),session.cookie)
+  if(route.path==='@health-page')return withSessionCookie(
+    await handleHealthPage(fetchImpl,core,bearer,route.spaceId!,route.modelKey as PageModel,url.searchParams,userId),session.cookie)
   if(route.path==='@snapshot')return withSessionCookie(
     await handleSnapshot(env,fetchImpl,core,bearer,route.spaceId!,identityMs,url.searchParams,userId),session.cookie)
   if(route.path==='@own-person')return withSessionCookie(

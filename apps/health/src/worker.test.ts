@@ -438,6 +438,103 @@ describe('Health trusted BFF', () => {
     expect([...started].sort()).toEqual(['concern','member'])
     expect(stub.fetch).toHaveBeenCalledTimes(1)
   })
+  it('returns the latest row per requested metric and stops without unrelated history',async()=>{
+    let queries=0
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.endsWith('/health_observation/records/query')){
+        queries++
+        expect(JSON.parse(String(init?.body)).filter.and).toEqual([
+          {field:'subjectPersonId',op:'contains',value:'per_self'},
+          {or:[{field:'metricId',op:'contains',value:'rec_metric1'},{field:'metricId',op:'contains',value:'rec_metric2'}]},
+        ])
+        return success({items:[
+          {id:'rec_new',subjectPersonId:'per_self',metricId:'rec_metric1',observedDate:'2026-01-01'},
+          {id:'rec_old',subjectPersonId:'per_self',metricId:'rec_metric1',observedDate:'2025-01-01'},
+          {id:'rec_second',subjectPersonId:'per_self',metricId:'rec_metric2',observedDate:'2024-01-01'},
+        ],nextCursor:'opaque'})
+      }
+      throw Error('unexpected Core request')
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/metric-summaries?metricIds=rec_metric1,rec_metric2'
+    const res=await handleHealthApi(make(url),env,f)
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.items.map((r:{id:string})=>r.id)).toEqual(['rec_new','rec_second'])
+    expect(queries).toBe(1)
+  })
+  it('excludes an already-resolved high-frequency metric before querying older metrics',async()=>{
+    const predicates:unknown[]=[]
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.endsWith('/health_observation/records/query')){
+        const query=JSON.parse(String(init?.body));predicates.push(query.filter.and[1])
+        expect(query.page.cursor).toBeNull()
+        return predicates.length===1?success({items:Array.from({length:50},(_,i)=>({id:'rec_dense'+i,subjectPersonId:'per_self',metricId:'rec_dense',observedDate:'2026-01-01'})),nextCursor:'opaque'}):
+          success({items:[{id:'rec_sparse_value',subjectPersonId:'per_self',metricId:'rec_sparse',observedDate:'2020-01-01'}],nextCursor:null})
+      }
+      throw Error('unexpected request')
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/metric-summaries?metricIds=rec_dense,rec_sparse,rec_empty'
+    const response=await handleHealthApi(make(url),env,f)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.items.map((r:{id:string})=>r.id)).toEqual(['rec_dense0','rec_sparse_value'])
+    expect(predicates).toHaveLength(2)
+    expect(predicates[1]).toEqual({or:[{field:'metricId',op:'contains',value:'rec_sparse'},{field:'metricId',op:'contains',value:'rec_empty'}]})
+  })
+  it('hydrates only selected records, rejecting wrong Person and oversized or injected selectors',async()=>{
+    let wrong=false,reads:string[]=[]
+    const f=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.includes('/health_document/records/')){
+        const id=p.split('/').pop()!;reads.push(id)
+        return success({id,subjectPersonId:wrong?'per_other':'per_self'})
+      }
+      throw Error('unexpected route')
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/models/health_document/selected-records?ids=rec_one,rec_two'
+    const response=await handleHealthApi(make(url),env,f)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.items.map((r:{id:string})=>r.id)).toEqual(['rec_one','rec_two'])
+    expect(reads).toEqual(['rec_one','rec_two'])
+    wrong=true
+    expect((await handleHealthApi(make(url),env,f)).status).toBe(403)
+    expect((await handleHealthApi(make(url+'&personId=per_other'),env,f)).status).toBe(422)
+    expect((await handleHealthApi(make(url.replace('rec_one,rec_two',Array.from({length:13},(_,i)=>'rec_'+i).join(','))),env,f)).status).toBe(422)
+  })
+  it('returns one page and fails closed for mismatched Person or browser scope override',async()=>{
+    let queries=0,wrongPerson=false
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.endsWith('/health_document/records/query')){
+        queries++
+        expect(JSON.parse(String(init?.body)).page).toEqual({limit:40,cursor:null})
+        return success({items:[{id:'rec_one',subjectPersonId:wrongPerson?'per_other':'per_self'}],nextCursor:'opaque'})
+      }
+      throw Error('unexpected Core request')
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/models/health_document/page'
+    const response=await handleHealthApi(make(url),env,f)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data).toEqual({personId:'per_self',items:[{id:'rec_one',subjectPersonId:'per_self'}],nextCursor:'opaque'})
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(queries).toBe(1)
+    wrongPerson=true
+    expect((await handleHealthApi(make(url),env,f)).status).toBe(502)
+    expect((await handleHealthApi(make(url+'?personId=per_other'),env,f)).status).toBe(422)
+    expect(queries).toBe(2)
+  })
   it('reads only explicitly requested models from Core, not seven by default',async()=>{
     const stub={fetch:vi.fn(async()=>success({items:[]}))}
     const namespace={idFromName:vi.fn((x:string)=>x),get:vi.fn(()=>stub)}

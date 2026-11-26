@@ -10,6 +10,10 @@ const props=defineProps<{
   entries:TimelineEntry[]
   selectedKind:TimelineFilter
   searchActive:boolean
+  partial?:boolean
+  hasMore?:boolean
+  loading?:boolean
+  error?:string
 }>()
 const emit=defineEmits<{
   'update:selectedKind':[kind:TimelineFilter]
@@ -37,7 +41,7 @@ const counts=computed(()=>({
       <button v-for="option in filters" :key="option.id" type="button"
         :class="{active:selectedKind===option.id}" :aria-pressed="selectedKind===option.id"
         @click="emit('update:selectedKind',option.id)">
-        {{ option.label }} <span class="timeline-filter-count">{{ counts[option.id] }}</span>
+        {{ option.label }} <span v-if="!partial" class="timeline-filter-count">{{ counts[option.id] }}</span>
       </button>
     </div>
 
@@ -46,7 +50,7 @@ const counts=computed(()=>({
         :aria-label="month.label">
         <header class="timeline-month-heading">
           <h2>{{ month.label }}</h2>
-          <span>{{ month.count }} 条记录</span>
+          <span>{{ partial?'已显示 ':'' }}{{ month.count }} 条记录</span>
         </header>
         <ol class="timeline-days">
           <li v-for="day in month.days" :key="day.date" class="timeline-day">
@@ -72,6 +76,9 @@ const counts=computed(()=>({
         </ol>
       </section>
     </div>
+    <div v-else-if="loading" role="status" class="helper-copy">正在加载时间线…</div>
+    <p v-else-if="error" role="alert" class="form-error">{{ error }}</p>
+    <p v-else-if="hasMore" class="helper-copy" role="status">当前已查询区间暂无匹配记录，仍可继续查找更早记录。</p>
     <div v-else class="timeline-empty" role="status">
       <Search :size="23"/>
       <strong>{{ searchActive?'没有找到相关记录':selectedKind==='all'?'还没有健康记录':'还没有此类记录' }}</strong>
