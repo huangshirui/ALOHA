@@ -359,6 +359,7 @@ watch(search,()=>{
   cancelPage()
   ++liveLoadSequence
   pagedIds.value=[];pagedCursor.value=null;pagedError.value='';metricPageLatest.clear();metricPageReady.clear();metricSummaryError.value=''
+  viewHasData.value=false;viewError.value='';viewUpdatedAt.value=null;timelineEntries.value=[];timelineMore.value=false;timelineError.value='';timelineLoading.value=bodyTab.value==='timeline';invalidateReferenceIndex()
   liveStatus.value='loading'
   pageSearchTimer=setTimeout(()=>{pageSearchTimer=undefined;if(bodyTab.value==='timeline')void loadTimeline();else if(bodyTab.value==='metrics'&&metricReferenceFilter.value!=='all')void loadReferenceIndex();else void loadPagedSection(bodyTab.value as PagedSection)},250)
 },{flush:'sync'})
@@ -598,6 +599,7 @@ async function loadTimeline(more=false,force=false,rebuild=false){
   const controller=new AbortController();pageController=controller
   const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
   const valid=()=>requestId===liveLoadSequence&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
+  timelineError.value=''
   const hit=queryState.get<TimelineProjection>(timelineKey())
   const previous=more?{entries:timelineEntries.value,streams:timelineStreams,more:timelineMore.value,rounds:timelineRounds}:hit?.data
   if(!more){
@@ -1085,7 +1087,9 @@ const relationChoices=[
   {kind:'assessment' as const,label:'健康评估'},
   {kind:'regimen' as const,label:'健康方案'},
 ]
+type ChoiceProjection={ids:string[];cursor:string|null;pages:number}
 const relationOptionsLoading=ref(false)
+let relationOptionPages=0
 let optionsSequence=0
 function optionDenied(e:unknown){
   if(e instanceof HealthApiError&&[401,403].includes(e.status)){
@@ -1106,31 +1110,43 @@ function cancelRelationOptions(){
   relationOptionsLoading.value=false
 }
 onBeforeUnmount(cancelRelationOptions)
-async function loadRelationOptions(more=false){
+async function loadRelationOptions(more=false,force=false){
   if(!liveMode||!activeRelationCard.value||!selectedSpaceId.value||more&&(!relationOptionCursor.value||relationOptionsLoading.value))return
   cancelRelationOptions()
   const controller=new AbortController();relationOptionsController=controller
   const version=optionsSequence,kind=relationKind.value,spaceId=selectedSpaceId.value,concernId=selected.value?.id
+  const term=kind==='observation'?'':relationOptionSearch.value.trim(),timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'
   const valid=()=>version===optionsSequence&&spaceId===selectedSpaceId.value&&!!activeRelationCard.value&&selected.value?.kind==='concern'&&selected.value.id===concernId&&relationKind.value===kind&&!controller.signal.aborted
-  if(!more){relationOptionIds.value=[];relationOptionCursor.value=null;relationTargetId.value=''}
-  relationOptionsLoading.value=true;relationOptionsError.value=''
+  const key=scopeKey('picker',kind,term,kind==='event'?timezone:null),hit=queryState.get<ChoiceProjection>(key)
+  const previous=more?{ids:relationOptionIds.value,cursor:relationOptionCursor.value,pages:relationOptionPages}:hit?.data
+  relationOptionsError.value=''
+  if(!more){
+    relationOptionIds.value=previous?.ids??[];relationOptionCursor.value=previous?.cursor??null;relationOptionPages=previous?.pages??0;relationTargetId.value=''
+    if(hit?.fresh&&!force){relationOptionsController=null;return}
+  }
+  relationOptionsLoading.value=true
   try{
-    const params=new URLSearchParams({limit:'30'})
-    if(more&&relationOptionCursor.value)params.set('cursor',relationOptionCursor.value)
-    if(kind==='observation')params.set('view','picker')
-    else if(relationOptionSearch.value.trim())params.set('search',relationOptionSearch.value.trim())
-    if(kind==='event')params.set('timezone',Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC')
-    const page=await getHealthPage(spaceId,concernTargetModels[kind],params,controller.signal)
+    const count=more?1:Math.min(HEALTH_REFRESH_PAGES,Math.max(1,previous?.pages??1))
+    const window=await rebuildCursorWindow(count,async cursor=>{
+      const params=new URLSearchParams({limit:'30'})
+      if(cursor)params.set('cursor',cursor)
+      if(kind==='observation')params.set('view','picker')
+      else if(term)params.set('search',term)
+      if(kind==='event')params.set('timezone',timezone)
+      const page=await getHealthPage(spaceId,concernTargetModels[kind],params,controller.signal)
+      if(!valid())throw Error('请求已取消')
+      assertOwnScope(page.personId)
+      return page
+    },more?previous?.cursor??null:null)
     if(!valid())return
-    assertOwnScope(page.personId)
-    if(kind==='observation'){
-      await readSelectedRows(spaceId,'metric',page.items.map(row=>String(row.metricId??'')).filter(id=>!demo.metrics.some(metric=>metric.id===id)),controller.signal,valid)
-    }
+    if(kind==='observation')await readSelectedRows(spaceId,'metric',window.items.map(row=>String(row.metricId??'')).filter(id=>!demo.metrics.some(metric=>metric.id===id)),controller.signal,valid)
     if(!valid())return
-    mergeHealthRecords(kind,page.items)
-    relationOptionIds.value=[...new Set([...relationOptionIds.value,...page.items.map(row=>row.id)])]
-    relationOptionCursor.value=page.nextCursor
-  }catch(e){if(valid()&&!optionDenied(e))relationOptionsError.value=e instanceof Error?e.message:'选项加载失败'}
+    mergeHealthRecords(kind,window.items)
+    const projection={ids:[...new Set([...(more?previous?.ids??[]:[]),...window.items.map(row=>row.id)])],cursor:window.cursor,pages:(more?previous?.pages??0:0)+window.pages}
+    relationOptionIds.value=projection.ids;relationOptionCursor.value=projection.cursor;relationOptionPages=projection.pages
+    const now=Date.now(),tags:QueryTag[]=kind==='observation'?['observation','metric']:[kind]
+    queryState.set(key,projection,tags,projection.ids.length,now,more?hit?.updatedAt??now:now)
+  }catch(e){if(valid()&&!optionDenied(e))relationOptionsError.value=(previous&&!more?'更新失败：':'')+(e instanceof Error?e.message:'选项加载失败')}
   finally{if(valid()){relationOptionsLoading.value=false;relationOptionsController=null}}
 }
 function changeRelationOptionSearch(term:string){
@@ -1365,6 +1381,7 @@ const formReferenceSearch=ref('')
 const formChoiceIds=ref<string[]>([])
 const formChoiceCursor=ref<string|null>(null)
 const formChoiceLoading=ref(false)
+let formChoicePages=0
 const formChoiceError=ref('')
 const formReferenceKind=computed<FormChoiceKind>(()=>editKind.value==='document'?'event':'document')
 const formReferenceField=computed(()=>editKind.value==='document'?'eventId':'sourceDocumentId')
@@ -1393,26 +1410,40 @@ function toggleFormReference(){
 function chooseFormReference(id:string){
   draft.value[formReferenceField.value]=id;formReferenceOpen.value=false
 }
-async function loadFormChoices(more=false){
+async function loadFormChoices(more=false,force=false){
   const kind=formChoiceKind.value,spaceId=selectedSpaceId.value
   if(!liveMode||!kind||!spaceId||more&&(!formChoiceCursor.value||formChoiceLoading.value))return
   cancelFormChoices()
   const controller=new AbortController();formChoiceController=controller
-  const version=formChoiceSequence,term=formChoiceTerm.value.trim()
+  const version=formChoiceSequence,term=formChoiceTerm.value.trim(),timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'
   const valid=()=>version===formChoiceSequence&&formChoiceKind.value===kind&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
-  if(!more){formChoiceIds.value=[];formChoiceCursor.value=null}
-  formChoiceLoading.value=true;formChoiceError.value=''
+  const key=scopeKey('picker',kind,term,kind==='event'?timezone:null),hit=queryState.get<ChoiceProjection>(key)
+  const previous=more?{ids:formChoiceIds.value,cursor:formChoiceCursor.value,pages:formChoicePages}:hit?.data
+  formChoiceError.value=''
+  if(!more){
+    formChoiceIds.value=previous?.ids??[];formChoiceCursor.value=previous?.cursor??null;formChoicePages=previous?.pages??0
+    if(hit?.fresh&&!force){formChoiceController=null;return}
+  }
+  formChoiceLoading.value=true
   try{
-    const params=new URLSearchParams({limit:'30'})
-    if(more&&formChoiceCursor.value)params.set('cursor',formChoiceCursor.value)
-    if(term)params.set('search',term)
-    if(kind==='event')params.set('timezone',Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC')
-    const page=await getHealthPage(spaceId,kind==='metric'?'health_metric':kind==='event'?'health_event':'health_document',params,controller.signal)
+    const count=more?1:Math.min(HEALTH_REFRESH_PAGES,Math.max(1,previous?.pages??1))
+    const window=await rebuildCursorWindow(count,async cursor=>{
+      const params=new URLSearchParams({limit:'30'})
+      if(cursor)params.set('cursor',cursor)
+      if(term)params.set('search',term)
+      if(kind==='event')params.set('timezone',timezone)
+      const page=await getHealthPage(spaceId,kind==='metric'?'health_metric':kind==='event'?'health_event':'health_document',params,controller.signal)
+      if(!valid())throw Error('请求已取消')
+      assertOwnScope(page.personId)
+      return page
+    },more?previous?.cursor??null:null)
     if(!valid())return
-    assertOwnScope(page.personId);mergeHealthRecords(kind,page.items)
-    formChoiceIds.value=[...new Set([...formChoiceIds.value,...page.items.map(row=>row.id)])]
-    formChoiceCursor.value=page.nextCursor
-  }catch(e){if(valid()&&!optionDenied(e))formChoiceError.value=e instanceof Error?e.message:'选项读取失败'}
+    mergeHealthRecords(kind,window.items)
+    const projection={ids:[...new Set([...(more?previous?.ids??[]:[]),...window.items.map(row=>row.id)])],cursor:window.cursor,pages:(more?previous?.pages??0:0)+window.pages}
+    formChoiceIds.value=projection.ids;formChoiceCursor.value=projection.cursor;formChoicePages=projection.pages
+    const now=Date.now()
+    queryState.set(key,projection,[kind],projection.ids.length,now,more?hit?.updatedAt??now:now)
+  }catch(e){if(valid()&&!optionDenied(e))formChoiceError.value=(previous&&!more?'更新失败：':'')+(e instanceof Error?e.message:'选项读取失败')}
   finally{if(valid()){formChoiceLoading.value=false;formChoiceController=null}}
 }
 watch([formChoiceKind,formChoiceTerm],()=>{
@@ -1420,7 +1451,7 @@ watch([formChoiceKind,formChoiceTerm],()=>{
   cancelFormChoices();formChoiceIds.value=[];formChoiceCursor.value=null;formChoiceError.value=''
   if(formChoiceKind.value){
     formChoiceLoading.value=true
-    formChoiceTimer=setTimeout(()=>{formChoiceTimer=undefined;void loadFormChoices()},250)
+    formChoiceTimer=setTimeout(()=>{formChoiceTimer=undefined;void loadFormChoices()},formChoiceTerm.value.trim()?250:0)
   }
 },{flush:'sync'})
 watch(sheet,()=>{if(sheet.value!=='edit'){cancelFormOptions();formReferenceOpen.value=false;metricPickerOpen.value=false}})
@@ -1918,7 +1949,7 @@ function detailName(kind: HealthKind,record:any) {
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
                   :busy="relationBusy" :error="relationError" :loading="relationOptionsLoading" :load-error="relationOptionsError"
                    :search="relationOptionSearch" :has-more="!!relationOptionCursor"
-                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(!!relationOptionCursor)"
+                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(false,true)"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
@@ -1949,7 +1980,7 @@ function detailName(kind: HealthKind,record:any) {
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
                   :busy="relationBusy" :error="relationError" :loading="relationOptionsLoading" :load-error="relationOptionsError"
                    :search="relationOptionSearch" :has-more="!!relationOptionCursor"
-                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(!!relationOptionCursor)"
+                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(false,true)"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
@@ -1979,7 +2010,7 @@ function detailName(kind: HealthKind,record:any) {
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
                   :busy="relationBusy" :error="relationError" :loading="relationOptionsLoading" :load-error="relationOptionsError"
                    :search="relationOptionSearch" :has-more="!!relationOptionCursor"
-                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(!!relationOptionCursor)"
+                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(false,true)"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
 
@@ -2012,7 +2043,7 @@ function detailName(kind: HealthKind,record:any) {
                   :candidates="relationCandidates.map(r=>({id:r.id,label:relationRecordName(relationKind,r.id)}))"
                   :busy="relationBusy" :error="relationError" :loading="relationOptionsLoading" :load-error="relationOptionsError"
                    :search="relationOptionSearch" :has-more="!!relationOptionCursor"
-                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(!!relationOptionCursor)"
+                   @search="changeRelationOptionSearch" @more="loadRelationOptions(true)" @retry="loadRelationOptions(false,true)"
                   @change-kind="relationKind=$event;relationTargetId=''" @change-target="relationTargetId=$event" @add="addConcernLink"/>
               </section>
             </div>
@@ -2308,7 +2339,7 @@ function detailName(kind: HealthKind,record:any) {
                   <button v-for="m in metricMatches" :key="m.id" type="button" class="metric-picker-option" @click="chooseObservationMetric(m)">
                     <Activity :size="15"/><span>{{ m.name }}</span><Check v-if="draft.metricId===m.id" :size="15"/>
                   </button>
-                  <p v-if="liveMode&&formChoiceLoading" class="helper-copy" role="status">正在读取指标…</p><p v-else-if="liveMode&&formChoiceError" role="alert" class="form-error">{{ formChoiceError }} <button class="inline-link" type="button" @click="loadFormChoices(!!formChoiceCursor)">重试</button></p><p v-else-if="!metricMatches.length&&!formChoiceCursor" class="empty-inline">没有匹配的指标，可以直接新建。</p><button v-if="liveMode&&formChoiceCursor&&!formChoiceError" class="quiet-button" type="button" :disabled="formChoiceLoading" @click="loadFormChoices(true)">加载更多指标</button>
+                  <HealthSkeleton v-if="liveMode&&formChoiceLoading&&!metricMatches.length" variant="choice" label="正在读取指标" :rows="3"/><p v-else-if="liveMode&&formChoiceLoading" class="helper-copy" role="status">正在更新候选…</p><p v-else-if="liveMode&&formChoiceError" role="alert" class="form-error">{{ formChoiceError }} <button class="inline-link" type="button" @click="loadFormChoices(false,true)">重试</button></p><p v-else-if="!metricMatches.length&&!formChoiceCursor" class="empty-inline">没有匹配的指标，可以直接新建。</p><button v-if="liveMode&&formChoiceCursor&&!formChoiceError" class="quiet-button" type="button" :disabled="formChoiceLoading" @click="loadFormChoices(true)">加载更多指标</button>
                 </div>
                 <button type="button" class="metric-create-link" @click="openQuickMetric"><Plus :size="16"/> 新建指标</button>
               </div>
@@ -2342,7 +2373,7 @@ function detailName(kind: HealthKind,record:any) {
               :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
               :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
               @toggle="toggleFormReference" @search="formReferenceSearch=$event" @choose="chooseFormReference"
-              @more="loadFormChoices(true)" @retry="loadFormChoices(!!formChoiceCursor)"/>
+              @more="loadFormChoices(true)" @retry="loadFormChoices(false,true)"/>
             <label v-else>参考资料<select v-model="draft.sourceDocumentId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">没有或稍后补充</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
@@ -2367,7 +2398,7 @@ function detailName(kind: HealthKind,record:any) {
               :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
               :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
               @toggle="toggleFormReference" @search="formReferenceSearch=$event" @choose="chooseFormReference"
-              @more="loadFormChoices(true)" @retry="loadFormChoices(!!formChoiceCursor)"/>
+              @more="loadFormChoices(true)" @retry="loadFormChoices(false,true)"/>
             <label v-else>相关健康事件<select v-model="draft.eventId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">不关联</option><option v-for="e in demo.events" :key="e.id" :value="e.id">{{ e.summary }}</option></select></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
           </template>
@@ -2392,7 +2423,7 @@ function detailName(kind: HealthKind,record:any) {
               :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
               :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
               @toggle="toggleFormReference" @search="formReferenceSearch=$event" @choose="chooseFormReference"
-              @more="loadFormChoices(true)" @retry="loadFormChoices(!!formChoiceCursor)"/>
+              @more="loadFormChoices(true)" @retry="loadFormChoices(false,true)"/>
             <label v-else>参考资料<select v-model="draft.sourceDocumentId" :disabled="formOptionsLoading||!!formOptionsError"><option value="">无</option><option v-for="d in demo.documents" :key="d.id" :value="d.id">{{ d.title }}</option></select></label>
             <label>方案来源<input v-model="draft.sourceNote" placeholder="例如：个人计划"/></label>
             <label>备注<textarea v-model="draft.notes" rows="2"/></label>
