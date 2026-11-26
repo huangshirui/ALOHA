@@ -563,19 +563,19 @@
 .metric-chart-heading h2 { flex:none; }
 .metric-trend-field { display:inline-flex; align-items:center; gap:.55rem; min-width:0; max-width:100%; font-size:var(--health-type-caption); line-height:1.4; color:var(--health-muted); }
 .metric-trend-field > span { flex:none; white-space:nowrap; }
-.metric-trend-field select {
+.health-shell .metric-trend-field select {
   box-sizing:border-box; min-width:0; max-width:100%; min-height:2.5rem; height:2.5rem;
-  padding:.4rem 2rem .4rem .75rem; border:1px solid var(--health-border);
+  padding:.4rem 2.85rem .4rem .75rem; border:1px solid var(--health-border);
   border-radius:var(--health-radius-control); background-color:var(--health-surface);
   color:var(--health-ink); font-family:inherit; font-size:var(--health-type-label); font-weight:500;
   line-height:1.2; text-overflow:ellipsis; cursor:pointer;
 }
 .metric-trend-field select:focus-visible { outline:2px solid var(--health-brand); outline-offset:2px; }
 .metric-trend-field select:disabled { opacity:.6; cursor:default; }
-.metric-trend-range select { width:7rem; }
+.metric-trend-range select { width:7.5rem; }
 .metric-trend-picker select { width:15rem; flex:1 1 15rem; }
 @media(max-width:47.999rem){
-  .metric-trend-field select { min-height:var(--health-control); height:var(--health-control); }
+  .health-shell .metric-trend-field select { min-height:var(--health-control); height:var(--health-control); }
   .metric-trend-picker select { width:0; flex:1 1 0; }
 }
 
