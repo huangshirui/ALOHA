@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Playwright 1.56.1 supports Ubuntu 24.04, not the newer ubuntu-latest image.
+    runs-on: ubuntu-24.04
     env:
       WRANGLER_LOG: error
       WRANGLER_LOG_SANITIZE: 'true'
