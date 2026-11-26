@@ -438,6 +438,33 @@ describe('Health trusted BFF', () => {
     expect([...started].sort()).toEqual(['concern','member'])
     expect(stub.fetch).toHaveBeenCalledTimes(1)
   })
+  it('returns the latest row per requested metric and stops without unrelated history',async()=>{
+    let queries=0
+    const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.endsWith('/health_observation/records/query')){
+        queries++
+        expect(JSON.parse(String(init?.body)).filter.and).toEqual([
+          {field:'subjectPersonId',op:'contains',value:'per_self'},
+          {or:[{field:'metricId',op:'contains',value:'rec_metric1'},{field:'metricId',op:'contains',value:'rec_metric2'}]},
+        ])
+        return success({items:[
+          {id:'rec_new',subjectPersonId:'per_self',metricId:'rec_metric1',observedDate:'2026-01-01'},
+          {id:'rec_old',subjectPersonId:'per_self',metricId:'rec_metric1',observedDate:'2025-01-01'},
+          {id:'rec_second',subjectPersonId:'per_self',metricId:'rec_metric2',observedDate:'2024-01-01'},
+        ],nextCursor:'opaque'})
+      }
+      throw Error('unexpected Core request')
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/metric-summaries?metricIds=rec_metric1,rec_metric2'
+    const res=await handleHealthApi(make(url),env,f)
+    expect(res.status).toBe(200)
+    expect((await res.json()).data.items.map((r:{id:string})=>r.id)).toEqual(['rec_new','rec_second'])
+    expect(queries).toBe(1)
+  })
   it('returns one page and fails closed for mismatched Person or browser scope override',async()=>{
     let queries=0,wrongPerson=false
     const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{

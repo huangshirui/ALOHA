@@ -21,3 +21,19 @@ export function healthPageQuery(model:PageModel,personId:string,params:URLSearch
     sort:[{field,direction:model==='health_metric'?'asc':'desc'},{field:'updatedAt',direction:'desc'}],
     page:{limit:Number(limit),cursor}}
 }
+
+/** 20 relation predicates leave room for Core's 100-binding limit and cursor tuple. */
+export const METRIC_PAGE_SIZE=20
+export function summaryMetricIds(params:URLSearchParams):string[]{
+  if([...params.keys()].some(key=>key!=='metricIds')||params.getAll('metricIds').length!==1)throw Error('invalid parameters')
+  const ids=(params.get('metricIds')??'').split(',')
+  if(ids.length>METRIC_PAGE_SIZE||new Set(ids).size!==ids.length||ids.some(id=>! /^[A-Za-z][A-Za-z0-9_-]{2,127}$/.test(id)))throw Error('invalid metrics')
+  return ids
+}
+export function metricSummaryQuery(personId:string,ids:string[],cursor:string|null){
+  return {filter:{and:[
+    {field:'subjectPersonId',op:'contains',value:personId},
+    {or:ids.map(id=>({field:'metricId',op:'contains',value:id}))},
+  ]},sort:[{field:'observedDate',direction:'desc'},{field:'updatedAt',direction:'desc'}],
+    page:{limit:200,cursor}}
+}
