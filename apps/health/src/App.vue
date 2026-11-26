@@ -237,6 +237,29 @@ const loadedKinds=reactive(new Set<HealthKind>())
 const metricCatalogAvailable=computed(()=>liveMode&&bodyTab.value==='metrics'&&!selected.value&&loadedKinds.has('metric'))
 const metricSummariesReady=computed(()=>!liveMode||loadedKinds.has('observation'))
 let metricHistoryController:AbortController|null=null
+type PagedSection='documents'|'regimens'
+const pagedSectionKind={documents:'document',regimens:'regimen'} as const
+const pagedIds=ref<string[]>([])
+const pagedCursor=ref<string|null>(null)
+const pagedLoadingMore=ref(false)
+const pagedError=ref('')
+let pageController:AbortController|null=null
+let pageSearchTimer:ReturnType<typeof setTimeout>|undefined
+const isPagedSection=(section:string):section is PagedSection=>section==='documents'||section==='regimens'
+function cancelPage(){
+  pageController?.abort();pageController=null
+  if(pageSearchTimer!==undefined){clearTimeout(pageSearchTimer);pageSearchTimer=undefined}
+  pagedLoadingMore.value=false
+}
+onBeforeUnmount(cancelPage)
+watch(search,()=>{
+  if(!liveMode||selected.value||!isPagedSection(bodyTab.value)||activeTab.value!=='body')return
+  cancelPage()
+  ++liveLoadSequence
+  pagedIds.value=[];pagedCursor.value=null;pagedError.value=''
+  liveStatus.value='loading'
+  pageSearchTimer=setTimeout(()=>{pageSearchTimer=undefined;void loadPagedSection(bodyTab.value as PagedSection)},250)
+},{flush:'sync'})
 const concernLinks=ref<ConcernRelation[]>([])
 const relationLoading=ref(false)
 const relationReadState=ref<'idle'|'loading'|'ready'|'error'>('idle')
@@ -278,6 +301,7 @@ let liveLoadSequence=0
 function clearLiveRecords() {
   ++liveLoadSequence
   metricHistoryController?.abort();metricHistoryController=null
+  cancelPage();pagedIds.value=[];pagedCursor.value=null;pagedError.value=''
   ++relationSequence
   concernLinks.value=[]
   relationLoading.value=false
@@ -293,9 +317,54 @@ function clearLiveRecords() {
   selected.value=null
   routeStack.value=[]
 }
+async function loadPagedSection(section:PagedSection,more=false){
+  if(!selectedSpaceId.value)return
+  if(more&&(!pagedCursor.value||pagedLoadingMore.value))return
+  cancelPage()
+  metricHistoryController?.abort();metricHistoryController=null
+  const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
+  const controller=new AbortController();pageController=controller
+  const kind=pagedSectionKind[section]
+  const params=new URLSearchParams({limit:'40'})
+  const term=search.value.trim()
+  if(term)params.set('search',term)
+  if(more&&pagedCursor.value)params.set('cursor',pagedCursor.value)
+  pagedError.value=''
+  if(more)pagedLoadingMore.value=true
+  else{pagedIds.value=[];pagedCursor.value=null;liveStatus.value='loading'}
+  try{
+    const result=await getHealthPage(spaceId,kind==='document'?'health_document':'health_regimen',params,controller.signal)
+    if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
+    if(subjectPersonId.value&&result.personId!==subjectPersonId.value)throw new HealthApiError(403,null)
+    if(!result.personId||!Array.isArray(result.items)||!(result.nextCursor===null||typeof result.nextCursor==='string'))throw Error('健康档案响应不完整')
+    subjectPersonId.value=result.personId
+    const rows=getList(kind)
+    const records=result.items.map(record=>decodeHealthRecord(kind,record))
+    for(const record of records){
+      const index=rows.findIndex(row=>row.id===record.id)
+      if(index===-1)rows.push(record);else rows.splice(index,1,record)
+    }
+    // A page is not a complete model snapshot. Keep it separate from model completeness.
+    loadedKinds.delete(kind)
+    pagedIds.value=[...new Set([...pagedIds.value,...records.map(record=>record.id)])]
+    pagedCursor.value=result.nextCursor
+    liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'
+  }catch(e){
+    if(requestId!==liveLoadSequence||controller.signal.aborted)return
+    if(e instanceof HealthApiError&&[401,403].includes(e.status)){
+      clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e.message;return
+    }
+    pagedError.value=e instanceof Error?e.message:'健康档案读取失败'
+    liveStatus.value='ready'
+  }finally{
+    if(requestId===liveLoadSequence){pagedLoadingMore.value=false;pageController=null}
+  }
+}
 async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   if(!selectedSpaceId.value)return
   if(refresh)clearLiveRecords()
+  if(isPagedSection(section)){await loadPagedSection(section);return}
+  cancelPage();pagedError.value='';pagedCursor.value=null
   metricHistoryController?.abort();metricHistoryController=null
   const metricDetail=section==='detail'&&selected.value?.kind==='metric'&&!loadedKinds.has('observation')?selected.value.id:null
   const requested=section==='detail'
@@ -457,8 +526,8 @@ const filteredMetrics=computed(()=>demo.metrics.filter(m=>
  m.name.toLowerCase().includes(search.value.trim().toLowerCase()) &&
  (!metricSummariesReady.value||matchMetricReferenceFilter(metricState(m),metricReferenceFilter.value))
 ))
-const filteredDocuments = computed(()=>demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
-const filteredRegimens = computed(()=>demo.regimens.filter(r=>r.name.includes(search.value)))
+const filteredDocuments = computed(()=>liveMode?pagedIds.value.map(id=>demo.documents.find(row=>row.id===id)).filter((row):row is NonNullable<typeof row>=>!!row):demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
+const filteredRegimens = computed(()=>liveMode?pagedIds.value.map(id=>demo.regimens.find(row=>row.id===id)).filter((row):row is NonNullable<typeof row>=>!!row):demo.regimens.filter(r=>r.name.includes(search.value)))
 const filteredTimeline = computed(()=>timeline.value.filter(e=>e.title.includes(search.value) || e.meta.includes(search.value)))
 const contextName = computed(()=>current.value ? (current.value.name || current.value.title || current.value.summary || nameOfMetric(current.value.metricId)) : activeTab.value === 'body' ? '身体' : navItems.find(n=>n.id===activeTab.value)?.title ?? '首页')
 const concernRelated = computed(() => {
@@ -575,7 +644,7 @@ function location(): HealthLocation {
 }
 function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
-  ++liveLoadSequence;metricHistoryController?.abort();metricHistoryController=null
+  ++liveLoadSequence;metricHistoryController?.abort();metricHistoryController=null;cancelPage()
   ++relationSequence;relationLoading.value=false;relationReadState.value='idle'
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
@@ -1279,7 +1348,7 @@ function detailName(kind: HealthKind,record:any) {
             <nav class="sub-navigation" aria-label="身体页面导航">
               <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="changeBodyTab(item.id)">{{ item.title }}</button>
             </nav>
-            <HealthSkeleton v-if="liveMode&&liveStatus!=='ready'&&!metricCatalogAvailable" label="正在加载当前页面的数据" :rows="6"/>
+            <HealthSkeleton v-if="liveMode&&liveStatus!=='ready'&&!metricCatalogAvailable&&!isPagedSection(bodyTab)" label="正在加载当前页面的数据" :rows="6"/>
             <div v-else-if="bodyTab==='focus'" class="body-overview">
               <BodyOverview
                 :concerns="demo.concerns"
@@ -1296,7 +1365,7 @@ function detailName(kind: HealthKind,record:any) {
             </div>
             <template v-else>
               <div class="list-toolbar">
-                <label class="search-field"><Search :size="17"/><input v-model="search"
+                <label class="search-field"><Search :size="17"/><input v-model="search" maxlength="100"
                   aria-label="搜索当前内容" placeholder="搜索当前内容"/></label>
               </div>
               <div v-if="liveMode&&liveStatus==='loading'" class="save-progress" role="status"><span class="saving-spinner" aria-hidden="true"/>正在加载当前页面的数据…</div>
@@ -1322,9 +1391,12 @@ function detailName(kind: HealthKind,record:any) {
                   <HealthTimeline :entries="filteredTimeline" :selected-kind="timelineKind" :search-active="Boolean(search.trim())"
                     @update:selected-kind="timelineKind=$event" @open="show"/>
                 </template>
+                <HealthSkeleton v-if="liveMode&&isPagedSection(bodyTab)&&liveStatus==='loading'" label="正在加载列表" :rows="5"/>
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
-                <div v-if="liveStatus!=='loading'&&((bodyTab==='metrics'&&!filteredMetrics.length)||(bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
+                <div v-if="liveMode&&isPagedSection(bodyTab)&&pagedError" role="alert" class="empty-inline">{{ pagedError }} <button type="button" class="inline-link" @click="loadPagedSection(bodyTab,Boolean(pagedCursor))">重试</button></div>
+                <div v-if="liveMode&&isPagedSection(bodyTab)&&pagedCursor&&!pagedError" class="list-toolbar"><button class="quiet-button" type="button" :disabled="pagedLoadingMore" @click="loadPagedSection(bodyTab,true)">{{ pagedLoadingMore?'正在加载更多…':'加载更多' }}</button></div>
+                <div v-if="liveStatus!=='loading'&&!pagedError&&!pagedCursor&&((bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
               </div>
               <p v-if="bodyTab==='documents'&&!liveMode" class="below-hint"><ShieldCheck :size="16"/> 上传演示只模拟整理过程，不会读取或发送文件内容。</p>
             </template>
