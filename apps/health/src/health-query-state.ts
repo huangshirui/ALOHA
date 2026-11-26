@@ -28,6 +28,7 @@ export class HealthQueryState {
       total-=this.entries.get(first)!.weight;this.entries.delete(first)
     }
   }
+  isInvalidated(key:QueryKey){return this.entries.get(JSON.stringify(key))?.invalidated===true}
   invalidate(...tags:QueryTag[]){
     for(const entry of this.entries.values())if(entry.tags.some(tag=>tags.includes(tag)))entry.invalidated=true
   }

@@ -264,7 +264,7 @@ let restoringView=false
 function invalidateHealth(...tags:QueryTag[]){
   queryState.invalidate(...tags)
   ++liveLoadSequence;++relationSequence
-  cancelPage();cancelSnapshot();cancelMetricDetail();resetConcernReads();resetDocumentRelated();readCoordinator.clear()
+  cancelPage();cancelSnapshot();cancelMetricDetail();resetConcernReads();relationLoading.value=false;resetDocumentRelated();readCoordinator.clear()
 }
 function beginView(hit:{updatedAt:number}|undefined){
   viewError.value='';rebuildRequired.value=false;viewUpdatedAt.value=hit?.updatedAt??null
@@ -465,8 +465,8 @@ async function loadConcernGroup(key:ConcernList,spaceId:string,version:number,si
   }finally{if(valid())concernRefreshing[key]=false}
 }
 function retryConcernGroup(key:ConcernList){
-  if(relationReadState.value!=='ready'||!concernAbort||!selectedSpaceId.value){
-    if(selected.value?.kind==='concern')void refreshConcernLinks(selected.value.id)
+  if(relationReadState.value!=='ready'||relationReadError.value||!concernAbort||!selectedSpaceId.value){
+    if(selected.value?.kind==='concern')void refreshConcernLinks(selected.value.id,true)
     return
   }
   void loadConcernGroup(key,selectedSpaceId.value,relationSequence,concernAbort.signal,true)
@@ -518,6 +518,7 @@ function clearLiveRecords() {
   quickMetricOpen.value=false;quickMetric.name='';metricSearch.value='';formReferenceOpen.value=false
   activeRelationCard.value=null;relationOptionIds.value=[];formChoiceIds.value=[]
   routeStack.value=[]
+  restoringView=true;search.value='';focusSearch.value='';metricReferenceFilter.value='all';restoringView=false
 }
 type ListProjection={ids:string[];cursor:string|null;latest:[string,Observation][];ready:string[];pages:number}
 const listKey=(section:PagedSection)=>scopeKey('list',section,search.value.trim())
@@ -530,6 +531,7 @@ function applyList(projection:ListProjection){
 function listProjection():ListProjection{return {ids:[...pagedIds.value],cursor:pagedCursor.value,latest:[...metricPageLatest],ready:[...metricPageReady],pages:pagedPageCount}}
 async function loadPagedSection(section:PagedSection,more=false,force=false,rebuild=false){
   if(!selectedSpaceId.value||more&&(!pagedCursor.value||pagedLoadingMore.value||pagedRefreshing.value||metricSummaryLoading.value||metricSummaryError.value))return
+  if(more&&queryState.isInvalidated(listKey(section))){await loadPagedSection(section,false,true);return}
   cancelPage();cancelSnapshot();cancelMetricDetail()
   const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence,term=search.value.trim(),kind=pagedSectionKind[section]
   const controller=new AbortController();pageController=controller
@@ -595,6 +597,7 @@ function timelineKey(){return scopeKey('timeline',timelineKind.value,search.valu
 function applyTimeline(p:TimelineProjection){timelineEntries.value=p.entries;timelineStreams=p.streams;timelineMore.value=p.more;timelineRounds=p.rounds}
 async function loadTimeline(more=false,force=false,rebuild=false){
   if(!selectedSpaceId.value||more&&(!timelineMore.value||timelineLoading.value))return
+  if(more&&queryState.isInvalidated(timelineKey())){await loadTimeline(false,true);return}
   cancelPage();cancelSnapshot();cancelMetricDetail()
   const controller=new AbortController();pageController=controller
   const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
@@ -755,6 +758,7 @@ type HistoryProjection={rows:Observation[];cursor:string|null;pages:number}
 function applyHistory(p:HistoryProjection){metricHistoryRows.value=p.rows;metricHistoryCursor.value=p.cursor;metricHistoryPages=p.pages;metricHistoryReady.value=true}
 async function loadMetricHistory(metricId:string,more=false,force=false,rebuild=false){
   if(!selectedSpaceId.value||more&&(!metricHistoryCursor.value||metricHistoryLoading.value))return
+  if(more&&queryState.isInvalidated(scopeKey('history',metricId))){await loadMetricHistory(metricId,false,true);return}
   metricHistoryController?.abort()
   const controller=new AbortController();metricHistoryController=controller
   const spaceId=selectedSpaceId.value,version=liveLoadSequence
@@ -978,6 +982,7 @@ let hiddenAt=0
 const scopeChecking=ref(false)
 async function recheckHealthScope(){
   if(scopeChecking.value||!selectedSpaceId.value||!subjectPersonId.value)return
+  const scroll=window.scrollY
   scopeChecking.value=true
   const generation=scopeGeneration,spaceId=selectedSpaceId.value,personId=subjectPersonId.value
   try{
@@ -989,17 +994,22 @@ async function recheckHealthScope(){
     if(person.personId!==personId)throw new HealthApiError(403,null)
     if(activeTab.value==='body'&&!sheet.value&&!saving.value&&!viewBusy.value)void activateHealthView()
   }catch(e){if(generation===scopeGeneration){clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'无法验证当前健康档案'}}
-  finally{scopeChecking.value=false}
+  finally{scopeChecking.value=false;if(generation===scopeGeneration)void nextTick(()=>window.scrollTo({top:scroll,behavior:'auto'}))}
 }
 function onHealthVisibility(){
   if(document.visibilityState==='hidden'){hiddenAt=Date.now();return}
   if(!liveMode||!hiddenAt)return
   const elapsed=Date.now()-hiddenAt;hiddenAt=0
   if(elapsed>=HEALTH_STALE_MS)void recheckHealthScope()
+  else refreshStaleVisibleView()
 }
-onBeforeUnmount(()=>document.removeEventListener('visibilitychange',onHealthVisibility))
+function refreshStaleVisibleView(){
+  if(liveMode&&document.visibilityState==='visible'&&activeTab.value==='body'&&!viewBusy.value&&!scopeChecking.value&&!sheet.value&&!saving.value&&viewUpdatedAt.value!==null&&Date.now()-viewUpdatedAt.value>=HEALTH_STALE_MS)void activateHealthView()
+}
+onBeforeUnmount(()=>{document.removeEventListener('visibilitychange',onHealthVisibility);window.removeEventListener('online',refreshStaleVisibleView);readCoordinator.clear();queryState.clear();viewStates.clear()})
 onMounted(()=>{
   document.addEventListener('visibilitychange',onHealthVisibility)
+  window.addEventListener('online',refreshStaleVisibleView)
   if(liveMode){void initializeLive();void loadHubProfile()}
 })
 const current = computed<any | null>(() => selected.value ? getList(selected.value.kind).find(item=>item.id===selected.value?.id) ?? null : null)
@@ -1118,15 +1128,17 @@ async function loadRelationOptions(more=false,force=false){
   const term=kind==='observation'?'':relationOptionSearch.value.trim(),timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'
   const valid=()=>version===optionsSequence&&spaceId===selectedSpaceId.value&&!!activeRelationCard.value&&selected.value?.kind==='concern'&&selected.value.id===concernId&&relationKind.value===kind&&!controller.signal.aborted
   const key=scopeKey('picker',kind,term,kind==='event'?timezone:null),hit=queryState.get<ChoiceProjection>(key)
+  if(more&&queryState.isInvalidated(key)){await loadRelationOptions(false,true);return}
   const previous=more?{ids:relationOptionIds.value,cursor:relationOptionCursor.value,pages:relationOptionPages}:hit?.data
   relationOptionsError.value=''
   if(!more){
     relationOptionIds.value=previous?.ids??[];relationOptionCursor.value=previous?.cursor??null;relationOptionPages=previous?.pages??0;relationTargetId.value=''
     if(hit?.fresh&&!force){relationOptionsController=null;return}
+    if(!force&&previous&&previous.pages>HEALTH_REFRESH_PAGES){relationOptionsError.value='已保留候选记录，请重试以重新读取首批';relationOptionsController=null;return}
   }
   relationOptionsLoading.value=true
   try{
-    const count=more?1:Math.min(HEALTH_REFRESH_PAGES,Math.max(1,previous?.pages??1))
+    const count=more||force&&previous&&previous.pages>HEALTH_REFRESH_PAGES?1:Math.max(1,previous?.pages??1)
     const window=await rebuildCursorWindow(count,async cursor=>{
       const params=new URLSearchParams({limit:'30'})
       if(cursor)params.set('cursor',cursor)
@@ -1264,7 +1276,7 @@ function leaveView(){
   activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle';relationReadError.value='';relationError.value='';concernLinks.value=[]
   detailMissing.value=false;viewError.value='';viewUpdatedAt.value=null;viewHasData.value=false;rebuildRequired.value=false
 }
-const viewBusy=computed(()=>viewRefreshing.value||liveStatus.value==='loading'||pagedLoadingMore.value||metricSummaryLoading.value||timelineLoading.value||metricHistoryLoading.value||metricTrendLoading.value||relationLoading.value||documentRelatedState.value==='loading'||documentRelatedRefreshing.value)
+const viewBusy=computed(()=>viewRefreshing.value||liveStatus.value==='loading'||pagedLoadingMore.value||metricSummaryLoading.value||timelineLoading.value||metricHistoryLoading.value||metricTrendLoading.value||relationLoading.value||Object.values(concernRefreshing).some(Boolean)||documentRelatedState.value==='loading'||documentRelatedRefreshing.value)
 async function activateHealthView(force=false,rebuild=false){
   if(!liveMode||!selectedSpaceId.value||activeTab.value!=='body')return
   const record=selected.value
@@ -1418,15 +1430,17 @@ async function loadFormChoices(more=false,force=false){
   const version=formChoiceSequence,term=formChoiceTerm.value.trim(),timezone=Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'
   const valid=()=>version===formChoiceSequence&&formChoiceKind.value===kind&&spaceId===selectedSpaceId.value&&!controller.signal.aborted
   const key=scopeKey('picker',kind,term,kind==='event'?timezone:null),hit=queryState.get<ChoiceProjection>(key)
+  if(more&&queryState.isInvalidated(key)){await loadFormChoices(false,true);return}
   const previous=more?{ids:formChoiceIds.value,cursor:formChoiceCursor.value,pages:formChoicePages}:hit?.data
   formChoiceError.value=''
   if(!more){
     formChoiceIds.value=previous?.ids??[];formChoiceCursor.value=previous?.cursor??null;formChoicePages=previous?.pages??0
     if(hit?.fresh&&!force){formChoiceController=null;return}
+    if(!force&&previous&&previous.pages>HEALTH_REFRESH_PAGES){formChoiceError.value='已保留候选记录，请重试以重新读取首批';formChoiceController=null;return}
   }
   formChoiceLoading.value=true
   try{
-    const count=more?1:Math.min(HEALTH_REFRESH_PAGES,Math.max(1,previous?.pages??1))
+    const count=more||force&&previous&&previous.pages>HEALTH_REFRESH_PAGES?1:Math.max(1,previous?.pages??1)
     const window=await rebuildCursorWindow(count,async cursor=>{
       const params=new URLSearchParams({limit:'30'})
       if(cursor)params.set('cursor',cursor)
@@ -2223,7 +2237,7 @@ function detailName(kind: HealthKind,record:any) {
                 <template v-if="bodyTab==='documents'"><button v-for="d in filteredDocuments" :key="d.id" class="list-row" type="button" @click="show('document',d.id)"><span class="list-icon"><FileText :size="19"/></span><span class="row-main"><b>{{ d.title }}</b><small>{{ docName(d) }} · {{ displayDate(d.issuedDate) }}</small></span><ChevronRight :size="18"/></button></template>
                 <template v-if="bodyTab==='regimens'"><button v-for="r in filteredRegimens" :key="r.id" class="list-row" type="button" @click="show('regimen',r.id)"><span class="list-icon"><ListChecks :size="19"/></span><span class="row-main"><b>{{ r.name }}</b><small>{{ labelFrom(regimenTypes,r.regimenType) }} · {{ r.recurrence==='daily'?'每日':r.recurrence==='weekly'?'每周':'不重复' }}</small></span><span class="status-chip">{{ labelFrom(regimenStatuses,r.status) }}</span><ChevronRight :size="18"/></button></template>
                 <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedError" role="alert" class="empty-inline">{{ pagedError }} <button type="button" class="inline-link" @click="loadPagedSection(bodyTab,Boolean(pagedCursor)&&!pagedError.startsWith('刷新失败'))">重试</button></div>
-                <div v-if="liveMode&&bodyTab==='metrics'&&metricReferenceFilter!=='all'&&referenceError" role="alert" class="empty-inline">{{ referenceError }} <button type="button" class="inline-link" @click="loadReferenceIndex">重试统计</button></div>
+                <div v-if="liveMode&&bodyTab==='metrics'&&metricReferenceFilter!=='all'&&referenceError" role="alert" class="empty-inline">{{ referenceError }} <button type="button" class="inline-link" @click="loadReferenceIndex(true)">重试统计</button></div>
                 <div v-if="liveMode&&bodyTab==='metrics'&&metricSummaryError" role="alert" class="empty-inline">{{ metricSummaryError }} <button class="inline-link" type="button" @click="loadPagedSection('metrics')">重新加载指标</button></div>
                 <div v-if="liveMode&&usesPagedSection(bodyTab)&&pagedCursor&&!rebuildRequired&&!pagedError&&!metricSummaryError" class="list-toolbar"><button class="quiet-button" type="button"  :disabled="pagedLoadingMore||metricSummaryLoading||pagedRefreshing" @click="loadPagedSection(bodyTab,true)">{{ pagedLoadingMore?'正在加载更多…':metricSummaryLoading?'正在读取最新值…':'加载更多' }}</button></div>
                 <div v-if="(!liveMode||viewHasData)&&!viewError&&!pagedError&&!pagedCursor&&((bodyTab==='documents'&&!filteredDocuments.length)||(bodyTab==='regimens'&&!filteredRegimens.length))" class="empty-state"><Search :size="26"/><b>没有找到相关内容</b><span>试试其他关键词，或添加一条新记录。</span></div>
