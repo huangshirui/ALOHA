@@ -13,7 +13,7 @@ import {
 import { useDemoAgentSession } from './agent-demo'
 import { createHealthRecord, deleteHealthRecord, deleteConcernPresentation,
   getAlohaWorkspace, getAlohaUserProfile, patchConcernPresentation,
-  getHealthSnapshot, updateHealthRecord, uploadHealthDocument,
+  getHealthSnapshot, getHealthPage, HealthApiError, updateHealthRecord, uploadHealthDocument,
   listConcernRelations,linkConcernRecord,unlinkConcernRecord,
   type FileUploadProgress,
   type HealthRecord } from './health-api'
@@ -197,7 +197,7 @@ watch(notice,(message)=>{
   if(message)noticeTimeout=setTimeout(()=>{if(notice.value===message)notice.value=''},
     noticeIsError.value?7500:4200)
 })
-onBeforeUnmount(()=>{if(noticeTimeout)clearTimeout(noticeTimeout)})
+onBeforeUnmount(()=>{if(noticeTimeout)clearTimeout(noticeTimeout);metricHistoryController?.abort()})
 const agentSession = useDemoAgentSession()
 const agentOpen = agentSession.open
 const agentMessages = agentSession.messages
@@ -233,7 +233,10 @@ const detailKinds:Record<HealthKind,HealthKind[]>={
   regimen:['regimen','document'],
   assessment:['assessment','observation','document'],
 }
-const loadedKinds=new Set<HealthKind>()
+const loadedKinds=reactive(new Set<HealthKind>())
+const metricCatalogAvailable=computed(()=>liveMode&&bodyTab.value==='metrics'&&!selected.value&&loadedKinds.has('metric'))
+const metricSummariesReady=computed(()=>!liveMode||loadedKinds.has('observation'))
+let metricHistoryController:AbortController|null=null
 const concernLinks=ref<ConcernRelation[]>([])
 const relationLoading=ref(false)
 const relationReadState=ref<'idle'|'loading'|'ready'|'error'>('idle')
@@ -274,6 +277,7 @@ let relationSequence=0
 let liveLoadSequence=0
 function clearLiveRecords() {
   ++liveLoadSequence
+  metricHistoryController?.abort();metricHistoryController=null
   ++relationSequence
   concernLinks.value=[]
   relationLoading.value=false
@@ -292,17 +296,54 @@ function clearLiveRecords() {
 async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   if(!selectedSpaceId.value)return
   if(refresh)clearLiveRecords()
+  metricHistoryController?.abort();metricHistoryController=null
+  const metricDetail=section==='detail'&&selected.value?.kind==='metric'&&!loadedKinds.has('observation')?selected.value.id:null
   const requested=section==='detail'
     ? detailKinds[selected.value?.kind??'concern'] : sectionKinds[section]
-  const missing=requested.filter(kind=>!loadedKinds.has(kind))
+  const missing=requested.filter(kind=>!loadedKinds.has(kind)&&!(metricDetail&&kind==='observation'))
   const requestId=++liveLoadSequence
-  if(!missing.length&&subjectPersonId.value) {
+  if(!missing.length&&subjectPersonId.value&&!metricDetail) {
     liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return
   }
   const spaceId=selectedSpaceId.value
   liveStatus.value='loading'
   liveMessage.value='正在加载'+(section==='focus'?'关注事项':section==='metrics'?'健康指标':section==='timeline'?'健康时间线':section==='documents'?'健康资料':section==='regimens'?'健康方案':'关联记录')+'…'
   try {
+    // The metric catalog is usable before the complete observation summary.
+    if(section==='metrics'&&missing.includes('metric')&&missing.includes('observation')){
+      const catalog=await getHealthSnapshot(spaceId,['health_metric'])
+      if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
+      if(subjectPersonId.value&&subjectPersonId.value!==catalog.personId)throw new HealthApiError(403,null)
+      if(!catalog.personId||!Array.isArray(catalog.models?.health_metric))throw Error('健康指标响应不完整')
+      const records=catalog.models.health_metric.map(record=>decodeHealthRecord('metric',record) as Metric)
+      demo.metrics.splice(0,demo.metrics.length,...records)
+      subjectPersonId.value=catalog.personId;loadedKinds.add('metric')
+      missing.splice(missing.indexOf('metric'),1)
+    }
+    // A single metric's history must not fetch the entire observation collection.
+    // Complete the selected history before rendering the existing all-history trend.
+    if(metricDetail){
+      const controller=new AbortController();metricHistoryController=controller
+      const records:Observation[]=[]
+      let cursor:string|null=null
+      for(let i=0;i<40;i++){
+        const params=new URLSearchParams({limit:'50',metricId:metricDetail})
+        if(cursor)params.set('cursor',cursor)
+        const page=await getHealthPage(spaceId,'health_observation',params,controller.signal)
+        if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
+        if(subjectPersonId.value&&page.personId!==subjectPersonId.value)throw new HealthApiError(403,null)
+        if(!page.personId||!Array.isArray(page.items)||!(page.nextCursor===null||typeof page.nextCursor==='string'))throw Error('健康观测响应不完整')
+        subjectPersonId.value=page.personId
+        records.push(...page.items.map(record=>decodeHealthRecord('observation',record) as Observation))
+        cursor=page.nextCursor
+        if(!cursor)break
+      }
+      if(cursor)throw Error('该指标历史记录过多，请稍后重试')
+      const other=demo.observations.filter(record=>record.metricId!==metricDetail)
+      demo.observations.splice(0,demo.observations.length,...other,...records)
+      metricHistoryController=null
+    }
+    if(!missing.length){liveStatus.value='ready';liveMessage.value='已连接 LifeSpace';return}
     const snapshot=await getHealthSnapshot(spaceId,missing.map(kind=>healthModelKey[kind]))
     if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
     if(subjectPersonId.value&&subjectPersonId.value!==snapshot.personId) {
@@ -341,7 +382,7 @@ async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
     liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'
   }catch(e) {
     if(requestId!==liveLoadSequence||spaceId!==selectedSpaceId.value)return
-    if(!subjectPersonId.value)clearLiveRecords()
+    if(!subjectPersonId.value||(e instanceof HealthApiError&&[401,403].includes(e.status))){clearLiveRecords();subjectPersonId.value=''}
     liveStatus.value='error'
     liveMessage.value=e instanceof Error?e.message:'健康档案读取失败'
   }
@@ -403,6 +444,7 @@ const timeline = computed(() => [
 const metricState=(m:Metric)=>metricReferenceState(m,latestFor(m.id))
 const metricReferenceCounts=computed(()=>{
  const result:Record<MetricReferenceFilter,number>={all:0,within:0,outside:0,unknown:0}
+ if(!metricSummariesReady.value)return result
  for(const metric of demo.metrics){
    if(!metric.name.toLowerCase().includes(search.value.trim().toLowerCase()))continue
    const state=metricState(metric)
@@ -413,7 +455,7 @@ const metricReferenceCounts=computed(()=>{
 })
 const filteredMetrics=computed(()=>demo.metrics.filter(m=>
  m.name.toLowerCase().includes(search.value.trim().toLowerCase()) &&
- matchMetricReferenceFilter(metricState(m),metricReferenceFilter.value)
+ (!metricSummariesReady.value||matchMetricReferenceFilter(metricState(m),metricReferenceFilter.value))
 ))
 const filteredDocuments = computed(()=>demo.documents.filter(d=>d.title.includes(search.value) || d.issuerName.includes(search.value)))
 const filteredRegimens = computed(()=>demo.regimens.filter(r=>r.name.includes(search.value)))
@@ -533,6 +575,7 @@ function location(): HealthLocation {
 }
 function navigate(tab: Tab,loadDefault=true) {
   routeStack.value=[]
+  ++liveLoadSequence;metricHistoryController?.abort();metricHistoryController=null
   ++relationSequence;relationLoading.value=false;relationReadState.value='idle'
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
@@ -542,6 +585,7 @@ function openBody(tab: BodyTab) { navigate('body',false);changeBodyTab(tab) }
 function changeBodyTab(tab:BodyTab) {
   ++relationSequence;relationLoading.value=false;relationReadState.value='idle'
   selected.value=null;routeStack.value=[];bodyTab.value=tab;search.value='';metricVisibleLimit.value=40
+  if(tab==='metrics'&&!metricSummariesReady.value)metricReferenceFilter.value='all'
   if(liveMode&&selectedSpaceId.value)void loadLiveRecords(tab)
 }
 function show(kind: HealthKind,id: string) {
@@ -1235,7 +1279,7 @@ function detailName(kind: HealthKind,record:any) {
             <nav class="sub-navigation" aria-label="身体页面导航">
               <button v-for="item in bodyTabs" :key="item.id" :class="{active:bodyTab===item.id}" type="button" @click="changeBodyTab(item.id)">{{ item.title }}</button>
             </nav>
-            <HealthSkeleton v-if="liveMode&&liveStatus!=='ready'" label="正在加载当前页面的数据" :rows="6"/>
+            <HealthSkeleton v-if="liveMode&&liveStatus!=='ready'&&!metricCatalogAvailable" label="正在加载当前页面的数据" :rows="6"/>
             <div v-else-if="bodyTab==='focus'" class="body-overview">
               <BodyOverview
                 :concerns="demo.concerns"
@@ -1259,14 +1303,14 @@ function detailName(kind: HealthKind,record:any) {
               <div class="list-panel">
                 <template v-if="bodyTab==='metrics'">
                   <div class="metric-reference-filters" role="group" aria-label="按参考范围筛选健康指标">
-                    <button v-for="option in metricReferenceChoices" :key="option.value" type="button"
+                    <button v-for="option in metricReferenceChoices" :key="option.value" type="button" :disabled="!metricSummariesReady&&option.value!=='all'"
                       :class="{active:metricReferenceFilter===option.value}"
                       :aria-pressed="metricReferenceFilter===option.value"
                       @click="metricReferenceFilter=option.value">
-                      {{ option.label }} <small>{{ metricReferenceCounts[option.value] }}</small>
+                      {{ option.label }} <small v-if="metricSummariesReady">{{ metricReferenceCounts[option.value] }}</small>
                     </button>
-                  </div><button v-for="m in filteredMetrics.slice(0,metricVisibleLimit)" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong>
-                    <ReferenceIndicator v-if="latestFor(m.id)"
+                  </div><button v-for="m in filteredMetrics.slice(0,metricVisibleLimit)" :key="m.id" class="list-row" type="button" @click="show('metric',m.id)"><span class="list-icon"><Activity :size="19"/></span><span class="row-main"><b>{{ m.name }}</b><small>{{ labelFrom(valueTypes,m.valueType) }} {{ m.defaultUnit?' · '+m.defaultUnit:'' }}</small></span><span class="metric-list-result"><strong class="list-value">{{ !metricSummariesReady?'加载中…':latestFor(m.id)?observationValue(latestFor(m.id)!,m):'—' }}</strong>
+                    <ReferenceIndicator v-if="metricSummariesReady&&latestFor(m.id)"
                       :comparison="referenceFor(latestFor(m.id)!,m)?.comparison"/>
                   </span><ChevronRight :size="18"/></button>
                   <div v-if="metricVisibleLimit<filteredMetrics.length" class="list-toolbar"><button class="quiet-button" type="button" @click="metricVisibleLimit+=40">显示更多指标（{{ Math.min(metricVisibleLimit,filteredMetrics.length) }} / {{ filteredMetrics.length }}）</button></div>
