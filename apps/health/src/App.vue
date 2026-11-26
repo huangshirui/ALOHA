@@ -176,7 +176,7 @@ async function saveQuickMetric(){
       ?await createHealthRecord<HealthRecord>(selectedSpaceId.value,'health_metric',fields)
       :({id:'demo-'+(++nextRecordId),version:1,...fields} as HealthRecord)
     const metric=decodeHealthRecord('metric',record) as Metric
-    if(liveMode)invalidateHealth('metric')
+    if(liveMode)queryState.invalidate('metric')
     demo.metrics.unshift(metric)
     chooseObservationMetric(metric)
     quickMetricOpen.value=false
@@ -263,7 +263,7 @@ let restoringView=false
 function invalidateHealth(...tags:QueryTag[]){
   queryState.invalidate(...tags)
   ++liveLoadSequence;++relationSequence
-  cancelPage();cancelSnapshot();cancelMetricDetail();resetConcernReads()
+  cancelPage();cancelSnapshot();cancelMetricDetail();resetConcernReads();resetDocumentRelated();readCoordinator.clear()
 }
 function beginView(hit:{updatedAt:number}|undefined){
   viewError.value='';rebuildRequired.value=false;viewUpdatedAt.value=hit?.updatedAt??null
@@ -377,6 +377,7 @@ type ConcernList='metrics'|'observations'|'regimens'|'events'|'evidence'
 const activeRelationCard=ref<ConcernCard|null>(null)
 type CardReadState='idle'|'loading'|'ready'|'error'
 const concernReads=reactive<Record<ConcernList,CardReadState>>({metrics:'idle',observations:'idle',regimens:'idle',events:'idle',evidence:'idle'})
+const concernRefreshing=reactive<Record<ConcernList,boolean>>({metrics:false,observations:false,regimens:false,events:false,evidence:false})
 const concernReadErrors=reactive<Record<ConcernList,string>>({metrics:'',observations:'',regimens:'',events:'',evidence:''})
 const concernMetricDates=reactive(new Map<string,string>())
 let concernAbort:AbortController|null=null
@@ -389,7 +390,7 @@ function concernSectionState(key:ConcernList){
 function resetConcernReads(){
   concernAbort?.abort();concernAbort=null
   concernMetricDates.clear()
-  for(const key of Object.keys(concernReads) as ConcernList[]){concernReads[key]='idle';concernReadErrors[key]=''}
+  for(const key of Object.keys(concernReads) as ConcernList[]){concernReads[key]='idle';concernReadErrors[key]='';concernRefreshing[key]=false}
 }
 onBeforeUnmount(resetConcernReads)
 function mergeHealthRecords(kind:HealthKind,records:HealthRecord[]){
@@ -419,12 +420,22 @@ async function readSelectedRows(spaceId:string,kind:HealthKind,ids:string[],sign
   if(valid()&&!signal.aborted)mergeHealthRecords(kind,records)
   return records
 }
-async function loadConcernGroup(key:ConcernList,spaceId:string,version:number,signal:AbortSignal){
-  const valid=()=>version===relationSequence&&spaceId===selectedSpaceId.value&&!signal.aborted&&selected.value?.kind==='concern'
-  concernReads[key]='loading';concernReadErrors[key]=''
+function concernGroupKey(concernId:string,key:ConcernList){
+  return scopeKey('concern-group',concernId,key,...concernGroupKinds[key].flatMap(kind=>[kind,...concernLinks.value.filter(e=>e.target.modelKey===concernTargetModels[kind]).map(e=>e.target.recordId).sort()]))
+}
+async function loadConcernGroup(key:ConcernList,spaceId:string,version:number,signal:AbortSignal,force=false){
+  const concernId=selected.value?.id??''
+  const valid=()=>version===relationSequence&&spaceId===selectedSpaceId.value&&!signal.aborted&&selected.value?.kind==='concern'&&selected.value.id===concernId
+  const idsFor=(kind:ConcernTargetKind)=>concernLinks.value.filter(edge=>edge.target.modelKey===concernTargetModels[kind]).map(edge=>edge.target.recordId)
+  const cacheKey=concernGroupKey(concernId,key),hit=queryState.get<[string,string][]>(cacheKey)
+  concernReads[key]=hit?'ready':'loading';concernReadErrors[key]=''
+  if(hit){if(key==='metrics'){concernMetricDates.clear();for(const [id,date] of hit.data)concernMetricDates.set(id,date)}if(hit.fresh&&!force)return}
+  concernRefreshing[key]=!!hit
   try{
+    const dates=new Map<string,string>()
+    let weight=0
     for(const kind of concernGroupKinds[key]){
-      const ids=concernLinks.value.filter(edge=>edge.target.modelKey===concernTargetModels[kind]).map(edge=>edge.target.recordId)
+      const ids=idsFor(kind);weight+=ids.length
       const records=await readSelectedRows(spaceId,kind,ids,signal,valid)
       if(!valid())return
       if(kind==='observation')await readSelectedRows(spaceId,'metric',records.map(record=>String(record.metricId??'')),signal,valid)
@@ -434,25 +445,29 @@ async function loadConcernGroup(key:ConcernList,spaceId:string,version:number,si
           const summary=await getMetricSummaries(spaceId,ids.slice(offset,offset+METRIC_PAGE_SIZE),signal)
           if(!valid())return
           assertOwnScope(summary.personId)
-          for(const row of summary.items)concernMetricDates.set(String(row.metricId),String(row.observedDate))
+          for(const row of summary.items)dates.set(String(row.metricId),String(row.observedDate))
         }
       }
     }
-    if(valid())concernReads[key]='ready'
-  }catch(e){
-    if(!valid())return
-    if(e instanceof HealthApiError&&[401,403].includes(e.status)){
-      clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e.message;return
+    if(valid()){
+      if(key==='metrics'){concernMetricDates.clear();for(const [id,date] of dates)concernMetricDates.set(id,date)}
+      concernReads[key]='ready'
+      const tags:QueryTag[]=['relation',...concernGroupKinds[key]]
+      if(key==='metrics')tags.push('observation')
+      if(key==='observations')tags.push('metric')
+      queryState.set(cacheKey,[...dates],tags,weight)
     }
-    concernReads[key]='error';concernReadErrors[key]=e instanceof Error?e.message:'关联记录读取失败'
-  }
+  }catch(e){
+    if(!valid()||optionDenied(e))return
+    concernReads[key]=hit?'ready':'error';concernReadErrors[key]=(hit?'更新失败，显示上次数据：':'')+(e instanceof Error?e.message:'关联记录读取失败')
+  }finally{if(valid())concernRefreshing[key]=false}
 }
 function retryConcernGroup(key:ConcernList){
   if(relationReadState.value!=='ready'||!concernAbort||!selectedSpaceId.value){
     if(selected.value?.kind==='concern')void refreshConcernLinks(selected.value.id)
     return
   }
-  void loadConcernGroup(key,selectedSpaceId.value,relationSequence,concernAbort.signal)
+  void loadConcernGroup(key,selectedSpaceId.value,relationSequence,concernAbort.signal,true)
 }
 const concernPage=reactive<Record<ConcernList,number>>({
   metrics:0,observations:0,regimens:0,events:0,evidence:0,
@@ -1136,28 +1151,32 @@ function relationRecordName(kind:ConcernTargetKind,id:string){
   return record?.name||record?.title||record?.summary||
     (kind==='observation'&&record?observationTitle(record):'记录已不可见')
 }
-async function refreshConcernLinks(concernId:string){
-  if(!liveMode||!selectedSpaceId.value)return
+async function refreshConcernLinks(concernId:string,force=false){
+  if(!liveMode||!selectedSpaceId.value||relationLoading.value)return
   resetConcernReads()
   const controller=new AbortController();concernAbort=controller
   const spaceId=selectedSpaceId.value,version=++relationSequence
-  relationLoading.value=true;relationReadState.value='loading';relationReadError.value='';relationError.value='';concernLinks.value=[]
+  const valid=()=>version===relationSequence&&spaceId===selectedSpaceId.value&&!controller.signal.aborted&&selected.value?.kind==='concern'&&selected.value.id===concernId
+  const key=scopeKey('concern-relations',concernId),hit=queryState.get<ConcernRelation[]>(key)
+  concernLinks.value=hit?.data??[];relationLoading.value=true;relationReadState.value=hit?'ready':'loading';relationReadError.value='';relationError.value=''
+  if(hit)for(const group of Object.keys(concernGroupKinds) as ConcernList[]){
+    const cached=queryState.get<[string,string][]>(concernGroupKey(concernId,group))
+    if(cached){concernReads[group]='ready';if(group==='metrics')for(const [id,date] of cached.data)concernMetricDates.set(id,date)}
+  }
   try{
-    const response=await listConcernRelations(spaceId,concernId,controller.signal)
-    if(version!==relationSequence||spaceId!==selectedSpaceId.value||
-       selected.value?.kind!=='concern'||selected.value.id!==concernId)return
-    concernLinks.value=response.items
-    relationReadState.value='ready'
-    await Promise.all((Object.keys(concernGroupKinds) as ConcernList[]).map(key=>loadConcernGroup(key,spaceId,version,controller.signal)))
-  }catch(e){
-    if(version===relationSequence){
-      if(e instanceof HealthApiError&&[401,403].includes(e.status)){
-        clearLiveRecords();subjectPersonId.value='';liveStatus.value='error';liveMessage.value=e.message
-        return
-      }
-      relationReadState.value='error';relationReadError.value=e instanceof Error?e.message:'关联读取失败'
+    if(!hit?.fresh||force){
+      const response=await listConcernRelations(spaceId,concernId,controller.signal)
+      if(!valid())return
+      if(!Array.isArray(response.items))throw Error('关联响应不完整')
+      concernLinks.value=response.items
+      queryState.set(key,response.items,['relation','concern'],response.items.length)
     }
-  }finally{if(version===relationSequence)relationLoading.value=false}
+    relationReadState.value='ready'
+    await Promise.all((Object.keys(concernGroupKinds) as ConcernList[]).map(group=>loadConcernGroup(group,spaceId,version,controller.signal,force)))
+  }catch(e){
+    if(!valid()||optionDenied(e))return
+    relationReadState.value=hit?'ready':'error';relationReadError.value=(hit?'关联更新失败，显示上次数据：':'')+(e instanceof Error?e.message:'关联读取失败')
+  }finally{if(valid())relationLoading.value=false}
 }
 async function addConcernLink(){
   const id=selected.value?.kind==='concern'?selected.value.id:null
@@ -1170,7 +1189,8 @@ async function addConcernLink(){
       if(!concernLinks.value.some(r=>r.id===saved.id))concernLinks.value=[...concernLinks.value,saved]
       relationTargetId.value=''
       notice.value='已关联现有记录。'
-      void refreshConcernLinks(id)
+      queryState.invalidate('relation')
+      void refreshConcernLinks(id,true)
     }
   }catch(e){relationError.value=e instanceof Error?e.message:'关联失败'}
   finally{relationBusy.value=false}
@@ -1185,7 +1205,9 @@ async function removeConcernLink(edge:ConcernRelation){
     await unlinkConcernRecord(spaceId,id,edge.id)
     if(spaceId===selectedSpaceId.value&&selected.value?.kind==='concern'&&selected.value.id===id){
       concernLinks.value=concernLinks.value.filter(r=>r.id!==edge.id)
+      queryState.invalidate('relation')
       notice.value='关联已解除，原记录已保留。'
+      void refreshConcernLinks(id,true)
     }
   }catch(e){relationError.value=e instanceof Error?e.message:'解除关联失败'}
   finally{relationBusy.value=false}
@@ -1230,8 +1252,8 @@ async function activateHealthView(force=false,rebuild=false){
   if(!liveMode||!selectedSpaceId.value||activeTab.value!=='body')return
   const record=selected.value
   await loadLiveRecords(record?'detail':bodyTab.value,force,rebuild)
-  if(record?.kind==='concern'&&selected.value?.kind==='concern'&&selected.value.id===record.id)await refreshConcernLinks(record.id)
-  if(record?.kind==='document'&&selected.value?.kind==='document'&&selected.value.id===record.id&&documentRelatedActivated.value)await loadDocumentRelated(record.id,force)
+  if(record?.kind==='concern'&&selected.value?.kind==='concern'&&selected.value.id===record.id&&current.value)await refreshConcernLinks(record.id,force)
+  if(record?.kind==='document'&&selected.value?.kind==='document'&&selected.value.id===record.id&&current.value&&documentRelatedActivated.value)await loadDocumentRelated(record.id,force)
 }
 function refreshCurrentView(rebuild=false){
   if(!liveMode||viewBusy.value||scopeChecking.value||sheet.value||saving.value||relationBusy.value)return
@@ -1292,6 +1314,7 @@ async function onAttentionChange(id:string,event:Event) {
       await patchConcernPresentation(spaceId,id,{attention})
       if(selectedSpaceId.value!==spaceId)return
     }
+    if(liveMode)queryState.invalidate('presentation')
     attentionByConcern.value={...attentionByConcern.value,[id]:attention}
     notice.value=liveMode?'关注度已同步。':'关注度已更新（仅本次演示）。'
   } catch(e) {
@@ -1310,6 +1333,7 @@ async function assignConcernPoint(id:string,view:BodyView,point:BodyPoint) {
       await patchConcernPresentation(spaceId,id,{placement:next.find(p=>p.concernId===id)!})
       if(selectedSpaceId.value!==spaceId)return
     }
+    if(liveMode)queryState.invalidate('presentation')
     bodyBindings.value=next
     notice.value=liveMode?'人体位置已同步。':'已为关注事项标记位置（仅本次演示）。'
   } catch(e) {notice.value=e instanceof Error?e.message:'人体位置同步失败'}
@@ -1322,6 +1346,7 @@ async function clearConcernPoint(id:string) {
       await patchConcernPresentation(spaceId,id,{placement:null})
       if(selectedSpaceId.value!==spaceId)return
     }
+    if(liveMode)queryState.invalidate('presentation')
     bodyBindings.value=removeConcernPoint(bodyBindings.value,id)
     notice.value=liveMode?'人体定位已移除并同步。':'人体定位已移除（仅本次演示）。'
   } catch(e) {notice.value=e instanceof Error?e.message:'移除定位失败'}
@@ -1529,6 +1554,7 @@ async function formSave() {
       if(kind==='document' && !previous) mapped.fileName=uploadFile.value?.name??'已上传原始资料'
       if(previous) rows.splice(rows.indexOf(previous),1,mapped)
       else rows.unshift(mapped)
+      if(kind==='concern'&&!previous){const hit=queryState.get<string[]>(scopeKey('focus'));if(hit){focusIds.value=[saved.id,...hit.data.filter(id=>id!==saved.id)];queryState.set(scopeKey('focus'),[...focusIds.value],['concern','presentation'],focusIds.value.length,Date.now(),hit.updatedAt);queryState.invalidate('concern')}}
       let presentationError=''
       if(kind==='concern') {
         const attention=parseConcernAttention(String(v.attention??'unset'))
@@ -1611,6 +1637,7 @@ async function removeCurrent() {
   const rows=getList(kind)
   const i=rows.findIndex(r=>r.id===id)
   if(i>=0) rows.splice(i,1)
+  if(liveMode&&kind==='concern'){const hit=queryState.get<string[]>(scopeKey('focus'));if(hit){focusIds.value=hit.data.filter(item=>item!==id);queryState.set(scopeKey('focus'),[...focusIds.value],['concern','presentation'],focusIds.value.length,Date.now(),hit.updatedAt);queryState.invalidate('concern')}}
   // Remove orphaned UI-only relation indexes without cascading health facts.
   if(kind==='document') {
     demo.observations.forEach(o=>{if(o.sourceDocumentId===id)o.sourceDocumentId=''})
