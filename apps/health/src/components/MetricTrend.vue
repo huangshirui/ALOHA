@@ -89,13 +89,9 @@ async function mount(el:HTMLElement|null){
  if(!el){loading.value=false;return}
  loading.value=true
  try{
-  const [core,charts,components,renderers]=await Promise.all([
-   import('echarts/core'),import('echarts/charts'),import('echarts/components'),import('echarts/renderers')
-  ])
+  const {init}=await import('../health-chart-engine')
   if(current!==generation||plot.value!==el)return
-  core.use([charts.LineChart,components.GridComponent,components.TooltipComponent,components.DataZoomComponent,
-   components.MarkLineComponent,components.MarkAreaComponent,renderers.SVGRenderer])
-  chart=core.init(el,undefined,{renderer:'svg'})
+  chart=init(el,undefined,{renderer:'svg'})
   chart.on('click',(params)=>{
    if(params.componentType==='series'&&typeof params.dataIndex==='number'){
     const p=readings.value[params.dataIndex]
