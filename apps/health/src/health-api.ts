@@ -87,6 +87,8 @@ export const getHealthSnapshot = (spaceId:string,models:HealthModelKey[],signal?
 export interface ScopedHealthPage extends HealthPage<HealthRecord>{personId:string}
 export const getHealthPage=(spaceId:string,model:import('./health-page-query').PageModel,params:URLSearchParams,signal?:AbortSignal)=>
   api<ScopedHealthPage>(`/spaces/${encodeURIComponent(spaceId)}/models/${model}/page?${params}`,{signal,cache:'no-store'})
+export const getSelectedHealthRecords=(spaceId:string,model:HealthModelKey,ids:string[],signal?:AbortSignal)=>
+  api<{personId:string;items:HealthRecord[]}>(`/spaces/${encodeURIComponent(spaceId)}/models/${model}/selected-records?${new URLSearchParams({ids:ids.join(',')})}`,{signal,cache:'no-store'})
 export const getMetricSummaries=(spaceId:string,ids:string[],signal?:AbortSignal)=>
   api<{personId:string;items:HealthRecord[]}>(`/spaces/${encodeURIComponent(spaceId)}/metric-summaries?${new URLSearchParams({metricIds:ids.join(',')})}`,{signal,cache:'no-store'})
 const recordsPath = (spaceId:string, model:HealthModelKey) =>
@@ -109,8 +111,8 @@ export const deleteHealthRecord = (spaceId:string,model:HealthModelKey,id:string
 import type {ConcernRelation,ConcernTargetKind} from './health-concern-relations'
 const concernRelationsPath=(spaceId:string,concernId:string)=>
   `/spaces/${encodeURIComponent(spaceId)}/concerns/${encodeURIComponent(concernId)}/relations`
-export const listConcernRelations=(spaceId:string,concernId:string)=>
-  api<{items:ConcernRelation[]}>(concernRelationsPath(spaceId,concernId))
+export const listConcernRelations=(spaceId:string,concernId:string,signal?:AbortSignal)=>
+  api<{items:ConcernRelation[]}>(concernRelationsPath(spaceId,concernId),{signal,cache:'no-store'})
 export const linkConcernRecord=(spaceId:string,concernId:string,kind:ConcernTargetKind,targetId:string)=>
   api<ConcernRelation>(concernRelationsPath(spaceId,concernId),{
     method:'POST',body:JSON.stringify({kind,targetId}),

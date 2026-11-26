@@ -465,6 +465,29 @@ describe('Health trusted BFF', () => {
     expect((await res.json()).data.items.map((r:{id:string})=>r.id)).toEqual(['rec_new','rec_second'])
     expect(queries).toBe(1)
   })
+  it('hydrates only selected records, rejecting wrong Person and oversized or injected selectors',async()=>{
+    let wrong=false,reads:string[]=[]
+    const f=vi.fn(async(input:RequestInfo|URL)=>{
+      const p=new URL(String(input)).pathname
+      if(p==='/internal/v1/access/tokens')return success({accessToken:'synthetic'})
+      if(p==='/api/v1/me')return success({principal:{id:'usr_self',type:'user'}})
+      if(p.endsWith('/members'))return success([{userId:'usr_self',personId:'per_self'}])
+      if(p.includes('/health_document/records/')){
+        const id=p.split('/').pop()!;reads.push(id)
+        return success({id,subjectPersonId:wrong?'per_other':'per_self'})
+      }
+      throw Error('unexpected route')
+    })
+    const url='https://health.example.com/health/api/v1/spaces/spc_test/models/health_document/selected-records?ids=rec_one,rec_two'
+    const response=await handleHealthApi(make(url),env,f)
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.items.map((r:{id:string})=>r.id)).toEqual(['rec_one','rec_two'])
+    expect(reads).toEqual(['rec_one','rec_two'])
+    wrong=true
+    expect((await handleHealthApi(make(url),env,f)).status).toBe(403)
+    expect((await handleHealthApi(make(url+'&personId=per_other'),env,f)).status).toBe(422)
+    expect((await handleHealthApi(make(url.replace('rec_one,rec_two',Array.from({length:13},(_,i)=>'rec_'+i).join(','))),env,f)).status).toBe(422)
+  })
   it('returns one page and fails closed for mismatched Person or browser scope override',async()=>{
     let queries=0,wrongPerson=false
     const f=vi.fn(async(input:RequestInfo|URL,init?:RequestInit)=>{

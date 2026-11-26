@@ -64,6 +64,9 @@ function routeFor(url: URL, method: string): Route | null {
   const snapshot = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/snapshot$/.exec(p)
   if (snapshot && method === 'GET')
     return {spaceId:snapshot[1],path:'@snapshot'}
+  const selectedRecords = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/models\/([a-z_]+)\/selected-records$/.exec(p)
+  if(selectedRecords&&method==='GET'&&modelKeys.has(selectedRecords[2]!))
+    return {spaceId:selectedRecords[1],modelKey:selectedRecords[2],path:'@selected-records'}
   const metricSummary = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/metric-summaries$/.exec(p)
   if(metricSummary&&method==='GET')return {spaceId:metricSummary[1],path:'@metric-summaries'}
   const page = /^\/health\/api\/v1\/spaces\/(spc_[A-Za-z0-9_-]+)\/models\/([a-z_]+)\/page$/.exec(p)
@@ -296,6 +299,33 @@ async function ownPerson(fetchImpl:Fetcher,core:string,bearer:string,spaceId:str
   const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,verifiedUserId)
   if(scope instanceof Response) return scope
   return Response.json({data:{personId:scope.personId}},{headers:{'Cache-Control':'no-store'}})
+}
+
+/** Bounded selected-record hydration. Each GET keeps Core's own authorization,
+ * plus the Health own-Person projection boundary. Never scan an entire collection.
+ * Missing or denied targets are errors, not a successful empty list.
+ */
+async function handleSelectedRecords(fetchImpl:Fetcher,core:string,bearer:string,spaceId:string,model:string,params:URLSearchParams,userId:string|null):Promise<Response>{
+  const ids=(params.get('ids')??'').split(',')
+  if([...params.keys()].some(key=>key!=='ids')||params.getAll('ids').length!==1||
+     ids.length>12||new Set(ids).size!==ids.length||ids.some(id=>!recordPattern.test(id)))
+    return json('selected_records_invalid',422)
+  const scope=await resolveOwnIdentity(fetchImpl,core,bearer,spaceId,userId)
+  if(scope instanceof Response)return scope
+  const items:JsonObject[]=[]
+  for(let offset=0;offset<ids.length;offset+=4){
+    const group=ids.slice(offset,offset+4)
+    const results=await Promise.all(group.map(id=>getRecord(fetchImpl,core,bearer,
+      '/api/v1/spaces/'+spaceId+'/models/'+model+'/records/'+id)))
+    for(let i=0;i<results.length;i++){
+      const row=results[i]!
+      if(row instanceof Response)return row
+      if(row.id!==group[i])return json('invalid_core_response',502)
+      if(model!=='health_metric'&&row.subjectPersonId!==scope.personId)return json('record_not_owned',403)
+      items.push(row)
+    }
+  }
+  return Response.json({data:{personId:scope.personId,items}},{headers:{'Cache-Control':'private, no-store'}})
 }
 
 /** Latest values for one visible metric page. No one-request-per-metric fanout.
@@ -661,6 +691,8 @@ export async function handleHealthApi(
   }
   if(route.path==='@concern-relations')return withSessionCookie(
     await handleConcernRelations(request,fetchImpl,core,bearer,route,userId),session.cookie)
+  if(route.path==='@selected-records')return withSessionCookie(
+    await handleSelectedRecords(fetchImpl,core,bearer,route.spaceId!,route.modelKey!,url.searchParams,userId),session.cookie)
   if(route.path==='@metric-summaries')return withSessionCookie(
     await handleMetricSummaries(fetchImpl,core,bearer,route.spaceId!,url.searchParams,userId),session.cookie)
   if(route.path==='@health-page')return withSessionCookie(
