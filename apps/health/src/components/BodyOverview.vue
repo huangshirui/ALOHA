@@ -7,17 +7,19 @@ import {
   type BodyMapBinding, type BodyMapConcern, type BodyPoint, type BodyView,
 } from '../body-map'
 
-const props=defineProps<{concerns:BodyMapConcern[];bindings:BodyMapBinding[];view:BodyView;selectedConcernId:string|null;attentionByConcern:Record<string,ConcernAttention>}>()
+const props=defineProps<{concerns:BodyMapConcern[];bindings:BodyMapBinding[];view:BodyView;selectedConcernId:string|null;attentionByConcern:Record<string,ConcernAttention>;loading?:boolean;error?:string;searchText?:string}>()
 const emit=defineEmits<{
   openConcern:[id:string]
   'update:view':[view:BodyView]
   'update:selectedConcernId':[id:string|null]
   placePoint:[id:string,view:BodyView,point:BodyPoint]
   removePoint:[id:string]
+  'update:searchText':[value:string]
+  retry:[]
 }>()
 const imageSrc=(side:BodyView)=>import.meta.env.BASE_URL+'body-'+side+'-outline.svg'
 const sides:BodyView[]=['front','back']
-const search=ref('')
+const search=computed({get:()=>props.searchText??'',set:value=>emit('update:searchText',value)})
 const locatingConcern=ref<string|null>(null)
 const pendingPoint=ref<BodyPoint|null>(null)
 const positionError=ref('')
@@ -106,7 +108,7 @@ function clearPlacement(){
         <button v-for="side in sides" :key="side" type="button"
           :class="{active:view===side}" :aria-pressed="view===side" @click="switchView(side)">
           {{ side==='front'?'正面':'背面' }}
-          <span class="body-view-count" :class="{hasItems:counts[side]>0}">{{ counts[side] }}</span>
+          <span v-if="!loading&&!error" class="body-view-count" :class="{hasItems:counts[side]>0}">{{ counts[side] }}</span>
         </button>
       </div>
       <div v-if="locatingConcern" class="body-position-instruction" role="status">
@@ -122,7 +124,7 @@ function clearPlacement(){
       <div class="body-map-canvas">
         <div class="body-map-pair">
           <div v-for="side in sides" :key="side" class="body-map-figure" :class="{'is-current':view===side}">
-            <div class="body-figure-label"><span>{{ side==='front'?'正面':'背面' }}</span><small>{{ counts[side] }} 项</small></div>
+            <div class="body-figure-label"><span>{{ side==='front'?'正面':'背面' }}</span><small v-if="!loading&&!error">{{ counts[side] }} 项</small></div>
             <div :ref="el=>setFigureRef(side,el)" class="body-silhouette"
           role="group" :aria-label="(side==='front'?'正面':'背面')+'身体健康关注位置'">
           <!-- Opaque interior layer hides the grid under the person.
@@ -146,7 +148,7 @@ function clearPlacement(){
               fill="var(--health-surface)"/>
           </svg>
           <img class="body-artwork" :src="imageSrc(side)" alt="" width="244" height="475" draggable="false"/>
-          <button v-for="spot in spotsFor(side)" :key="spot.concern.id" type="button"
+          <button v-for="spot in (loading||error?[]:spotsFor(side))" :key="spot.concern.id" type="button"
             class="body-region-marker"
             :class="{selected:selectedConcernId===spot.concern.id}"
             :style="{left:(spot.point.x*100)+'%',top:(spot.point.y*100)+'%', '--body-dot-color':attentionColor(attentionByConcern[spot.concern.id]??'unset')}"
@@ -170,13 +172,15 @@ function clearPlacement(){
       <section ref="recordsCardEl" class="ui-card body-region-card" aria-label="全部健康关注">
         <div class="body-region-card-heading">
           <h2>关注事项</h2>
-          <span class="body-concern-count">{{ concerns.length }} 项</span>
+          <span v-if="!loading&&!error" class="body-concern-count">{{ concerns.length }} 项</span>
         </div>
         <label class="body-concern-search">
           <Search :size="17" aria-hidden="true"/>
           <input v-model="search" type="search" aria-label="搜索关注事项" placeholder="搜索关注事项"/>
         </label>
-        <div v-for="concern in filteredConcerns" :key="concern.id"
+        <div v-if="loading" role="status" aria-label="加载关注事项" aria-busy="true"><div v-for="n in 4" :key="n" class="body-concern-item body-concern-placeholder" aria-hidden="true"><div class="body-concern-open"><span class="list-icon"/><span class="row-main"><i/><i/><i/></span></div><span class="body-concern-pin"/></div></div>
+        <p v-else-if="error" role="alert" class="body-region-empty">{{ error }} <button type="button" class="inline-link" @click="emit('retry')">重试</button></p>
+        <div v-for="concern in (loading||error?[]:filteredConcerns)" :key="concern.id"
           class="body-concern-item" :class="{selected:selectedConcernId===concern.id}">
           <button type="button" class="body-concern-open" @click="emit('openConcern',concern.id)">
             <span class="list-icon"><HeartPulse :size="18"/></span>
@@ -196,7 +200,7 @@ function clearPlacement(){
             <MapPin :size="17"/>
           </button>
         </div>
-        <p v-if="!filteredConcerns.length" class="body-region-empty">
+        <p v-if="!loading&&!error&&!filteredConcerns.length" class="body-region-empty">
           {{ search?'没有找到相关关注事项。':'还没有关注事项，添加后即可在身体图上标记位置。' }}
         </p>
       </section>
@@ -258,6 +262,9 @@ function clearPlacement(){
 .body-region-card-heading h2,.card-heading h2 {margin:0;font-size:var(--health-type-section);font-weight:680;}
 .body-concern-item {display:flex;align-items:center;gap:.2rem;border-bottom:1px solid var(--health-border-soft);}
 .body-concern-item:last-child {border-bottom:0;}
+.body-concern-placeholder .list-icon,.body-concern-placeholder .body-concern-pin,.body-concern-placeholder i{display:block;background:var(--health-border);border-radius:.35rem;opacity:.65}
+.body-concern-placeholder .row-main{display:grid;gap:.42rem}.body-concern-placeholder i{width:70%;height:.7rem}.body-concern-placeholder i+i{width:52%;height:.58rem}.body-concern-placeholder i+i+i{width:35%}
+
 /* Selected list items use an extremely light, even outline. No left accent bar. */
 .body-concern-item.selected {
   background:color-mix(in srgb,var(--health-brand) 3%,var(--health-surface));

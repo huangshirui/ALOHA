@@ -13,6 +13,7 @@ const props=defineProps<{
   partial?:boolean
   hasMore?:boolean
   loading?:boolean
+  ready?:boolean
   error?:string
 }>()
 const emit=defineEmits<{
@@ -76,10 +77,18 @@ const counts=computed(()=>({
         </ol>
       </section>
     </div>
-    <div v-else-if="loading" role="status" class="helper-copy">正在加载时间线…</div>
+    <div v-else-if="loading&&ready!==true" role="status" aria-label="正在加载时间线" aria-busy="true" class="timeline-groups timeline-placeholder">
+      <section v-for="month in 2" :key="month" class="timeline-month" aria-hidden="true">
+        <header class="timeline-month-heading"><i class="timeline-placeholder-month"/></header>
+        <ol class="timeline-days"><li v-for="day in 2" :key="day" class="timeline-day">
+          <div class="timeline-date"><i/><i/></div>
+          <ol class="timeline-day-items"><li class="timeline-item"><div class="timeline-track"><span class="timeline-node"/></div><div class="timeline-entry"><span class="timeline-copy"><i/><i/></span></div></li></ol>
+        </li></ol>
+      </section>
+    </div>
     <p v-else-if="error" role="alert" class="form-error">{{ error }}</p>
     <p v-else-if="hasMore" class="helper-copy" role="status">当前已查询区间暂无匹配记录，仍可继续查找更早记录。</p>
-    <div v-else class="timeline-empty" role="status">
+    <div v-else-if="ready!==false" class="timeline-empty" role="status">
       <Search :size="23"/>
       <strong>{{ searchActive?'没有找到相关记录':selectedKind==='all'?'还没有健康记录':'还没有此类记录' }}</strong>
       <span>{{ searchActive?'换个关键词，或切换记录类型。':'你新增的测量、健康事件和评估会按日期出现在这里。' }}</span>
@@ -104,6 +113,9 @@ const counts=computed(()=>({
 }
 .timeline-filter-count {font-size:var(--health-type-caption);color:var(--health-muted);font-variant-numeric:tabular-nums;}
 .timeline-groups {display:grid;gap:var(--health-space-6);}
+.timeline-placeholder i{display:block;background:var(--health-border);border-radius:.3rem;opacity:.65;height:.7rem;width:75%}
+.timeline-placeholder .timeline-placeholder-month{width:5rem;height:.9rem}.timeline-placeholder .timeline-date i{width:1.6rem;margin-left:auto}.timeline-placeholder .timeline-copy i+i{width:48%;height:.6rem}
+
 .timeline-month-heading {display:flex;align-items:baseline;gap:.85rem;margin:0 0 .65rem;padding:0 .2rem;}
 .timeline-month-heading h2 {margin:0;font-size:var(--health-type-section);font-weight:740;color:var(--health-ink);}
 .timeline-month-heading span {font-size:var(--health-type-caption);color:var(--health-muted);}

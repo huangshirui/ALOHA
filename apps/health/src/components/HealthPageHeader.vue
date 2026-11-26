@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
-import { ArrowLeft, Sparkles } from 'lucide-vue-next'
+import { ArrowLeft, RefreshCw, Sparkles } from 'lucide-vue-next'
 
 /**
  * ALOHA Health's one page-title / action bar, reused for every primary screen.
@@ -13,8 +13,11 @@ defineProps<{
   canBack?: boolean
   agentOpen?: boolean
   agentEnabled?: boolean
+  refreshEnabled?: boolean
+  refreshing?: boolean
+  refreshDisabled?: boolean
 }>()
-defineEmits<{ back: []; ask: [] }>()
+defineEmits<{ back: []; ask: []; refresh: [] }>()
 
 const isScrolled = ref(false)
 function updateScrollState() {
@@ -46,10 +49,16 @@ onUnmounted(() => window.removeEventListener('scroll', updateScrollState))
       </div>
     </div>
     <div class="health-page-toolbar" role="group" aria-label="页面操作">
+      <button v-if="refreshEnabled" type="button" class="health-page-refresh" :disabled="refreshing||refreshDisabled"
+        :aria-busy="!!refreshing" :aria-label="refreshing?'正在刷新当前页面':'刷新当前页面'" :title="refreshing?'正在刷新':'刷新当前页面'"
+        @click="$emit('refresh')"><RefreshCw :size="17" :class="{spinning:refreshing}"/></button>
       <slot name="actions"/>
-      <button v-if="agentEnabled!==false" type="button" class="health-page-ask" :class="{ active: agentOpen }"
-        aria-controls="health-agent-panel" :aria-expanded="agentOpen" aria-label="问问 Health" title="问问 Health"
-        @click="$emit('ask')">
+      <button type="button" class="health-page-ask" :class="{ active: agentEnabled!==false&&agentOpen }"
+        :disabled="agentEnabled===false" :aria-controls="agentEnabled===false?undefined:'health-agent-panel'"
+        :aria-expanded="agentEnabled===false?undefined:agentOpen"
+        :aria-label="agentEnabled===false?'问问 Health（尚未开放）':'问问 Health'"
+        :title="agentEnabled===false?'问问 Health · 尚未开放':'问问 Health'"
+        @click="agentEnabled!==false&&$emit('ask')">
         <Sparkles :size="17"/><span>问问 Health</span>
       </button>
     </div>
@@ -106,7 +115,13 @@ onUnmounted(() => window.removeEventListener('scroll', updateScrollState))
 .health-page-back:hover { background:var(--health-brand-subtle); }
 .health-page-toolbar { display:flex;align-items:center;gap:.4rem;flex:none;min-width:0; }
 .health-page-ask { display:inline-flex;align-items:center;justify-content:center;gap:.4rem;min-height:var(--aloha-control-sm);padding:.43rem .75rem;border:1px solid var(--health-brand);border-radius:var(--health-radius-pill);background:var(--health-brand-subtle);color:var(--health-brand-strong);font-size:var(--health-type-label);font-weight:650;white-space:nowrap; }
-.health-page-ask:hover,.health-page-ask.active { background:var(--health-brand);color:var(--health-surface); }
+.health-page-refresh {display:grid;place-items:center;width:2.45rem;min-height:var(--aloha-control-sm);border:1px solid var(--health-border);border-radius:var(--health-radius-control);background:var(--health-surface);color:var(--health-brand-strong);flex:none}
+.health-page-refresh:disabled {color:var(--health-muted);cursor:default}
+.health-page-refresh .spinning {animation:health-refresh-spin 1s linear infinite}
+@keyframes health-refresh-spin {to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.health-page-refresh .spinning{animation:none}}
+.health-page-ask:disabled {border-color:var(--health-border);background:var(--health-surface-secondary);color:var(--health-muted);cursor:not-allowed;opacity:.75}
+.health-page-ask:hover:not(:disabled),.health-page-ask.active { background:var(--health-brand);color:var(--health-surface); }
 :slotted(.primary-button),:slotted(.quiet-button) { min-height:var(--aloha-control-sm);padding:.42rem .75rem;font-size:var(--health-type-label); }
 :slotted(.icon-button) { min-height:var(--aloha-control-sm);width:var(--aloha-control-sm); }
 @media (max-width:47.999rem) {
@@ -121,6 +136,7 @@ onUnmounted(() => window.removeEventListener('scroll', updateScrollState))
   .health-page-heading h1 { font-size:var(--health-type-section); }
   .health-page-context,.health-page-subtitle { display:none; }
   .health-page-toolbar { gap:.3rem;white-space:nowrap; }
+  .health-page-refresh {width:2.45rem;height:2.45rem;min-height:2.45rem}
   .health-page-ask { width:2.45rem;min-width:2.45rem;height:2.45rem;min-height:2.45rem;padding:0; }
   .health-page-ask span { display:none; }
   .health-page-back { width:2rem;height:2.45rem; }
