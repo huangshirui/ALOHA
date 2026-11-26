@@ -1,0 +1,19 @@
+# Health Data Loading & UX Contract / 健康加载与体验契约
+
+Approved product direction; implementation and actual browser acceptance are tracked separately.
+
+## Invariants
+- Navigation is not fetching. Restore the exact view's search/filter, scroll anchor, loaded pages and cursor chain, including detail/return journeys. An already active tab is a no-op.
+- Separate view state, query result/readiness, and request execution. Never infer a complete query from the shared entity pool.
+- First entry loads only visible content and required dependencies. A fresh result (120 s initial policy) is reused without redundant reads. A stale result remains visible while revalidated. Inactive entries may be evicted after 15 min or bounded LRU/record limits; freshness is not eviction. These are initial measured-policy candidates, not latency claims.
+- Session-memory only, scoped to authenticated session, Space and own Person. No health data in persistent storage, Service Worker cache or logs. Clear affected private data on scope change or denial; fail closed when scope cannot be established. BFF/Core authorization remains authoritative for each request; cache is not permission.
+- Manual refresh in the shared page header: current view and its activated dependencies only; preserve filter, scroll, and last successful content. No whole-app reset. Deduplicate requests, cancel irrelevant work and reject late responses. Revalidate a bounded coherent cursor window; never splice a new first page with an old cursor chain. If the budget prevents rebuilding the loaded window, keep the old result and explicitly offer rebuilding.
+- Mutations update authoritative returned entities and invalidate dependent queries; never treat stale results as current. Failed saves retain draft. Browser foreground/network recovery revalidate only when needed, with session/workspace verification if identity is uncertain. No periodic full data fetch.
+- Loading UI: first uncached read uses layout-matched skeleton, existing results use unobtrusive refresh indicator, append uses footer progress, each section owns errors and retry. A verified empty result is not an unloaded, partial, failed or denied result. Keep navigation/title/filter controls mounted. Use actual responsive layout primitives and reduced-motion/accessibility support.
+- Preserve the V7 non-modal Agent layout baseline. In live mode the shared Ask Health button is visible but disabled, with an explicit not-yet-available label; do not simulate real AI or enable its drawer.
+- Keep Health-specific client state local. Existing BFF bounded queries/authorization remain; no new Core schema, service, or shared framework for this work. Large relation groups and document inverse queries remain separate bounded-query limitations.
+
+## Acceptance
+- Synthetic integration journeys: each tab cold/warm/stale, return after multiple pages and search/filter, repeated refresh, failed refresh, quick navigation, scope/denial and mutation invalidation; no duplicate requests for fresh views, no fake empty, no stale cross-scope results, no cursor mixing.
+- Test Mobile/Tablet/Desktop skeleton geometry against loaded layout; verify disabled Ask button, refresh availability, scroll retention and independent region errors. Measure request counts and actual first-screen latency/D1 reads; aim for warm restore under 100 ms, not a claim until measured.
+- Automated repository check and Health dry-run, real browser acceptance with authorized read-only use, explicit independent Production release. No real health data in tests.

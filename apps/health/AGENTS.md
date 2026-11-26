@@ -6,6 +6,10 @@
 
 Health is currently a product/runtime scaffold only. The goal is to provide a production-quality development foundation without prematurely defining the health domain model or backend integration.
 
+## Loading and UX contract
+
+Read and follow `LOADING.md` before changing Health navigation, data queries, refresh, cache, loading/error/empty states or page headers. Preserve the interaction baseline in `PROTOTYPE.md` and `JOURNEYS.md`.
+
 ## Rules
 
 - Keep Health independently buildable and releasable from Assistant and other ALOHA PWA surfaces.
