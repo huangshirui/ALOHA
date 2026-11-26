@@ -161,7 +161,7 @@ async function saveQuickMetric(){
   if(quickMetricSaving.value||saving.value)return
   const name=quickMetric.name.trim()
   if(!name){quickMetricError.value='请输入指标名称';return}
-  if(demo.metrics.some(metric=>metric.name.trim().toLocaleLowerCase()===name.toLocaleLowerCase())){
+  if(!liveMode&&demo.metrics.some(metric=>metric.name.trim().toLocaleLowerCase()===name.toLocaleLowerCase())){
     quickMetricError.value='已有同名指标，请直接选择';return
   }
   quickMetricSaving.value=true;quickMetricError.value=''
@@ -449,7 +449,7 @@ let relationSequence=0
 let liveLoadSequence=0
 function clearLiveRecords() {
   ++liveLoadSequence
-  resetMetricDetail()
+  resetMetricDetail();resetDocumentRelated()
   cancelPage();pagedIds.value=[];pagedCursor.value=null;pagedError.value='';metricPageLatest.clear();metricPageReady.clear();metricSummaryError.value=''
   ++relationSequence
   resetConcernReads();cancelRelationOptions()
@@ -465,7 +465,9 @@ function clearLiveRecords() {
   bodyBindings.value=[]
   attentionByConcern.value={}
   mapSelectedConcern.value=null
-  selected.value=null
+  selected.value=null;sheet.value='';draft.value={};editId.value='';formError.value='';uploadFile.value=null;uploadProgress.value=null
+  quickMetricOpen.value=false;quickMetric.name='';metricSearch.value='';formReferenceOpen.value=false
+  activeRelationCard.value=null;relationOptionIds.value=[];formChoiceIds.value=[]
   routeStack.value=[]
 }
 async function loadPagedSection(section:PagedSection,more=false){
@@ -474,6 +476,7 @@ async function loadPagedSection(section:PagedSection,more=false){
   cancelPage();cancelSnapshot()
   cancelMetricDetail()
   const spaceId=selectedSpaceId.value,requestId=++liveLoadSequence
+  if(referenceExpiresAt<=Date.now())invalidateReferenceIndex()
   const controller=new AbortController();pageController=controller
   const kind=pagedSectionKind[section]
   const params=new URLSearchParams({limit:String(kind==='metric'?METRIC_PAGE_SIZE:40)})
@@ -606,6 +609,7 @@ async function loadReferenceIndex(){
   cancelPage();cancelSnapshot()
   cancelMetricDetail()
   const spaceId=selectedSpaceId.value,term=search.value.trim(),requestId=++liveLoadSequence
+  pagedError.value='';pagedCursor.value=null;metricSummaryError.value=''
   if(referenceTerm.value===term&&Date.now()<referenceExpiresAt){liveStatus.value='ready';return}
   invalidateReferenceIndex()
   const controller=new AbortController();pageController=controller
@@ -737,8 +741,43 @@ async function loadMetricDetail(metricId:string){
     liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'指标读取失败'
   }finally{if(valid())snapshotController=null}
 }
-async function loadSelectedDetail(kind:'observation'|'regimen'|'assessment',id:string){
-  cancelPage();cancelSnapshot();cancelMetricDetail()
+const documentRelatedState=ref<'idle'|'loading'|'ready'|'error'>('idle')
+const documentRelatedError=ref('')
+const documentRelatedIds=ref<string[]>([])
+let documentRelatedController:AbortController|null=null
+function resetDocumentRelated(){
+  documentRelatedController?.abort();documentRelatedController=null
+  documentRelatedState.value='idle';documentRelatedError.value='';documentRelatedIds.value=[]
+}
+onBeforeUnmount(resetDocumentRelated)
+async function loadDocumentRelated(id:string){
+  if(!selectedSpaceId.value||documentRelatedState.value==='loading')return
+  resetDocumentRelated()
+  const controller=new AbortController();documentRelatedController=controller
+  const spaceId=selectedSpaceId.value,version=liveLoadSequence
+  const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind==='document'&&selected.value.id===id&&!controller.signal.aborted
+  documentRelatedState.value='loading'
+  try{
+    // The candidate contract does not declare sourceDocumentId filterable.
+    // Preserve exact inverse-link semantics; defer this collection read.
+    const snapshot=await getHealthSnapshot(spaceId,['health_observation'],controller.signal)
+    if(!valid())return
+    assertOwnScope(snapshot.personId)
+    if(!Array.isArray(snapshot.models.health_observation))throw Error('关联测量响应不完整')
+    const records=snapshot.models.health_observation.filter(record=>record.sourceDocumentId===id)
+    await readSelectedRows(spaceId,'metric',records.map(record=>String(record.metricId??'')).filter(metricId=>!demo.metrics.some(metric=>metric.id===metricId)),controller.signal,valid)
+    if(!valid())return
+    mergeHealthRecords('observation',records)
+    documentRelatedIds.value=records.map(record=>record.id)
+    documentRelatedState.value='ready'
+  }catch(e){
+    if(!valid()||optionDenied(e))return
+    documentRelatedState.value='error';documentRelatedError.value=e instanceof Error?e.message:'关联测量读取失败'
+  }finally{if(valid())documentRelatedController=null}
+}
+const documentRelatedRows=computed(()=>liveMode?documentRelatedIds.value.map(id=>demo.observations.find(row=>row.id===id)).filter((row):row is Observation=>!!row):demo.observations.filter(row=>row.sourceDocumentId===current.value?.id))
+async function loadSelectedDetail(kind:'observation'|'regimen'|'assessment'|'event'|'document',id:string){
+  cancelPage();cancelSnapshot();cancelMetricDetail();resetDocumentRelated()
   const spaceId=selectedSpaceId.value,version=++liveLoadSequence
   const controller=new AbortController();snapshotController=controller
   const valid=()=>version===liveLoadSequence&&spaceId===selectedSpaceId.value&&selected.value?.kind===kind&&selected.value.id===id&&!controller.signal.aborted
@@ -751,6 +790,7 @@ async function loadSelectedDetail(kind:'observation'|'regimen'|'assessment',id:s
     await Promise.all([
       kind==='observation'?readSelectedRows(spaceId,'metric',[String(row.metricId??'')],controller.signal,valid):Promise.resolve([]),
       kind==='observation'||kind==='regimen'?readSelectedRows(spaceId,'document',[String(row.sourceDocumentId??'')],controller.signal,valid):Promise.resolve([]),
+      kind==='document'?readSelectedRows(spaceId,'event',[String(row.eventId??'')],controller.signal,valid):Promise.resolve([]),
     ])
     if(valid()){liveStatus.value='ready';liveMessage.value='已连接 LifeSpace'}
   }catch(e){if(valid()&&!optionDenied(e)){liveStatus.value='error';liveMessage.value=e instanceof Error?e.message:'记录读取失败'}}
@@ -759,11 +799,11 @@ async function loadSelectedDetail(kind:'observation'|'regimen'|'assessment',id:s
 async function loadLiveRecords(section:BodyTab|'detail'='focus',refresh=false) {
   if(!selectedSpaceId.value)return
   if(refresh)clearLiveRecords()
-  expireModelCache();cancelSnapshot()
+  expireModelCache();cancelSnapshot();resetDocumentRelated()
   if(section==='timeline'){await loadTimeline();return}
   if(section==='detail'&&selected.value?.kind==='metric'){await loadMetricDetail(selected.value.id);return}
-  if(section==='detail'&&selected.value&&['observation','regimen','assessment'].includes(selected.value.kind)){
-    await loadSelectedDetail(selected.value.kind as 'observation'|'regimen'|'assessment',selected.value.id);return
+  if(section==='detail'&&selected.value&&['observation','regimen','assessment','event','document'].includes(selected.value.kind)){
+    await loadSelectedDetail(selected.value.kind as 'observation'|'regimen'|'assessment'|'event'|'document',selected.value.id);return
   }
   if(section==='metrics'&&metricReferenceFilter.value!=='all'){await loadReferenceIndex();return}
   if(usesPagedSection(section)){await loadPagedSection(section);return}
@@ -1097,7 +1137,7 @@ function location(): HealthLocation {
 function navigate(tab: Tab,loadDefault=true) {
   if(sheet.value==='edit'&&(saving.value||quickMetricSaving.value))return
   routeStack.value=[]
-  ++liveLoadSequence;cancelMetricDetail();cancelPage();cancelSnapshot()
+  ++liveLoadSequence;cancelMetricDetail();cancelPage();cancelSnapshot();resetDocumentRelated()
   ++relationSequence;resetConcernReads();cancelRelationOptions();activeRelationCard.value=null;relationLoading.value=false;relationReadState.value='idle'
   activeTab.value=tab==='home'?'body':tab; selected.value=null; sheet.value=''; bodyTab.value='focus'; search.value=''
   if(loadDefault&&liveMode&&selectedSpaceId.value&&activeTab.value==='body')void loadLiveRecords('focus')
@@ -1381,8 +1421,8 @@ async function formSave() {
       const previous=editId.value ? rows.find(r=>r.id===editId.value) : null
       if(editId.value&&!previous)throw Error('原记录不可见，请重新打开后再修改')
       if(kind==='metric'){
-        if(await metricNameExists(String(v.name),editId.value))throw Error('已有同名指标，可直接使用现有指标')
-        if(previous&&previous.valueType!==v.valueType){
+        if(await metricNameExists(String(payload.name),editId.value))throw Error('已有同名指标，可直接使用现有指标')
+        if(previous&&previous.valueType!==payload.valueType){
           const history=await getHealthPage(selectedSpaceId.value,'health_observation',new URLSearchParams({limit:'1',metricId:previous.id}))
           assertOwnScope(history.personId)
           if(history.items.length||history.nextCursor)throw Error('已经有历史记录的指标不能改动记录方式')
@@ -1446,21 +1486,35 @@ async function removeCurrent() {
   if(!selected.value||!current.value) return
   const kind=selected.value.kind,id=selected.value.id
   if(liveMode&&kind==='metric'&&(!metricHistoryReady.value||metricHistoryLoading.value||metricHistoryError.value)){notice.value='请先确认该指标的测量记录已加载。';return}
-  if(kind==='metric' && (liveMode?metricHistoryRows.value.length>0:demo.observations.some(o=>o.metricId===id))) {notice.value='该指标已有测量记录，请先保留指标与历史数据。';return}
-  if(liveMode && kind==='document' && (
-    demo.observations.some(o=>o.sourceDocumentId===id) ||
-    demo.regimens.some(r=>r.sourceDocumentId===id) ||
-    demo.assessments.some(a=>a.basisIds.includes(id))
-  )) {notice.value='这份资料仍被其他健康记录引用，请先解除引用再删除。';return}
-  if(liveMode && kind==='event' && demo.documents.some(d=>d.eventId===id)) {
-    notice.value='该事件仍有关联资料，请先处理引用。';return
-  }
+  if(kind==='metric' && (liveMode?(metricHistoryRows.value.length>0||!!metricHistoryCursor.value):demo.observations.some(o=>o.metricId===id))) {notice.value='该指标已有测量记录，请先保留指标与历史数据。';return}
+  // Partial caches are not proof that references do not exist. Check on explicit deletion.
   if(!window.confirm(liveMode?'确定从 LifeSpace 删除这条健康记录吗？此操作会记录变更历史。':'要从本次演示中删除这条记录吗？')) return
   if(liveMode) {
     try {
       if(!selectedSpaceId.value || !Number.isInteger(current.value.version))
         throw new Error('缺少记录版本，无法安全删除')
-      await deleteHealthRecord(selectedSpaceId.value,healthModelKey[kind],id,current.value.version)
+      const spaceId=selectedSpaceId.value,personId=subjectPersonId.value,version=current.value.version
+      const stillCurrent=()=>spaceId===selectedSpaceId.value&&personId===subjectPersonId.value&&selected.value?.kind===kind&&selected.value.id===id
+      if(kind==='document'||kind==='event'){
+        const result=await getHealthSnapshot(spaceId,kind==='document'?['health_observation','health_regimen']:['health_document'])
+        if(!stillCurrent())return
+        assertOwnScope(result.personId)
+        if(kind==='document'){
+          if(!Array.isArray(result.models.health_observation)||!Array.isArray(result.models.health_regimen))throw Error('引用检查响应不完整')
+          if(result.models.health_observation.some(row=>row.sourceDocumentId===id)||result.models.health_regimen.some(row=>row.sourceDocumentId===id)||demo.assessments.some(a=>a.basisIds.includes(id)))throw Error('这份资料仍被其他健康记录引用，请先解除引用再删除。')
+        }else{
+          if(!Array.isArray(result.models.health_document))throw Error('引用检查响应不完整')
+          if(result.models.health_document.some(row=>row.eventId===id))throw Error('该事件仍有关联资料，请先处理引用。')
+        }
+      }
+      if(kind==='metric'){
+        const result=await getHealthPage(spaceId,'health_observation',new URLSearchParams({limit:'1',metricId:id}))
+        if(!stillCurrent())return
+        assertOwnScope(result.personId)
+        if(result.items.length||result.nextCursor)throw Error('该指标已有测量记录，请先保留指标与历史数据。')
+      }
+      if(!stillCurrent())return
+      await deleteHealthRecord(spaceId,healthModelKey[kind],id,version)
       pageCache.clear();invalidateReferenceIndex()
     } catch(e) {notice.value=e instanceof Error?e.message:'删除失败';return}
   }
@@ -1855,7 +1909,7 @@ function detailName(kind: HealthKind,record:any) {
                   参考范围：{{ metricRangeLabel(current) }} · {{ current.referenceSource||'来源未注明' }}
                   <span>仅用于比较，不代表医学诊断。</span>
                 </p>
-                <HealthSkeleton v-if="liveMode&&current.valueType==='number'&&(!metricHistoryReady||metricTrendLoading||!metricTrendReady)&&!metricHistoryError&&!metricTrendError" label="正在加载完整趋势区间" :rows="3"/>
+                <HealthSkeleton v-if="liveMode&&current.valueType==='number'&&(metricHistoryReady?!metricTrendReady&&!metricTrendError:!metricHistoryError)" label="正在加载完整趋势区间" :rows="3"/>
                  <p v-else-if="liveMode&&current.valueType==='number'&&(metricTrendError||metricHistoryError&&!metricHistoryReady)" role="alert" class="empty-inline">{{ metricTrendError||metricHistoryError }} <button class="inline-link" type="button" @click="metricHistoryReady?loadMetricTrend(current.id):retryMetricHistory(current.id)">重试</button></p>
                  <MetricTrend v-else-if="current.valueType==='number'"
                   :metric-name="current.name" :unit="current.defaultUnit"
@@ -1892,7 +1946,10 @@ function detailName(kind: HealthKind,record:any) {
               </section>
               <section class="ui-card"><div class="card-heading"><h2>{{ selected.kind==='assessment'?'判断依据':selected.kind==='document'?'由这份资料整理':'关联资料' }}</h2></div>
                 <template v-if="selected.kind==='document'">
-                  <button v-for="o in demo.observations.filter(o=>o.sourceDocumentId===current.id)" :key="o.id"
+                  <button v-if="liveMode&&documentRelatedState==='idle'" type="button" class="quiet-button" @click="loadDocumentRelated(current.id)">加载从这份资料整理的测量</button>
+                  <HealthSkeleton v-if="liveMode&&documentRelatedState==='loading'" label="正在查询关联测量" :rows="3"/>
+                  <p v-else-if="liveMode&&documentRelatedState==='error'" class="empty-inline" role="alert">{{ documentRelatedError }} <button type="button" class="inline-link" @click="loadDocumentRelated(current.id)">重试</button></p>
+                  <button v-for="o in documentRelatedRows" :key="o.id"
                     class="row-link" type="button" @click="show('observation',o.id)">
                     <span class="list-icon"><ClipboardCheck :size="18"/></span>
                     <span class="row-main"><b>{{ observationTitle(o) }}</b><small>{{ displayDate(o.observedDate) }}</small></span>
@@ -1903,7 +1960,7 @@ function detailName(kind: HealthKind,record:any) {
                     <span class="row-main"><b>{{ demo.events.find(e=>e.id===current.eventId)?.summary || '相关事件' }}</b><small>相关健康事件</small></span>
                     <ChevronRight :size="17"/>
                   </button>
-                  <p v-if="!demo.observations.some(o=>o.sourceDocumentId===current.id)&&!current.eventId" class="empty-inline">
+                  <p v-if="(!liveMode||documentRelatedState==='ready')&&!documentRelatedRows.length&&!current.eventId" class="empty-inline">
                     暂无从这份资料整理出的记录。你可以保留原始资料，稍后再补充。
                   </p>
                 </template>
@@ -2132,7 +2189,7 @@ function detailName(kind: HealthKind,record:any) {
               <label>范围来源<input v-model="draft.referenceSource" placeholder="例如：本次化验报告"/></label>
             </fieldset>
             <label><span class="field-label">测量日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.observedDate" type="date" required/></label>
-            <HealthReferenceSelect v-if="liveMode" :label="editKind==='document'?'相关健康事件':'参考资料'"
+            <HealthReferenceSelect v-if="liveMode" :label="formReferenceField==='eventId'?'相关健康事件':'参考资料'"
               :selected-label="formReferenceLabel" :selected-id="formReferenceId" :open="formReferenceOpen"
               :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
               :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
@@ -2157,7 +2214,7 @@ function detailName(kind: HealthKind,record:any) {
             <label v-if="!editId"><span class="field-label">原始文件 <span class="required-mark" aria-hidden="true">*</span></span><input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" @change="pickFile"/><small v-if="liveMode">支持 PDF、PNG、JPEG、WebP，单个文件最多 15 MB。保存时会安全上传到 LifeSpace。</small><small v-else>仅演示文件名。</small></label><p v-else-if="liveMode" class="helper-copy">原文件已保存，无法在修改资料时替换。如需另一份文件，请新建资料。</p>
             <p v-if="draft.fileName" class="file-picked"><FileText :size="16"/>{{ draft.fileName }}</p>
             <div class="form-two"><label>资料日期<input v-model="draft.issuedDate" type="date"/></label><label>出具机构<input v-model="draft.issuerName" placeholder="选填"/></label></div>
-            <HealthReferenceSelect v-if="liveMode" :label="editKind==='document'?'相关健康事件':'参考资料'"
+            <HealthReferenceSelect v-if="liveMode" :label="formReferenceField==='eventId'?'相关健康事件':'参考资料'"
               :selected-label="formReferenceLabel" :selected-id="formReferenceId" :open="formReferenceOpen"
               :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
               :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
@@ -2182,7 +2239,7 @@ function detailName(kind: HealthKind,record:any) {
             <div class="form-two"><label>开始日期<input v-model="draft.startDate" type="date"/></label><label>结束日期<input v-model="draft.endDate" type="date"/></label></div>
             <label>需要重复提醒吗？<select v-model="draft.recurrence"><option value="none">不重复</option><option value="daily">每天</option><option value="weekly">每周</option></select></label>
             <label v-if="draft.recurrence!=='none'"><span class="field-label">首次执行日期 <span class="required-mark" aria-hidden="true">*</span></span><input v-model="draft.firstDueDate" required type="date"/></label>
-            <HealthReferenceSelect v-if="liveMode" :label="editKind==='document'?'相关健康事件':'参考资料'"
+            <HealthReferenceSelect v-if="liveMode" :label="formReferenceField==='eventId'?'相关健康事件':'参考资料'"
               :selected-label="formReferenceLabel" :selected-id="formReferenceId" :open="formReferenceOpen"
               :disabled="formOptionsLoading||!!formOptionsError" :search="formReferenceSearch"
               :candidates="formReferenceCandidates" :loading="formChoiceLoading" :error="formChoiceError" :has-more="!!formChoiceCursor"
